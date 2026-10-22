@@ -1,0 +1,29 @@
+# ---- 前端 ----
+node_modules/
+hrms-frontend/dist/
+*.local
+
+# ---- 后端 / Maven ----
+target/
+!.mvn/wrapper/maven-wrapper.jar
+**/.mvn/apache-maven-*/
+*.class
+*.jar.original
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.ipr
+*.iws
+
+# ---- 系统 / 日志 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+logs/
+
+# ---- 其他 ----
+*.zip
+*.tmp
