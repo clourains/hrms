@@ -2,7 +2,7 @@
   <div class="ai-chat-wrapper">
     <!-- Floating button -->
     <div class="ai-fab" @click="toggleChat" v-show="!isOpen">
-      <el-icon :size="24"><ChatDotRound /></el-icon>
+      <AiPet :size="26" />
       <span class="fab-label">AI助手</span>
     </div>
 
@@ -12,7 +12,7 @@
         <!-- Header -->
         <div class="chat-header">
           <div class="header-info">
-            <el-icon :size="20" color="#fff"><ChatDotRound /></el-icon>
+            <AiPet :size="22" />
             <span class="chat-title">HRMS AI 助手</span>
             <el-tag size="small" type="success" effect="dark" class="status-tag">在线</el-tag>
           </div>
@@ -29,7 +29,7 @@
         <!-- Messages -->
         <div class="chat-messages" ref="messagesRef">
           <div v-if="messages.length === 0" class="welcome-area">
-            <el-icon :size="48" color="#409EFF"><ChatDotRound /></el-icon>
+            <AiPet :size="72" />
             <h3>HRMS AI 助手</h3>
             <p>我可以帮您分析员工数据、预测人才趋势、生成管理建议</p>
             <div class="suggestion-chips">
@@ -42,7 +42,7 @@
           <div v-for="(msg, idx) in messages" :key="idx" class="message-row" :class="msg.role">
             <div class="message-avatar">
               <el-icon v-if="msg.role === 'user'" :size="20"><User /></el-icon>
-              <el-icon v-else :size="20" color="#409EFF"><ChatDotRound /></el-icon>
+              <AiPet v-else :size="22" />
             </div>
             <div class="message-content">
               <div class="message-text" v-html="formatMessage(msg.content)"></div>
@@ -81,7 +81,8 @@
 
 <script setup>
 import { ref, nextTick, onUnmounted } from 'vue'
-import { ChatDotRound, Delete, Close, User, Promotion } from '@element-plus/icons-vue'
+import { Delete, Close, User, Promotion } from '@element-plus/icons-vue'
+import AiPet from '@/components/AiPet.vue'
 
 const isOpen = ref(false)
 const inputText = ref('')
