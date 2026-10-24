@@ -1,25 +1,5 @@
 <template>
   <div class="dashboard-container">
-    <!-- 图表区域 -->
-    <el-row :gutter="20" class="chart-row">
-      <!-- 入职离职趋势 -->
-      <el-col :lg="24" :md="24">
-        <el-card class="chart-card" shadow="hover">
-          <template #header>
-            <div class="card-header">
-              <span>人员入职离职趋势</span>
-              <el-radio-group v-model="trendPeriod" size="small">
-                <el-radio-button label="year">近一年</el-radio-button>
-                <el-radio-button label="halfYear">近半年</el-radio-button>
-                <el-radio-button label="quarter">近季度</el-radio-button>
-              </el-radio-group>
-            </div>
-          </template>
-          <div ref="trendChartRef" class="chart-container"></div>
-        </el-card>
-      </el-col>
-    </el-row>
-
     <!-- 快捷入口和最新动态 -->
     <el-row :gutter="20" class="chart-row">
       <el-col :lg="12" :md="24">
@@ -60,17 +40,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import * as echarts from 'echarts'
 
 const router = useRouter()
-
-const trendPeriod = ref('year')
-
-const trendChartRef = ref(null)
-
-let trendChart = null
 
 const quickActions = [
   { title: '员工入职', icon: 'Plus', color: '#67C23A', path: '/employee' },
@@ -92,83 +64,6 @@ const recentActivities = [
 const handleQuickAction = (path) => {
   router.push(path)
 }
-
-// 入职离职趋势图
-const initTrendChart = () => {
-  if (!trendChartRef.value) return
-  trendChart = echarts.init(trendChartRef.value)
-
-  const option = {
-    tooltip: {
-      trigger: 'axis'
-    },
-    legend: {
-      data: ['入职人数', '离职人数']
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      boundaryGap: false,
-      data: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
-    },
-    yAxis: {
-      type: 'value'
-    },
-    series: [
-      {
-        name: '入职人数',
-        type: 'line',
-        smooth: true,
-        data: [10, 15, 8, 12, 18, 14, 10, 16, 13, 12, 15, 12],
-        itemStyle: {
-          color: '#67C23A'
-        },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(103, 194, 58, 0.3)' },
-            { offset: 1, color: 'rgba(103, 194, 58, 0.05)' }
-          ])
-        }
-      },
-      {
-        name: '离职人数',
-        type: 'line',
-        smooth: true,
-        data: [5, 3, 4, 6, 2, 5, 4, 3, 5, 4, 3, 3],
-        itemStyle: {
-          color: '#F56C6C'
-        },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(245, 108, 108, 0.3)' },
-            { offset: 1, color: 'rgba(245, 108, 108, 0.05)' }
-          ])
-        }
-      }
-    ]
-  }
-
-  trendChart.setOption(option)
-}
-
-const handleResize = () => {
-  trendChart?.resize()
-}
-
-onMounted(() => {
-  initTrendChart()
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-  trendChart?.dispose()
-})
 </script>
 
 <style scoped lang="scss">

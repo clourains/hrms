@@ -129,6 +129,23 @@
         </el-col>
       </el-row>
 
+      <!-- 入职离职趋势 -->
+      <el-row :gutter="16" class="chart-row">
+        <el-col :span="24">
+          <div class="chart-panel">
+            <div class="panel-header">
+              <span class="panel-title">人员入职离职趋势</span>
+              <el-radio-group v-model="trendPeriod" size="small">
+                <el-radio-button label="year">近一年</el-radio-button>
+                <el-radio-button label="halfYear">近半年</el-radio-button>
+                <el-radio-button label="quarter">近季度</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div ref="trendChartRef" class="chart-content chart-large"></div>
+          </div>
+        </el-col>
+      </el-row>
+
       <!-- AI Insights -->
       <el-row :gutter="16" class="chart-row">
         <el-col :span="24">
@@ -190,6 +207,7 @@ const salaryChartRef = ref(null)
 const performanceChartRef = ref(null)
 const attendanceChartRef = ref(null)
 const radarChartRef = ref(null)
+const trendChartRef = ref(null)
 
 let deptChart = null
 let structureChart = null
@@ -198,6 +216,15 @@ let salaryChart = null
 let performanceChart = null
 let attendanceChart = null
 let radarChart = null
+let trendChart = null
+
+// 入职离职趋势数据（暂无后端历史接口，先以演示数据展示）
+const TREND_PERIODS = { year: 12, halfYear: 6, quarter: 3 }
+const trendPeriod = ref('year')
+const trendMonths = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+const trendHireData = [10, 15, 8, 12, 18, 14, 10, 16, 13, 12, 15, 12]
+const trendLeaveData = [5, 3, 4, 6, 2, 5, 4, 3, 5, 4, 3, 3]
+const trendSlice = () => -1 * (TREND_PERIODS[trendPeriod.value] || 12)
 
 const coreMetrics = ref([
   { title: '员工总数', value: '--', trend: 0, icon: 'User', color: '#409EFF' },
@@ -264,6 +291,7 @@ const initAllCharts = () => {
   initPerformanceChart()
   initAttendanceChart()
   initRadarChart()
+  initTrendChart()
 }
 
 const initDeptChart = () => {
@@ -443,6 +471,60 @@ const initRadarChart = () => {
   })
 }
 
+// 入职离职趋势图（历史流动数据，紧邻 AI 流失预测形成"历史-预测"呼应）
+const initTrendChart = () => {
+  if (!trendChartRef.value) return
+  trendChart = echarts.init(trendChartRef.value)
+  const n = TREND_PERIODS[trendPeriod.value] || 12
+  trendChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['入职人数', '离职人数'], top: 0 },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'category', boundaryGap: false, data: trendMonths.slice(n ? -n : 0) },
+    yAxis: { type: 'value' },
+    series: [
+      {
+        name: '入职人数',
+        type: 'line',
+        smooth: true,
+        data: trendHireData.slice(n ? -n : 0),
+        itemStyle: { color: '#67C23A' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(103, 194, 58, 0.3)' },
+            { offset: 1, color: 'rgba(103, 194, 58, 0.05)' }
+          ])
+        }
+      },
+      {
+        name: '离职人数',
+        type: 'line',
+        smooth: true,
+        data: trendLeaveData.slice(n ? -n : 0),
+        itemStyle: { color: '#F56C6C' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(245, 108, 108, 0.3)' },
+            { offset: 1, color: 'rgba(245, 108, 108, 0.05)' }
+          ])
+        }
+      }
+    ]
+  })
+}
+
+watch(trendPeriod, () => {
+  if (!trendChart) return
+  const n = TREND_PERIODS[trendPeriod.value] || 12
+  trendChart.setOption({
+    xAxis: { data: trendMonths.slice(n ? -n : 0) },
+    series: [
+      { data: trendHireData.slice(n ? -n : 0) },
+      { data: trendLeaveData.slice(n ? -n : 0) }
+    ]
+  })
+})
+
 const handleResize = () => {
   deptChart?.resize()
   structureChart?.resize()
@@ -451,6 +533,7 @@ const handleResize = () => {
   performanceChart?.resize()
   attendanceChart?.resize()
   radarChart?.resize()
+  trendChart?.resize()
 }
 
 watch(structureType, () => initStructureChart())
@@ -469,6 +552,7 @@ onUnmounted(() => {
   performanceChart?.dispose()
   attendanceChart?.dispose()
   radarChart?.dispose()
+  trendChart?.dispose()
 })
 </script>
 
