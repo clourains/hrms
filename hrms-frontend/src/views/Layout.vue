@@ -224,15 +224,6 @@ const menuGroups = [
       { path: '/shipment', title: '物流跟踪', icon: 'Ship' },
       { path: '/payment', title: '收付款', icon: 'Wallet' }
     ]
-  },
-  {
-    type: 'group',
-    title: '数据分析',
-    icon: 'PieChart',
-    children: [
-      { path: '/analytics', title: '智能分析', icon: 'DataAnalysis' },
-      { path: '/business', title: '营业分析', icon: 'Histogram' }
-    ]
   }
 ]
 
