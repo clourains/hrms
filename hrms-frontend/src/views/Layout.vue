@@ -10,6 +10,7 @@
       </div>
       <el-menu
         :default-active="activeMenu"
+        :default-openeds="defaultOpeneds"
         :collapse="isCollapse"
         :collapse-transition="false"
         router
@@ -18,10 +19,28 @@
         active-text-color="#409EFF"
         class="sidebar-menu"
       >
-        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
-          <el-icon><component :is="item.icon" /></el-icon>
-          <template #title>{{ item.title }}</template>
-        </el-menu-item>
+        <template v-for="group in menuGroups" :key="group.title">
+          <!-- 顶级菜单项 -->
+          <el-menu-item v-if="group.type === 'item'" :index="group.path">
+            <el-icon><component :is="group.icon" /></el-icon>
+            <template #title>{{ group.title }}</template>
+          </el-menu-item>
+          <!-- 分组菜单 -->
+          <el-sub-menu v-else :index="group.title">
+            <template #title>
+              <el-icon><component :is="group.icon" /></el-icon>
+              <span>{{ group.title }}</span>
+            </template>
+            <el-menu-item
+              v-for="child in group.children"
+              :key="child.path"
+              :index="child.path"
+            >
+              <el-icon><component :is="child.icon" /></el-icon>
+              <template #title>{{ child.title }}</template>
+            </el-menu-item>
+          </el-sub-menu>
+        </template>
       </el-menu>
     </el-aside>
 
@@ -123,24 +142,57 @@ const userStore = useUserStore()
 
 const isCollapse = ref(false)
 
-const menuItems = [
-  { path: '/home', title: '首页', icon: 'HomeFilled' },
-  { path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
-  { path: '/employee', title: '员工管理', icon: 'User' },
-  { path: '/department', title: '部门管理', icon: 'OfficeBuilding' },
-  { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
-  { path: '/salary', title: '薪资管理', icon: 'Money' },
-  { path: '/performance', title: '绩效管理', icon: 'TrendCharts' },
-  { path: '/analytics', title: '智能分析', icon: 'DataAnalysis' },
-  { path: '/business', title: '营业分析', icon: 'Histogram' },
-  { path: '/order', title: '销售订单', icon: 'Tickets' },
-  { path: '/product', title: '产品管理', icon: 'Goods' },
-  { path: '/warehouse', title: '仓库库存', icon: 'Box' },
-  { path: '/customer', title: '境外客户', icon: 'UserFilled' },
-  { path: '/supplier', title: '供应商', icon: 'Van' },
-  { path: '/shipment', title: '物流跟踪', icon: 'Ship' },
-  { path: '/payment', title: '收付款', icon: 'Wallet' }
+// 企业级菜单规划：首页/仪表盘置顶，人事、业务各归其组，可视化分析统一放到底部
+const menuGroups = [
+  { type: 'item', path: '/home', title: '首页', icon: 'HomeFilled' },
+  { type: 'item', path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
+  {
+    type: 'group',
+    title: '人事管理',
+    icon: 'Avatar',
+    children: [
+      { path: '/employee', title: '员工管理', icon: 'User' },
+      { path: '/department', title: '部门管理', icon: 'OfficeBuilding' },
+      { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
+      { path: '/salary', title: '薪资管理', icon: 'Money' },
+      { path: '/performance', title: '绩效管理', icon: 'TrendCharts' }
+    ]
+  },
+  {
+    type: 'group',
+    title: '业务管理',
+    icon: 'Suitcase',
+    children: [
+      { path: '/order', title: '销售订单', icon: 'Tickets' },
+      { path: '/product', title: '产品管理', icon: 'Goods' },
+      { path: '/warehouse', title: '仓库库存', icon: 'Box' },
+      { path: '/customer', title: '境外客户', icon: 'UserFilled' },
+      { path: '/supplier', title: '供应商', icon: 'Van' },
+      { path: '/shipment', title: '物流跟踪', icon: 'Ship' },
+      { path: '/payment', title: '收付款', icon: 'Wallet' }
+    ]
+  },
+  {
+    type: 'group',
+    title: '数据分析',
+    icon: 'PieChart',
+    children: [
+      { path: '/analytics', title: '智能分析', icon: 'DataAnalysis' },
+      { path: '/business', title: '营业分析', icon: 'Histogram' }
+    ]
+  }
 ]
+
+// 进入页面时自动展开当前路由所在的分组
+const defaultOpeneds = computed(() => {
+  const opened = []
+  for (const group of menuGroups) {
+    if (group.type === 'group' && group.children.some(child => child.path === route.path)) {
+      opened.push(group.title)
+    }
+  }
+  return opened
+})
 
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
