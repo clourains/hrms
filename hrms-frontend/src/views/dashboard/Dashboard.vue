@@ -144,19 +144,25 @@
     </el-row>
 
     <el-row :gutter="14" class="chart-row">
-      <el-col :lg="8" :md="12" :xs="24">
+      <el-col :lg="6" :md="12" :xs="24">
         <div class="panel">
           <div class="panel-title">薪资区间分布</div>
           <div ref="salaryChartRef" class="chart"></div>
         </div>
       </el-col>
-      <el-col :lg="8" :md="12" :xs="24">
+      <el-col :lg="6" :md="12" :xs="24">
         <div class="panel">
           <div class="panel-title">各部门出勤率</div>
           <div ref="attendanceChartRef" class="chart"></div>
         </div>
       </el-col>
-      <el-col :lg="8" :md="12" :xs="24">
+      <el-col :lg="6" :md="12" :xs="24">
+        <div class="panel">
+          <div class="panel-title">人才画像雷达</div>
+          <div ref="radarChartRef" class="chart"></div>
+        </div>
+      </el-col>
+      <el-col :lg="6" :md="12" :xs="24">
         <div class="panel">
           <div class="panel-title">招聘需求预测</div>
           <div class="hiring-table">
@@ -177,9 +183,9 @@
       </el-col>
     </el-row>
 
-    <!-- AI 智能洞察精选 -->
+    <!-- AI 智能洞察 -->
     <div class="panel insight-panel">
-      <div class="panel-title">AI 智能洞察 · 精选</div>
+      <div class="panel-title">AI 智能洞察</div>
       <div v-if="topInsights.length" class="insight-grid">
         <div v-for="(insight, index) in topInsights" :key="index" class="insight-item" :class="insight.type">
           <div class="insight-icon">
@@ -294,7 +300,7 @@ const updateKpi = () => {
   }
 }
 
-const topInsights = computed(() => (aiInsights.value || []).slice(0, 3))
+const topInsights = computed(() => aiInsights.value || [])
 
 const getInsightIcon = (type) => {
   const map = { warning: 'Warning', success: 'TrendCharts', info: 'Lightning', primary: 'InfoFilled' }
@@ -313,6 +319,7 @@ const attritionChartRef = ref(null)
 const performanceChartRef = ref(null)
 const salaryChartRef = ref(null)
 const attendanceChartRef = ref(null)
+const radarChartRef = ref(null)
 
 const charts = []
 
@@ -373,6 +380,7 @@ const initAllCharts = () => {
   initPerformanceChart()
   initSalaryChart()
   initAttendanceChart()
+  initRadarChart()
 }
 
 // 月度营收 + 订单量
@@ -426,7 +434,7 @@ const horizontalBarOption = (data, nameKey, valueKey, color, money = true) => ({
     data: data.map(d => d[nameKey]).reverse(),
     axisLine: { lineStyle: { color: 'rgba(120,170,255,.25)' } },
     axisTick: { show: false },
-    axisLabel: { color: AXIS, fontSize: 10, width: 80, overflow: 'truncate' }
+    axisLabel: { color: AXIS, fontSize: 9, width: 80, overflow: 'truncate' }
   },
   series: [{
     type: 'bar',
@@ -445,19 +453,19 @@ const horizontalBarOption = (data, nameKey, valueKey, color, money = true) => ({
 
 const initCustomerChart = () => {
   if (!customerChartRef.value) return
-  createChart(customerChartRef.value).setOption(horizontalBarOption(topCustomers.value.slice(0, 8), 'customerName', 'totalSales', '#3ddc97'))
+  createChart(customerChartRef.value).setOption(horizontalBarOption(topCustomers.value.slice(0, 10), 'customerName', 'totalSales', '#3ddc97'))
 }
 const initProductChart = () => {
   if (!productChartRef.value) return
-  createChart(productChartRef.value).setOption(horizontalBarOption(topProducts.value.slice(0, 8), 'productName', 'totalSales', '#36d9f0'))
+  createChart(productChartRef.value).setOption(horizontalBarOption(topProducts.value.slice(0, 10), 'productName', 'totalSales', '#36d9f0'))
 }
 const initCountryChart = () => {
   if (!countryChartRef.value) return
-  createChart(countryChartRef.value).setOption(horizontalBarOption(countryDistribution.value.slice(0, 8), 'country', 'totalSales', '#b18cff'))
+  createChart(countryChartRef.value).setOption(horizontalBarOption(countryDistribution.value.slice(0, 10), 'country', 'totalSales', '#b18cff'))
 }
 const initInventoryChart = () => {
   if (!inventoryChartRef.value) return
-  createChart(inventoryChartRef.value).setOption(horizontalBarOption(inventoryValue.value.slice(0, 8), 'warehouseName', 'valueCny', '#ffd166', false))
+  createChart(inventoryChartRef.value).setOption(horizontalBarOption(inventoryValue.value.slice(0, 10), 'warehouseName', 'valueCny', '#ffd166', false))
 }
 
 // 深色饼图公共
@@ -593,6 +601,34 @@ const initAttendanceChart = () => {
         borderRadius: [4, 4, 0, 0]
       },
       label: { show: true, position: 'top', formatter: '{c}%', color: TXT, fontSize: 10 }
+    }]
+  })
+}
+
+// 人才画像雷达
+const initRadarChart = () => {
+  if (!radarChartRef.value) return
+  const dimensions = performanceAnalysis.value?.dimensionAnalysis || []
+  createChart(radarChartRef.value).setOption({
+    tooltip: { ...darkTooltip },
+    radar: {
+      indicator: dimensions.map(d => ({ name: d.name, max: 100 })),
+      center: ['50%', '52%'],
+      radius: '62%',
+      axisName: { fontSize: 10, color: AXIS },
+      splitLine: { lineStyle: { color: SPLIT } },
+      splitArea: { areaStyle: { color: ['rgba(110, 168, 255, 0.04)', 'rgba(110, 168, 255, 0.08)'] } },
+      axisLine: { lineStyle: { color: 'rgba(120, 170, 255, 0.25)' } }
+    },
+    series: [{
+      type: 'radar',
+      data: [{
+        value: dimensions.map(d => d.avg || 0),
+        name: '整体水平',
+        areaStyle: { color: 'rgba(54, 217, 240, 0.25)' },
+        lineStyle: { color: '#36d9f0', width: 2 },
+        itemStyle: { color: '#36d9f0' }
+      }]
     }]
   })
 }
