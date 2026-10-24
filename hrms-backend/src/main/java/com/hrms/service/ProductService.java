@@ -22,4 +22,11 @@ public interface ProductService {
     boolean deleteById(Long id);
 
     List<Product> listAll();
+
+    /**
+     * 产品下拉列表
+     *
+     * @param includeDisabled true 时连下架产品一起返回，出入库/订单下拉用（P021）
+     */
+    List<Product> listAll(boolean includeDisabled);
 }

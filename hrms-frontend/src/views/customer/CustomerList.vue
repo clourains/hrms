@@ -17,12 +17,12 @@
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增客户</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="tableData" border stripe>
-        <el-table-column prop="customerCode" label="客户编码" width="110" />
-        <el-table-column prop="companyName" label="公司名称" min-width="200" show-overflow-tooltip />
+      <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
+        <el-table-column prop="customerCode" label="客户编码" width="120" sortable="custom" />
+        <el-table-column prop="companyName" label="公司名称" min-width="200" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contactName" label="联系人" width="120" />
-        <el-table-column prop="country" label="国家" width="90" />
-        <el-table-column prop="city" label="城市" width="110" />
+        <el-table-column prop="country" label="国家" width="100" sortable="custom" />
+        <el-table-column prop="city" label="城市" width="110" sortable="custom" />
         <el-table-column prop="email" label="邮箱" min-width="170" show-overflow-tooltip />
         <el-table-column prop="level" label="等级" width="80" align="center">
           <template #default="{ row }">
@@ -32,7 +32,7 @@
         <el-table-column prop="creditLimitUsd" label="信用额度(USD)" width="130" align="right">
           <template #default="{ row }">${{ formatNum(row.creditLimitUsd) }}</template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="90" align="center">
+        <el-table-column prop="status" label="状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '合作中' : '停用' }}</el-tag>
           </template>
@@ -52,7 +52,7 @@
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         class="pagination"
-        @size-change="loadData"
+        @size-change="handleSizeChange"
         @current-change="loadData"
       />
     </el-card>
@@ -80,12 +80,12 @@
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="联系人">
+            <el-form-item label="联系人" prop="contactName">
               <el-input v-model="form.contactName" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="电话">
+            <el-form-item label="电话" prop="phone">
               <el-input v-model="form.phone" />
             </el-form-item>
           </el-col>
@@ -104,17 +104,17 @@
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="国家">
+            <el-form-item label="国家" prop="country">
               <el-input v-model="form.country" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="城市">
+            <el-form-item label="城市" prop="city">
               <el-input v-model="form.city" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="地址">
+        <el-form-item label="地址" prop="address">
           <el-input v-model="form.address" />
         </el-form-item>
         <el-row :gutter="16">
@@ -145,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { getCustomerPageApi, addCustomerApi, updateCustomerApi, deleteCustomerApi } from '@/api/trade'
@@ -158,22 +158,41 @@ const isEdit = ref(false)
 const formRef = ref(null)
 
 const searchForm = reactive({ keyword: '', country: '' })
-const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0 })
+const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0, sortField: null, sortOrder: null })
 
 const defaultForm = { id: null, customerCode: '', companyName: '', contactName: '', country: '美国', city: '', address: '', email: '', phone: '', website: '', level: 'C', creditLimitUsd: 0, status: 1, remark: '' }
 const form = reactive({ ...defaultForm })
 
-const rules = {
-  customerCode: [{ required: true, message: '请输入客户编码', trigger: 'blur' }],
-  companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }]
-}
+// 新增时必填：编码、名称、联系人、电话、国家、城市、地址
+// 编辑时只保留编码和名称，避免历史数据里联系人为空的老客户被卡住改不了
+const rules = computed(() => {
+  const base = {
+    customerCode: [{ required: true, message: '请输入客户编码', trigger: 'blur' }],
+    companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }]
+  }
+  if (isEdit.value) return base
+  return {
+    ...base,
+    contactName: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+    phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
+    country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
+    city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+    address: [{ required: true, message: '请输入地址', trigger: 'blur' }]
+  }
+})
 
 const formatNum = (n) => (n == null ? '0.00' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await getCustomerPageApi({ ...searchForm, pageNum: pagination.pageNum, pageSize: pagination.pageSize })
+    const res = await getCustomerPageApi({
+      ...searchForm,
+      sortField: pagination.sortField,
+      sortOrder: pagination.sortOrder,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize
+    })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } finally {
@@ -182,7 +201,23 @@ const loadData = async () => {
 }
 
 const handleSearch = () => { pagination.pageNum = 1; loadData() }
-const handleReset = () => { searchForm.keyword = ''; searchForm.country = ''; handleSearch() }
+const handleReset = () => {
+  searchForm.keyword = ''
+  searchForm.country = ''
+  pagination.sortField = null
+  pagination.sortOrder = null
+  handleSearch()
+}
+
+// 排序：客户编码按自然序（P004）
+const handleSort = ({ prop, order }) => {
+  pagination.sortField = order ? prop : null
+  pagination.sortOrder = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : null
+  handleSearch()
+}
+
+// 切换每页条数回到第 1 页（P031）
+const handleSizeChange = () => { pagination.pageNum = 1; loadData() }
 
 const handleAdd = () => { Object.assign(form, defaultForm); isEdit.value = false; dialogVisible.value = true }
 const handleEdit = (row) => { Object.assign(form, defaultForm, row); isEdit.value = true; dialogVisible.value = true }

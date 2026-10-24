@@ -20,19 +20,19 @@
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增产品</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="tableData" border stripe>
-        <el-table-column prop="sku" label="SKU" width="120" />
-        <el-table-column prop="name" label="产品名称" min-width="150" />
+      <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
+        <el-table-column prop="sku" label="SKU" width="120" sortable="custom" />
+        <el-table-column prop="name" label="产品名称" min-width="150" sortable="custom" />
         <el-table-column prop="nameEn" label="英文名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="category" label="分类" width="100" />
+        <el-table-column prop="category" label="分类" width="100" sortable="custom" />
         <el-table-column prop="unit" label="单位" width="70" align="center" />
-        <el-table-column prop="costPrice" label="成本价(CNY)" width="120" align="right">
+        <el-table-column prop="costPrice" label="成本价(CNY)" width="130" align="right" sortable="custom">
           <template #default="{ row }">¥{{ formatNum(row.costPrice) }}</template>
         </el-table-column>
-        <el-table-column prop="salePriceUsd" label="销售价(USD)" width="120" align="right">
+        <el-table-column prop="salePriceUsd" label="销售价(USD)" width="130" align="right" sortable="custom">
           <template #default="{ row }">${{ formatNum(row.salePriceUsd) }}</template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="90" align="center">
+        <el-table-column prop="status" label="状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '在售' : '下架' }}</el-tag>
           </template>
@@ -52,7 +52,7 @@
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         class="pagination"
-        @size-change="loadData"
+        @size-change="handleSizeChange"
         @current-change="loadData"
       />
     </el-card>
@@ -62,25 +62,25 @@
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="SKU编码" prop="sku">
-              <el-input v-model="form.sku" placeholder="如 LED-001" :disabled="isEdit" />
+              <el-input v-model="form.sku" placeholder="如 LED-001" :disabled="isEdit" maxlength="50" show-word-limit />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="分类" prop="category">
-              <el-input v-model="form.category" placeholder="如 电子" />
+              <el-input v-model="form.category" placeholder="如 电子" maxlength="50" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-form-item label="产品名称" prop="name">
-          <el-input v-model="form.name" />
+          <el-input v-model="form.name" maxlength="100" show-word-limit />
         </el-form-item>
         <el-form-item label="英文名称">
-          <el-input v-model="form.nameEn" />
+          <el-input v-model="form.nameEn" maxlength="200" show-word-limit />
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="单位">
-              <el-input v-model="form.unit" placeholder="pcs" />
+              <el-input v-model="form.unit" placeholder="pcs" maxlength="20" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -101,7 +101,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="产品描述">
-          <el-input v-model="form.description" type="textarea" :rows="2" />
+          <el-input v-model="form.description" type="textarea" :rows="2" maxlength="500" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -126,7 +126,7 @@ const isEdit = ref(false)
 const formRef = ref(null)
 
 const searchForm = reactive({ keyword: '', status: null })
-const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0 })
+const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0, sortField: null, sortOrder: null })
 
 const defaultForm = { id: null, sku: '', name: '', nameEn: '', category: '', unit: 'pcs', costPrice: 0, salePriceUsd: 0, description: '', status: 1 }
 const form = reactive({ ...defaultForm })
@@ -141,7 +141,13 @@ const formatNum = (n) => (n == null ? '0.00' : Number(n).toLocaleString('en-US',
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await getProductPageApi({ ...searchForm, pageNum: pagination.pageNum, pageSize: pagination.pageSize })
+    const res = await getProductPageApi({
+      ...searchForm,
+      sortField: pagination.sortField,
+      sortOrder: pagination.sortOrder,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize
+    })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } finally {
@@ -150,7 +156,23 @@ const loadData = async () => {
 }
 
 const handleSearch = () => { pagination.pageNum = 1; loadData() }
-const handleReset = () => { searchForm.keyword = ''; searchForm.status = null; handleSearch() }
+const handleReset = () => {
+  searchForm.keyword = ''
+  searchForm.status = null
+  pagination.sortField = null
+  pagination.sortOrder = null
+  handleSearch()
+}
+
+// 排序：SKU/名称按自然序，数字部分按大小比（P004）
+const handleSort = ({ prop, order }) => {
+  pagination.sortField = order ? prop : null
+  pagination.sortOrder = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : null
+  handleSearch()
+}
+
+// 切换每页条数回到第 1 页（P031）
+const handleSizeChange = () => { pagination.pageNum = 1; loadData() }
 
 const handleAdd = () => { Object.assign(form, defaultForm); isEdit.value = false; dialogVisible.value = true }
 const handleEdit = (row) => { Object.assign(form, defaultForm, row); isEdit.value = true; dialogVisible.value = true }

@@ -66,6 +66,13 @@
             <version>${jwt.version}</version>
         </dependency>
 
+        <!-- JAXB API: JDK 11+ 已移除 javax.xml.bind，jjwt 0.9.1 仍依赖它 -->
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+
         <!-- Hutool 工具库 -->
         <dependency>
             <groupId>cn.hutool</groupId>

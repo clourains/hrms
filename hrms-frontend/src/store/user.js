@@ -4,8 +4,15 @@ import { loginApi, getUserInfoApi, logoutApi } from '@/api/auth'
 
 export const useUserStore = defineStore('user', () => {
   // state
-  const token = ref(localStorage.getItem('token') || '')
-  const userInfo = ref(JSON.parse(localStorage.getItem('userInfo') || '{}'))
+  // 兼容旧版：旧登录页写死的 mock-token-* 在加了鉴权后必然 401，这里直接清掉，避免一进页面就被弹回
+  const savedToken = localStorage.getItem('token') || ''
+  const legacyMock = savedToken.startsWith('mock-token-')
+  if (legacyMock) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('userInfo')
+  }
+  const token = ref(legacyMock ? '' : savedToken)
+  const userInfo = ref(legacyMock ? {} : JSON.parse(localStorage.getItem('userInfo') || '{}'))
 
   // getters
   const isLoggedIn = computed(() => !!token.value)

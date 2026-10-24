@@ -83,6 +83,7 @@
 import { ref, nextTick, onUnmounted } from 'vue'
 import { Delete, Close, User, Promotion } from '@element-plus/icons-vue'
 import AiPet from '@/components/AiPet.vue'
+import { useUserStore } from '@/store/user'
 
 const isOpen = ref(false)
 const inputText = ref('')
@@ -127,9 +128,15 @@ const handleSend = () => {
 
   const controller = new AbortController()
 
+  // 后端已开启接口鉴权，SSE 请求也要带 token
+  const token = useUserStore().token
+
   fetch('/api/ai/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+    },
     body: JSON.stringify({ message: text, conversationId: Date.now().toString() }),
     signal: controller.signal
   }).then(response => {

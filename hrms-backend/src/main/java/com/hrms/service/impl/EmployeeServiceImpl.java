@@ -7,6 +7,7 @@ import com.hrms.dto.PageResult;
 import com.hrms.entity.Employee;
 import com.hrms.mapper.EmployeeMapper;
 import com.hrms.service.EmployeeService;
+import com.hrms.util.Validators;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -59,6 +60,12 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public boolean save(Employee employee) {
+        Validators.text(employee.getEmpNo(), "工号");
+        Validators.text(employee.getName(), "姓名");
+        Validators.notNull(employee.getGender(), "性别");
+        Validators.notNull(employee.getDeptId(), "部门");
+        Validators.text(employee.getPosition(), "职位");
+        Validators.text(employee.getPhone(), "手机号");
         employee.setCreateTime(LocalDateTime.now());
         employee.setUpdateTime(LocalDateTime.now());
         return employeeMapper.insert(employee) > 0;
@@ -66,6 +73,16 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     @Override
     public boolean update(Employee employee) {
+        if (employee.getId() == null) {
+            throw new RuntimeException("员工不存在");
+        }
+        Employee origin = employeeMapper.selectById(employee.getId());
+        if (origin == null) {
+            throw new RuntimeException("员工不存在或已删除");
+        }
+        Validators.notCleared(origin.getEmpNo(), employee.getEmpNo(), "工号");
+        Validators.notCleared(origin.getName(), employee.getName(), "姓名");
+        Validators.notCleared(origin.getDeptId(), employee.getDeptId(), "部门");
         employee.setUpdateTime(LocalDateTime.now());
         return employeeMapper.updateById(employee) > 0;
     }

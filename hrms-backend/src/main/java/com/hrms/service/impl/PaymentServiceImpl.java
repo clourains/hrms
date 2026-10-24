@@ -10,6 +10,7 @@ import com.hrms.entity.TradeOrder;
 import com.hrms.mapper.PaymentMapper;
 import com.hrms.mapper.TradeOrderMapper;
 import com.hrms.service.PaymentService;
+import com.hrms.util.Validators;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,6 +79,13 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean save(Payment payment) {
+        Validators.notNull(payment.getType(), "收付类型");
+        Validators.notNull(payment.getAmount(), "金额");
+        Validators.positive(payment.getAmount(), "金额");
+        Validators.notNull(payment.getPaymentDate(), "收付日期");
+        if (payment.getType() != 1 && payment.getType() != 2) {
+            throw new RuntimeException("收付类型只能是收款或付款");
+        }
         if (!StringUtils.hasText(payment.getPaymentNo())) {
             payment.setPaymentNo("PAY" + System.currentTimeMillis());
         }
@@ -88,34 +96,65 @@ public class PaymentServiceImpl implements PaymentService {
         boolean saved = paymentMapper.insert(payment) > 0;
 
         // 联动更新订单付款状态（仅收款且关联订单）
-        if (saved && payment.getType() != null && payment.getType() == 1 && payment.getOrderId() != null) {
-            TradeOrder order = tradeOrderMapper.selectById(payment.getOrderId());
-            if (order != null) {
-                QueryWrapper<Payment> sumWrapper = new QueryWrapper<>();
-                sumWrapper.select("IFNULL(SUM(amount),0) AS total")
-                        .eq("order_id", payment.getOrderId())
-                        .eq("type", 1);
-                Map<String, Object> sumMap = paymentMapper.selectMaps(sumWrapper).stream().findFirst().orElse(null);
-                BigDecimal paid = BigDecimal.ZERO;
-                if (sumMap != null && sumMap.get("total") != null) {
-                    paid = new BigDecimal(sumMap.get("total").toString());
-                }
-                TradeOrder update = new TradeOrder();
-                update.setId(order.getId());
-                if (order.getTotalAmountUsd() != null && paid.compareTo(order.getTotalAmountUsd()) >= 0) {
-                    update.setPaymentStatus(2);
-                } else if (paid.compareTo(BigDecimal.ZERO) > 0) {
-                    update.setPaymentStatus(1);
-                }
-                update.setUpdateTime(LocalDateTime.now());
-                tradeOrderMapper.updateById(update);
-            }
+        if (saved && payment.getType() != null && payment.getType() == 1) {
+            refreshOrderPaymentStatus(payment.getOrderId());
         }
         return saved;
     }
 
+    /**
+     * 删除付款记录（P047）
+     *
+     * 以前只删记录、不回滚订单的 payment_status：把收款删掉以后订单还显示「已付款/部分付款」，
+     * 和付款列表对不上，付款金额也再没有入口修正。现在删完按剩余收款重算一次。
+     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteById(Long id) {
-        return paymentMapper.deleteById(id) > 0;
+        Payment payment = paymentMapper.selectById(id);
+        if (payment == null) {
+            return false;
+        }
+        boolean deleted = paymentMapper.deleteById(id) > 0;
+        // 只有收款(type=1)才影响订单付款状态
+        if (deleted && payment.getType() != null && payment.getType() == 1) {
+            refreshOrderPaymentStatus(payment.getOrderId());
+        }
+        return deleted;
+    }
+
+    /**
+     * 按订单下剩余的收款总额重算付款状态：0 未付款 / 1 部分付款 / 2 已付款。
+     * 金额全部来自 biz_payment 现算，不做增量加减，删改之后都不会残留旧值。
+     */
+    private void refreshOrderPaymentStatus(Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        TradeOrder order = tradeOrderMapper.selectById(orderId);
+        if (order == null) {
+            return;
+        }
+        QueryWrapper<Payment> sumWrapper = new QueryWrapper<>();
+        sumWrapper.select("IFNULL(SUM(amount),0) AS total")
+                .eq("order_id", orderId)
+                .eq("type", 1);
+        Map<String, Object> sumMap = paymentMapper.selectMaps(sumWrapper).stream().findFirst().orElse(null);
+        BigDecimal paid = BigDecimal.ZERO;
+        if (sumMap != null && sumMap.get("total") != null) {
+            paid = new BigDecimal(sumMap.get("total").toString());
+        }
+
+        TradeOrder update = new TradeOrder();
+        update.setId(orderId);
+        if (paid.compareTo(BigDecimal.ZERO) <= 0) {
+            update.setPaymentStatus(0);
+        } else if (order.getTotalAmountUsd() != null && paid.compareTo(order.getTotalAmountUsd()) >= 0) {
+            update.setPaymentStatus(2);
+        } else {
+            update.setPaymentStatus(1);
+        }
+        update.setUpdateTime(LocalDateTime.now());
+        tradeOrderMapper.updateById(update);
     }
 }

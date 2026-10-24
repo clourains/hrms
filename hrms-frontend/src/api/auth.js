@@ -12,7 +12,7 @@ export const logoutApi = () => {
 
 // 获取用户信息
 export const getUserInfoApi = () => {
-  return request.get('/auth/userInfo')
+  return request.get('/auth/info')
 }
 
 // 刷新 token

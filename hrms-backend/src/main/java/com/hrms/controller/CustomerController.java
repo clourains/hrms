@@ -22,55 +22,31 @@ public class CustomerController {
 
     @PostMapping("/page")
     public Result<PageResult<Customer>> page(@RequestBody BizQueryDTO queryDTO) {
-        try {
-            return Result.success(customerService.pageQuery(queryDTO));
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(customerService.pageQuery(queryDTO));
     }
 
     @GetMapping("/{id}")
     public Result<Customer> getById(@PathVariable Long id) {
-        try {
-            return Result.success(customerService.getById(id));
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(customerService.getById(id));
     }
 
     @GetMapping("/list")
     public Result<List<Customer>> list() {
-        try {
-            return Result.success(customerService.listAll());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(customerService.listAll());
     }
 
     @PostMapping
     public Result<Void> save(@RequestBody Customer customer) {
-        try {
-            return customerService.save(customer) ? Result.success("新增成功", null) : Result.error("新增失败");
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return customerService.save(customer) ? Result.success("新增成功", null) : Result.error("新增失败");
     }
 
     @PutMapping
     public Result<Void> update(@RequestBody Customer customer) {
-        try {
-            return customerService.update(customer) ? Result.success("更新成功", null) : Result.error("更新失败");
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return customerService.update(customer) ? Result.success("更新成功", null) : Result.error("更新失败");
     }
 
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
-        try {
-            return customerService.deleteById(id) ? Result.success("删除成功", null) : Result.error("删除失败");
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return customerService.deleteById(id) ? Result.success("删除成功", null) : Result.error("删除失败");
     }
 }

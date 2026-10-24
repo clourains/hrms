@@ -22,37 +22,21 @@ public class PaymentController {
 
     @PostMapping("/page")
     public Result<PageResult<Map<String, Object>>> page(@RequestBody BizQueryDTO queryDTO) {
-        try {
-            return Result.success(paymentService.pageQuery(queryDTO));
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(paymentService.pageQuery(queryDTO));
     }
 
     @GetMapping("/{id}")
     public Result<Payment> getById(@PathVariable Long id) {
-        try {
-            return Result.success(paymentService.getById(id));
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(paymentService.getById(id));
     }
 
     @PostMapping
     public Result<Void> save(@RequestBody Payment payment) {
-        try {
-            return paymentService.save(payment) ? Result.success("登记成功", null) : Result.error("登记失败");
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return paymentService.save(payment) ? Result.success("登记成功", null) : Result.error("登记失败");
     }
 
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
-        try {
-            return paymentService.deleteById(id) ? Result.success("删除成功", null) : Result.error("删除失败");
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return paymentService.deleteById(id) ? Result.success("删除成功", null) : Result.error("删除失败");
     }
 }

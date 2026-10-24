@@ -3,7 +3,9 @@ package com.hrms.service;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.entity.Shipment;
+import com.hrms.entity.ShipmentTrack;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -22,4 +24,9 @@ public interface ShipmentService {
     boolean updateStatus(Long id, Integer status);
 
     boolean deleteById(Long id);
+
+    /**
+     * 物流轨迹节点列表（P018）
+     */
+    List<ShipmentTrack> listTracks(Long shipmentId);
 }

@@ -142,31 +142,25 @@ const handleLogin = async () => {
   if (!loginFormRef.value) return
 
   await loginFormRef.value.validate(async (valid) => {
-    if (valid) {
-      loading.value = true
-      try {
-        // 模拟登录，实际项目中调用 userStore.login(loginForm)
-        // const res = await userStore.login(loginForm)
-        // 模拟登录成功
-        userStore.setToken('mock-token-' + Date.now())
-        userStore.userInfo = {
-          id: 1,
-          username: loginForm.username,
-          realName: '管理员',
-          role: 'admin',
-          avatar: ''
-        }
-        localStorage.setItem('userInfo', JSON.stringify(userStore.userInfo))
-
+    if (!valid) return
+    loading.value = true
+    try {
+      const res = await userStore.login({
+        username: loginForm.username,
+        password: loginForm.password
+      })
+      if (res.code === 200) {
         ElMessage.success('登录成功')
-
         const redirect = route.query.redirect || '/home'
         router.push(redirect)
-      } catch (error) {
-        console.error('登录失败:', error)
-      } finally {
-        loading.value = false
+      } else {
+        ElMessage.error(res.message || '用户名或密码错误')
       }
+    } catch (error) {
+      console.error('登录失败:', error)
+      ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+    } finally {
+      loading.value = false
     }
   })
 }

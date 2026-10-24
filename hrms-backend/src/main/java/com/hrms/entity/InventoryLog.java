@@ -30,7 +30,17 @@ public class InventoryLog implements Serializable {
 
     private Integer beforeQuantity;
 
+    /**
+     * 变动前锁定数量（P020）
+     */
+    private Integer beforeLockedQuantity;
+
     private Integer afterQuantity;
+
+    /**
+     * 变动后锁定数量（P020）
+     */
+    private Integer afterLockedQuantity;
 
     private String orderNo;
 
