@@ -2,6 +2,7 @@ package com.hrms.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -45,6 +46,12 @@ public class Shipment implements Serializable {
     private LocalDate eta;
 
     private Integer status;
+
+    /**
+     * 逻辑删除标记，与仓库/产品/订单口径一致（P016）
+     */
+    @TableLogic
+    private Integer deleted;
 
     private BigDecimal freightCostUsd;
 

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hrms.entity.Department;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.service.DepartmentService;
+import com.hrms.util.Validators;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -62,6 +63,8 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     public boolean save(Department department) {
+        Validators.text(department.getDeptName(), "部门名称");
+        Validators.text(department.getDeptCode(), "部门编码");
         if (department.getParentId() == null) {
             department.setParentId(0L);
         }
@@ -72,6 +75,15 @@ public class DepartmentServiceImpl implements DepartmentService {
 
     @Override
     public boolean update(Department department) {
+        if (department.getId() == null) {
+            throw new RuntimeException("部门不存在");
+        }
+        Department origin = departmentMapper.selectById(department.getId());
+        if (origin == null) {
+            throw new RuntimeException("部门不存在或已删除");
+        }
+        Validators.notCleared(origin.getDeptName(), department.getDeptName(), "部门名称");
+        Validators.notCleared(origin.getDeptCode(), department.getDeptCode(), "部门编码");
         department.setUpdateTime(LocalDateTime.now());
         return departmentMapper.updateById(department) > 0;
     }

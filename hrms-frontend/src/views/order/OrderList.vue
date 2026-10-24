@@ -19,26 +19,26 @@
         <el-button type="primary" :icon="Plus" @click="handleAdd">新建订单</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="tableData" border stripe>
-        <el-table-column label="订单号" width="170">
+      <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
+        <el-table-column label="订单号" width="170" prop="orderNo" sortable="custom">
           <template #default="{ row }">
             <el-link type="primary" @click="handleViewItems(row)">{{ row.order.orderNo }}</el-link>
           </template>
         </el-table-column>
         <el-table-column prop="customerName" label="客户" min-width="160" show-overflow-tooltip />
         <el-table-column prop="customerCountry" label="国家" width="90" />
-        <el-table-column label="订单日期" width="110">
+        <el-table-column label="订单日期" width="110" prop="orderDate" sortable="custom">
           <template #default="{ row }">{{ row.order.orderDate }}</template>
         </el-table-column>
-        <el-table-column label="总数量" width="90" align="right">
+        <el-table-column label="总数量" width="90" align="right" prop="totalQuantity" sortable="custom">
           <template #default="{ row }">{{ row.order.totalQuantity }}</template>
         </el-table-column>
-        <el-table-column label="总金额(USD)" width="130" align="right">
+        <el-table-column label="总金额(USD)" width="130" align="right" prop="totalAmountUsd" sortable="custom">
           <template #default="{ row }">
             <span style="color: #F56C6C; font-weight: 600">${{ formatNum(row.order.totalAmountUsd) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="订单状态" width="100" align="center">
+        <el-table-column label="订单状态" width="100" align="center" prop="status" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="statusTag(row.order.status)" size="small">{{ statusMap[row.order.status] }}</el-tag>
           </template>
@@ -48,13 +48,14 @@
             <el-tag :type="payTag(row.order.paymentStatus)" size="small">{{ payMap[row.order.paymentStatus] }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
+            <el-button type="primary" link :icon="View" @click="handleViewItems(row)">明细</el-button>
             <el-button v-if="row.order.status === 0" type="success" link @click="handleStatus(row, 1)">确认</el-button>
             <el-button v-if="row.order.status === 1 || row.order.status === 2" type="primary" link @click="handleStatus(row, 3)">发货</el-button>
             <el-button v-if="row.order.status === 3" type="warning" link @click="handleStatus(row, 4)">签收</el-button>
             <el-button v-if="row.order.status === 4" type="success" link @click="handleStatus(row, 5)">完成</el-button>
-            <el-button v-if="row.order.status !== 5 && row.order.status !== 9" type="info" link @click="handleStatus(row, 9)">取消</el-button>
+            <el-button v-if="(row.order.status ?? 0) <= 2" type="info" link @click="handleStatus(row, 9)">取消</el-button>
             <el-button type="danger" link :icon="Delete" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -67,7 +68,7 @@
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         class="pagination"
-        @size-change="loadData"
+        @size-change="handleSizeChange"
         @current-change="loadData"
       />
     </el-card>
@@ -191,7 +192,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Delete, View } from '@element-plus/icons-vue'
 import {
   getOrderPageApi, createOrderApi, updateOrderStatusApi, deleteOrderApi,
   getOrderItemsApi, getCustomerListApi, getProductListApi, getWarehouseListApi
@@ -210,7 +211,7 @@ const dialogVisible = ref(false)
 const formRef = ref(null)
 
 const searchForm = reactive({ keyword: '', status: null })
-const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0 })
+const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0, sortField: null, sortOrder: null })
 
 const defaultItem = () => ({ productId: null, warehouseId: null, quantity: 1, unitPriceUsd: 0 })
 const form = reactive({ customerId: null, orderDate: new Date().toISOString().slice(0, 10), exchangeRate: 7.2, remark: '', items: [defaultItem()] })
@@ -233,7 +234,13 @@ const totalAmount = computed(() => validItems.value.reduce((sum, i) => sum + (i.
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await getOrderPageApi({ ...searchForm, pageNum: pagination.pageNum, pageSize: pagination.pageSize })
+    const res = await getOrderPageApi({
+      ...searchForm,
+      sortField: pagination.sortField,
+      sortOrder: pagination.sortOrder,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize
+    })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } finally {
@@ -242,7 +249,23 @@ const loadData = async () => {
 }
 
 const handleSearch = () => { pagination.pageNum = 1; loadData() }
-const handleReset = () => { searchForm.keyword = ''; searchForm.status = null; handleSearch() }
+const handleReset = () => {
+  searchForm.keyword = ''
+  searchForm.status = null
+  pagination.sortField = null
+  pagination.sortOrder = null
+  handleSearch()
+}
+
+// 排序：订单号按数字大小排（P004）
+const handleSort = ({ prop, order }) => {
+  pagination.sortField = order ? prop : null
+  pagination.sortOrder = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : null
+  handleSearch()
+}
+
+// 切换每页条数回到第 1 页（P031）
+const handleSizeChange = () => { pagination.pageNum = 1; loadData() }
 
 const handleAdd = () => {
   Object.assign(form, {

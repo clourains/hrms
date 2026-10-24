@@ -22,55 +22,31 @@ public class BusinessController {
 
     @GetMapping("/overview")
     public Result<Map<String, Object>> overview() {
-        try {
-            return Result.success(businessService.overview());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(businessService.overview());
     }
 
     @GetMapping("/monthly-sales")
     public Result<Map<String, Object>> monthlySales() {
-        try {
-            return Result.success(businessService.monthlySales());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(businessService.monthlySales());
     }
 
     @GetMapping("/top-customers")
     public Result<List<Map<String, Object>>> topCustomers() {
-        try {
-            return Result.success(businessService.topCustomers());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(businessService.topCustomers());
     }
 
     @GetMapping("/top-products")
     public Result<List<Map<String, Object>>> topProducts() {
-        try {
-            return Result.success(businessService.topProducts());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(businessService.topProducts());
     }
 
     @GetMapping("/country-distribution")
     public Result<List<Map<String, Object>>> countryDistribution() {
-        try {
-            return Result.success(businessService.countryDistribution());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(businessService.countryDistribution());
     }
 
     @GetMapping("/inventory-value")
     public Result<List<Map<String, Object>>> inventoryValue() {
-        try {
-            return Result.success(businessService.inventoryValue());
-        } catch (Exception e) {
-            return Result.error(e.getMessage());
-        }
+        return Result.success(businessService.inventoryValue());
     }
 }

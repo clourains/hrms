@@ -14,14 +14,14 @@
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增供应商</el-button>
       </div>
 
-      <el-table v-loading="loading" :data="tableData" border stripe>
-        <el-table-column prop="supplierCode" label="编码" width="110" />
-        <el-table-column prop="companyName" label="公司名称" min-width="200" show-overflow-tooltip />
+      <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
+        <el-table-column prop="supplierCode" label="编码" width="120" sortable="custom" />
+        <el-table-column prop="companyName" label="公司名称" min-width="200" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="contactName" label="联系人" width="110" />
         <el-table-column prop="phone" label="电话" width="140" />
         <el-table-column prop="city" label="城市" width="100" />
-        <el-table-column prop="category" label="供应类别" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" width="90" align="center">
+        <el-table-column prop="category" label="供应类别" min-width="140" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="status" label="状态" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">{{ row.status === 1 ? '合作中' : '停用' }}</el-tag>
           </template>
@@ -41,7 +41,7 @@
         :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next, jumper"
         class="pagination"
-        @size-change="loadData"
+        @size-change="handleSizeChange"
         @current-change="loadData"
       />
     </el-card>
@@ -55,7 +55,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="联系人">
+            <el-form-item label="联系人" prop="contactName">
               <el-input v-model="form.contactName" />
             </el-form-item>
           </el-col>
@@ -65,7 +65,7 @@
         </el-form-item>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="电话">
+            <el-form-item label="电话" prop="phone">
               <el-input v-model="form.phone" />
             </el-form-item>
           </el-col>
@@ -77,17 +77,17 @@
         </el-row>
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="国家">
+            <el-form-item label="国家" prop="country">
               <el-input v-model="form.country" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="城市">
+            <el-form-item label="城市" prop="city">
               <el-input v-model="form.city" />
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="供应类别">
+        <el-form-item label="供应类别" prop="category">
           <el-input v-model="form.category" placeholder="如 LED照明 / 电子产品" />
         </el-form-item>
         <el-form-item label="状态">
@@ -109,7 +109,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { getSupplierPageApi, addSupplierApi, updateSupplierApi, deleteSupplierApi } from '@/api/trade'
@@ -122,20 +122,39 @@ const isEdit = ref(false)
 const formRef = ref(null)
 
 const searchForm = reactive({ keyword: '' })
-const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0 })
+const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0, sortField: null, sortOrder: null })
 
 const defaultForm = { id: null, supplierCode: '', companyName: '', contactName: '', country: '中国', city: '', phone: '', email: '', category: '', status: 1, remark: '' }
 const form = reactive({ ...defaultForm })
 
-const rules = {
-  supplierCode: [{ required: true, message: '请输入编码', trigger: 'blur' }],
-  companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }]
-}
+// 新增时必填：编码、公司名称、联系人、电话、国家、城市、供应类别
+// 编辑时只保留编码和名称，避免历史数据缺联系人的老供应商改不了
+const rules = computed(() => {
+  const base = {
+    supplierCode: [{ required: true, message: '请输入编码', trigger: 'blur' }],
+    companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }]
+  }
+  if (isEdit.value) return base
+  return {
+    ...base,
+    contactName: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+    phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
+    country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
+    city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+    category: [{ required: true, message: '请输入供应类别', trigger: 'blur' }]
+  }
+})
 
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await getSupplierPageApi({ ...searchForm, pageNum: pagination.pageNum, pageSize: pagination.pageSize })
+    const res = await getSupplierPageApi({
+      ...searchForm,
+      sortField: pagination.sortField,
+      sortOrder: pagination.sortOrder,
+      pageNum: pagination.pageNum,
+      pageSize: pagination.pageSize
+    })
     tableData.value = res.data.list
     pagination.total = res.data.total
   } finally {
@@ -144,7 +163,22 @@ const loadData = async () => {
 }
 
 const handleSearch = () => { pagination.pageNum = 1; loadData() }
-const handleReset = () => { searchForm.keyword = ''; handleSearch() }
+const handleReset = () => {
+  searchForm.keyword = ''
+  pagination.sortField = null
+  pagination.sortOrder = null
+  handleSearch()
+}
+
+// 排序：供应商编码按自然序（P004）
+const handleSort = ({ prop, order }) => {
+  pagination.sortField = order ? prop : null
+  pagination.sortOrder = order === 'ascending' ? 'asc' : order === 'descending' ? 'desc' : null
+  handleSearch()
+}
+
+// 切换每页条数回到第 1 页（P031）
+const handleSizeChange = () => { pagination.pageNum = 1; loadData() }
 
 const handleAdd = () => { Object.assign(form, defaultForm); isEdit.value = false; dialogVisible.value = true }
 const handleEdit = (row) => { Object.assign(form, defaultForm, row); isEdit.value = true; dialogVisible.value = true }

@@ -44,7 +44,7 @@
       </el-menu>
     </el-aside>
 
-    <el-container>
+    <el-container class="main-container">
       <!-- 头部 -->
       <el-header class="header">
         <div class="header-left">
@@ -60,13 +60,42 @@
 
         <div class="header-right">
           <el-tooltip content="搜索" placement="bottom">
-            <el-icon class="header-icon" :size="18"><Search /></el-icon>
+            <el-icon class="header-icon" :size="18" @click="openSearch"><Search /></el-icon>
           </el-tooltip>
-          <el-tooltip content="通知" placement="bottom">
-            <el-badge :value="5" :max="99" class="header-icon">
-              <el-icon :size="18"><Bell /></el-icon>
-            </el-badge>
-          </el-tooltip>
+          <el-popover
+            v-model:visible="noticeVisible"
+            placement="bottom-end"
+            :width="360"
+            trigger="click"
+            @show="loadWarnings"
+          >
+            <template #reference>
+              <el-badge :value="warningCount" :max="99" :hidden="warningCount === 0" class="header-icon">
+                <el-icon :size="18"><Bell /></el-icon>
+              </el-badge>
+            </template>
+            <div class="notice-panel">
+              <div class="notice-head">
+                <span>库存预警</span>
+                <el-button link type="primary" @click="goWarning">查看全部</el-button>
+              </div>
+              <el-empty v-if="warnings.length === 0" description="暂无预警" :image-size="56" />
+              <div v-else class="notice-list">
+                <div v-for="w in warnings.slice(0, 6)" :key="w.id" class="notice-item" @click="goWarning">
+                  <div class="notice-title">
+                    {{ w.productName || '未知产品' }}
+                    <span class="notice-sku">{{ w.sku }}</span>
+                  </div>
+                  <div class="notice-sub">
+                    {{ w.warehouseName }} · 可用 {{ w.availableQuantity }} / 预警值 {{ w.warningQuantity }}
+                  </div>
+                </div>
+                <div v-if="warnings.length > 6" class="notice-more" @click="goWarning">
+                  还有 {{ warnings.length - 6 }} 条，点击查看全部
+                </div>
+              </div>
+            </div>
+          </el-popover>
           <el-tooltip content="全屏" placement="bottom">
             <el-icon class="header-icon" :size="18" @click="toggleFullscreen">
               <FullScreen />
@@ -109,14 +138,38 @@
     </el-container>
 
     <AiChat />
+
+    <!-- 全局搜索（P022） -->
+    <el-dialog v-model="searchVisible" title="搜索" width="520px" append-to-body>
+      <el-input
+        ref="searchInputRef"
+        v-model="searchKeyword"
+        placeholder="输入页面名称，如 库存 / 物流 / 订单"
+        prefix-icon="Search"
+        clearable
+      />
+      <div class="search-list">
+        <div
+          v-for="m in filteredMenus"
+          :key="m.path"
+          class="search-item"
+          @click="goMenu(m.path)"
+        >
+          <el-icon><component :is="m.icon" /></el-icon>
+          <span>{{ m.title }}</span>
+        </div>
+        <el-empty v-if="filteredMenus.length === 0" description="没有匹配的页面" :image-size="56" />
+      </div>
+    </el-dialog>
   </el-container>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
+import { getInventoryWarningApi, getInventoryWarningCountApi } from '@/api/trade'
 import {
   User,
   OfficeBuilding,
@@ -197,6 +250,65 @@ const defaultOpeneds = computed(() => {
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
 
+// ========== 顶部搜索（P022） ==========
+const searchVisible = ref(false)
+const searchKeyword = ref('')
+const searchInputRef = ref(null)
+
+const filteredMenus = computed(() => {
+  const kw = searchKeyword.value.trim().toLowerCase()
+  if (!kw) return menuItems
+  return menuItems.filter(m => m.title.toLowerCase().includes(kw) || m.path.toLowerCase().includes(kw))
+})
+
+const openSearch = () => {
+  searchKeyword.value = ''
+  searchVisible.value = true
+  nextTick(() => searchInputRef.value?.focus())
+}
+
+const goMenu = (path) => {
+  searchVisible.value = false
+  if (route.path === path) return
+  router.push(path)
+}
+
+// ========== 顶部通知：库存预警（P022） ==========
+const noticeVisible = ref(false)
+const warningCount = ref(0)
+const warnings = ref([])
+
+const loadWarnings = async () => {
+  try {
+    const res = await getInventoryWarningApi()
+    warnings.value = res.data || []
+    warningCount.value = warnings.value.length
+  } catch (e) {
+    warnings.value = []
+    warningCount.value = 0
+  }
+}
+
+const goWarning = () => {
+  noticeVisible.value = false
+  // 库存预警页已合并到"库存总览"，这里直接带筛选条件过去
+  router.push({ path: '/warehouse', query: { tab: 'inventory', lowStock: '1' } })
+}
+
+const refreshWarningCount = async () => {
+  try {
+    const res = await getInventoryWarningCountApi()
+    warningCount.value = res.data || 0
+  } catch (e) {
+    // 未登录或接口异常时不显示红点即可
+  }
+}
+
+onMounted(refreshWarningCount)
+
+// 切换页面时刷新红点，避免库存变动后数字不更新
+watch(() => route.path, () => refreshWarningCount())
+
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
 }
@@ -242,14 +354,29 @@ const handleCommand = async (command) => {
   overflow: hidden;
 }
 
+/*
+ * 右侧主区必须能"收缩"
+ * flex 子项默认 min-height:auto，会被内容撑到实际高度；
+ * 外层又有 overflow:hidden，超出 100vh 的部分直接被裁掉，
+ * 而且 el-main 自身高度等于内容高度，overflow-y:auto 永远不触发 → 滚轮失效。
+ * 加 min-height:0 后 el-main 才被限制在视口内，内部滚动条才出现。
+ */
+.main-container {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .sidebar {
   background-color: #304156;
   transition: width 0.3s;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .logo {
   height: 60px;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -284,9 +411,31 @@ const handleCommand = async (command) => {
   white-space: nowrap;
 }
 
+/*
+ * 菜单自己滚动
+ * 原来写死 height: calc(100vh - 60px) 且外层 overflow:hidden，
+ * 菜单项一多就整块被裁掉、也没有滚动条，所以下面的供应商/物流追踪看不到。
+ */
 .sidebar-menu {
   border-right: none;
-  height: calc(100vh - 60px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.32);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
 .header {
@@ -360,7 +509,47 @@ const handleCommand = async (command) => {
 .main-content {
   background-color: #f5f7fa;
   padding: 20px;
+  min-height: 0;
   overflow-y: auto;
+}
+
+/* 顶部通知面板 */
+.notice-panel { max-height: 420px; overflow-y: auto; }
+.notice-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 8px;
+}
+.notice-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &:hover { background-color: #f5f7fa; }
+}
+.notice-title { font-size: 13px; color: #303133; font-weight: 500; }
+.notice-sku { color: #909399; font-weight: 400; margin-left: 6px; font-size: 12px; }
+.notice-sub { font-size: 12px; color: #F56C6C; margin-top: 2px; }
+.notice-more { text-align: center; font-size: 12px; color: #409EFF; padding: 8px 0; cursor: pointer; }
+
+/* 全局搜索列表 */
+.search-list { margin-top: 12px; max-height: 360px; overflow-y: auto; }
+.search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #303133;
+
+  &:hover { background-color: #f5f7fa; color: #409EFF; }
 }
 
 /* 路由过渡动画 */
