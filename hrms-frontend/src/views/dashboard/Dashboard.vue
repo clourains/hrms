@@ -10,11 +10,11 @@
 
     <!-- 下半部分：人力资源分析 -->
     <section class="dash-section">
-      <!-- 1. 原仪表盘的人力图文（统计卡 / 人员结构 / 入离职趋势 / 考勤 / 薪资 / 绩效 / 快捷入口），原样嵌入 -->
-      <HrOverview />
-      <!-- 2. 原智能分析页（部门分布 / 流失预测 / 人才雷达 / 招聘预测 / AI 洞察），原样嵌入 -->
-      <div class="dash-inner-divider"></div>
+      <!-- 1. 原智能分析页（核心指标 / 部门分布 / 员工结构 / 流失预测 / 薪资 / 绩效 / 考勤 / 雷达 / 招聘表 / AI 洞察），原样嵌入 -->
       <Analytics />
+      <!-- 2. 原仪表盘独有内容：入离职趋势（紧跟流失预测，历史与预测衔接）+ 快捷入口 + 最新动态 -->
+      <div class="dash-inner-divider"></div>
+      <HrOverview />
     </section>
   </div>
 </template>
