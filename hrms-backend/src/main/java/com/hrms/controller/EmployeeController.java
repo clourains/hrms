@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.EmployeeQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.entity.Employee;
@@ -62,6 +63,7 @@ public class EmployeeController {
     /**
      * 新增员工
      */
+    @RequireRole("admin")
     @PostMapping
     public Result<Void> save(@RequestBody Employee employee) {
         try {
@@ -79,6 +81,7 @@ public class EmployeeController {
     /**
      * 更新员工信息
      */
+    @RequireRole("admin")
     @PutMapping
     public Result<Void> update(@RequestBody Employee employee) {
         try {
@@ -96,6 +99,7 @@ public class EmployeeController {
     /**
      * 根据ID删除员工
      */
+    @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
         try {
@@ -113,6 +117,7 @@ public class EmployeeController {
     /**
      * 批量删除员工
      */
+    @RequireRole("admin")
     @DeleteMapping("/batch")
     public Result<Void> deleteBatch(@RequestBody List<Long> ids) {
         try {

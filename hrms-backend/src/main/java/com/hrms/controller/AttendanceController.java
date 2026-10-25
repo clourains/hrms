@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.entity.Attendance;
 import com.hrms.service.AttendanceService;
 import com.hrms.util.JwtUtil;
@@ -94,6 +95,7 @@ public class AttendanceController {
     /**
      * 新增考勤记录
      */
+    @RequireRole("admin")
     @PostMapping
     public Result<Void> save(@RequestBody Attendance attendance) {
         try {
@@ -111,6 +113,7 @@ public class AttendanceController {
     /**
      * 更新考勤记录
      */
+    @RequireRole("admin")
     @PutMapping
     public Result<Void> update(@RequestBody Attendance attendance) {
         try {
@@ -128,6 +131,7 @@ public class AttendanceController {
     /**
      * 根据ID删除考勤记录
      */
+    @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
         try {

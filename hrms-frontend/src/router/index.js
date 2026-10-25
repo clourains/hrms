@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
 
 const routes = [
@@ -36,13 +37,13 @@ const routes = [
         path: 'employee',
         name: 'Employee',
         component: () => import('@/views/employee/EmployeeList.vue'),
-        meta: { title: '员工管理', icon: 'User' }
+        meta: { title: '员工管理', icon: 'User', requiresAdmin: true }
       },
       {
         path: 'department',
         name: 'Department',
         component: () => import('@/views/department/DepartmentList.vue'),
-        meta: { title: '部门管理', icon: 'OfficeBuilding' }
+        meta: { title: '部门管理', icon: 'OfficeBuilding', requiresAdmin: true }
       },
       {
         path: 'attendance',
@@ -66,55 +67,55 @@ const routes = [
         path: 'analytics',
         name: 'Analytics',
         component: () => import('@/views/analytics/Analytics.vue'),
-        meta: { title: '智能分析', icon: 'DataAnalysis' }
+        meta: { title: '智能分析', icon: 'DataAnalysis', requiresAdmin: true }
       },
       {
         path: 'business',
         name: 'Business',
         component: () => import('@/views/business/BusinessAnalysis.vue'),
-        meta: { title: '营业分析', icon: 'Histogram' }
+        meta: { title: '营业分析', icon: 'Histogram', requiresAdmin: true }
       },
       {
         path: 'order',
         name: 'Order',
         component: () => import('@/views/order/OrderList.vue'),
-        meta: { title: '销售订单', icon: 'Tickets' }
+        meta: { title: '销售订单', icon: 'Tickets', requiresAdmin: true }
       },
       {
         path: 'product',
         name: 'Product',
         component: () => import('@/views/product/ProductList.vue'),
-        meta: { title: '产品管理', icon: 'Goods' }
+        meta: { title: '产品管理', icon: 'Goods', requiresAdmin: true }
       },
       {
         path: 'warehouse',
         name: 'Warehouse',
         component: () => import('@/views/warehouse/WarehouseList.vue'),
-        meta: { title: '仓库库存', icon: 'Box' }
+        meta: { title: '仓库库存', icon: 'Box', requiresAdmin: true }
       },
       {
         path: 'customer',
         name: 'Customer',
         component: () => import('@/views/customer/CustomerList.vue'),
-        meta: { title: '境外客户', icon: 'UserFilled' }
+        meta: { title: '境外客户', icon: 'UserFilled', requiresAdmin: true }
       },
       {
         path: 'supplier',
         name: 'Supplier',
         component: () => import('@/views/supplier/SupplierList.vue'),
-        meta: { title: '供应商', icon: 'Van' }
+        meta: { title: '供应商', icon: 'Van', requiresAdmin: true }
       },
       {
         path: 'shipment',
         name: 'Shipment',
         component: () => import('@/views/shipment/ShipmentList.vue'),
-        meta: { title: '物流跟踪', icon: 'Ship' }
+        meta: { title: '物流跟踪', icon: 'Ship', requiresAdmin: true }
       },
       {
         path: 'payment',
         name: 'Payment',
         component: () => import('@/views/payment/PaymentList.vue'),
-        meta: { title: '收付款', icon: 'Wallet' }
+        meta: { title: '收付款', icon: 'Wallet', requiresAdmin: true }
       }
     ]
   },
@@ -145,6 +146,10 @@ router.beforeEach((to, from, next) => {
     next({ path: '/portal', query: { redirect: to.fullPath } })
   } else if ((to.path === '/login' || to.path === '/portal') && token) {
     // 已登录访问登录页/品牌首页，直接进系统首页
+    next({ path: '/home' })
+  } else if (to.meta.requiresAdmin && userStore.role !== 'admin') {
+    // P045 角色权限：非管理员访问管理页面，弹回首页
+    ElMessage.warning('您没有权限访问该页面')
     next({ path: '/home' })
   } else {
     next()

@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.entity.Payment;
@@ -12,7 +13,10 @@ import java.util.Map;
 
 /**
  * 收付款Controller
+ *
+ * 业务模块整体仅管理员可访问（P045）
  */
+@RequireRole("admin")
 @RestController
 @RequestMapping("/payment")
 public class PaymentController {

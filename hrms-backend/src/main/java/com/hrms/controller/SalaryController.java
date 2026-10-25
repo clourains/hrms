@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.entity.Salary;
 import com.hrms.service.SalaryService;
 import com.hrms.util.Result;
@@ -74,6 +75,7 @@ public class SalaryController {
     /**
      * 新增薪资记录
      */
+    @RequireRole("admin")
     @PostMapping
     public Result<Void> save(@RequestBody Salary salary) {
         try {
@@ -91,6 +93,7 @@ public class SalaryController {
     /**
      * 更新薪资记录
      */
+    @RequireRole("admin")
     @PutMapping
     public Result<Void> update(@RequestBody Salary salary) {
         try {
@@ -108,6 +111,7 @@ public class SalaryController {
     /**
      * 根据ID删除薪资记录
      */
+    @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
         try {

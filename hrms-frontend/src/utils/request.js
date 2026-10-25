@@ -38,7 +38,8 @@ service.interceptors.response.use(
       ElMessage.error(res.message || '请求失败')
 
       // token 过期或未授权
-      if (res.code === 401 || res.code === 403) {
+      // P045：403 是权限不足，保留登录态只提示，只有 401 才登出
+      if (res.code === 401) {
         const userStore = useUserStore()
         userStore.clearUser()
         router.push('/login')

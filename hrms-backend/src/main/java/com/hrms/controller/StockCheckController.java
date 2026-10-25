@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.dto.StockCheckOrderDTO;
@@ -12,7 +13,10 @@ import java.util.Map;
 
 /**
  * 库存盘点单Controller（P019）
+ *
+ * 业务模块整体仅管理员可访问（P045）
  */
+@RequireRole("admin")
 @RestController
 @RequestMapping("/stock-check")
 public class StockCheckController {

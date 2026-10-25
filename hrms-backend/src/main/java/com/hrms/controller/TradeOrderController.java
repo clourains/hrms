@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.OrderCreateDTO;
 import com.hrms.dto.PageResult;
@@ -15,7 +16,10 @@ import java.util.Map;
 
 /**
  * 销售订单Controller
+ *
+ * 业务模块整体仅管理员可访问（P045）
  */
+@RequireRole("admin")
 @RestController
 @RequestMapping("/order")
 public class TradeOrderController {

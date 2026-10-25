@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.entity.Department;
 import com.hrms.service.DepartmentService;
 import com.hrms.util.Result;
@@ -60,6 +61,7 @@ public class DepartmentController {
     /**
      * 新增部门
      */
+    @RequireRole("admin")
     @PostMapping
     public Result<Void> save(@RequestBody Department department) {
         try {
@@ -77,6 +79,7 @@ public class DepartmentController {
     /**
      * 更新部门信息
      */
+    @RequireRole("admin")
     @PutMapping
     public Result<Void> update(@RequestBody Department department) {
         try {
@@ -94,6 +97,7 @@ public class DepartmentController {
     /**
      * 根据ID删除部门
      */
+    @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
         try {
