@@ -1,14 +1,24 @@
 package com.hrms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.hrms.entity.Attendance;
+import com.hrms.entity.Employee;
+import com.hrms.entity.Performance;
 import com.hrms.entity.Salary;
+import com.hrms.mapper.AttendanceMapper;
+import com.hrms.mapper.EmployeeMapper;
+import com.hrms.mapper.PerformanceMapper;
 import com.hrms.mapper.SalaryMapper;
 import com.hrms.service.SalaryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +31,15 @@ public class SalaryServiceImpl implements SalaryService {
 
     @Autowired
     private SalaryMapper salaryMapper;
+
+    @Autowired
+    private EmployeeMapper employeeMapper;
+
+    @Autowired
+    private AttendanceMapper attendanceMapper;
+
+    @Autowired
+    private PerformanceMapper performanceMapper;
 
     @Override
     public Salary getById(Long id) {
@@ -131,6 +150,169 @@ public class SalaryServiceImpl implements SalaryService {
     @Override
     public boolean deleteById(Long id) {
         return salaryMapper.deleteById(id) > 0;
+    }
+
+    /** 迟到/早退单次扣款（元） */
+    private static final BigDecimal LATE_EARLY_FINE = new BigDecimal("50");
+    /** 社保个人缴纳比例（占底薪） */
+    private static final BigDecimal SOCIAL_SECURITY_RATE = new BigDecimal("0.105");
+    /** 公积金个人缴纳比例（占底薪） */
+    private static final BigDecimal HOUSING_FUND_RATE = new BigDecimal("0.07");
+    /** 绩效奖金上限系数：满分绩效可拿底薪的 20% */
+    private static final BigDecimal PERFORMANCE_MAX_RATE = new BigDecimal("0.2");
+    /** 绩效满分（5 个维度 × 100 分） */
+    private static final BigDecimal PERFORMANCE_FULL_SCORE = new BigDecimal("500");
+    /** 个税起征点（月） */
+    private static final BigDecimal TAX_THRESHOLD = new BigDecimal("5000");
+
+    @Override
+    public Map<String, Object> calculateMonth(String salaryMonth) {
+        YearMonth yearMonth = YearMonth.parse(salaryMonth);
+        LocalDate startDate = yearMonth.atDay(1);
+        LocalDate endDate = yearMonth.atEndOfMonth();
+        LocalDate today = LocalDate.now();
+        // 当月未结束只按已过工作日算缺勤，避免月末未到全员"缺勤"
+        LocalDate attendDeadline = yearMonth.equals(YearMonth.from(today)) ? today : endDate;
+
+        // 在职员工（status 0 为离职）
+        List<Employee> employees = employeeMapper.selectList(
+                new LambdaQueryWrapper<Employee>().ne(Employee::getStatus, 0).orderByAsc(Employee::getId));
+
+        int created = 0;
+        int skipped = 0;
+        for (Employee emp : employees) {
+            LambdaQueryWrapper<Salary> dupWrapper = new LambdaQueryWrapper<>();
+            dupWrapper.eq(Salary::getEmpId, emp.getId()).eq(Salary::getSalaryMonth, salaryMonth);
+            if (salaryMapper.selectCount(dupWrapper) > 0) {
+                skipped++;
+                continue;
+            }
+
+            Salary salary = new Salary();
+            salary.setEmpId(emp.getId());
+            salary.setSalaryMonth(salaryMonth);
+
+            // 1) 底薪取员工档案
+            BigDecimal base = emp.getSalary() == null ? BigDecimal.ZERO : emp.getSalary();
+            salary.setBaseSalary(base);
+
+            // 2) 考勤联动：缺勤扣款（日薪 × 缺勤天数）+ 迟到早退扣款
+            long workDays = countWorkDays(startDate, attendDeadline);
+            List<Attendance> attList = attendanceMapper.selectList(
+                    new LambdaQueryWrapper<Attendance>()
+                            .eq(Attendance::getEmpId, emp.getId())
+                            .between(Attendance::getAttendDate, startDate, endDate));
+            long attendDays = attList.size();
+            int lateCount = 0;
+            int earlyCount = 0;
+            for (Attendance att : attList) {
+                Integer st = att.getStatus();
+                if (st != null && (st == 1 || st == 3)) {
+                    lateCount++;
+                }
+                if (st != null && (st == 2 || st == 3)) {
+                    earlyCount++;
+                }
+            }
+            long absentDays = Math.max(0, workDays - attendDays);
+            BigDecimal daySalary = base.divide(new BigDecimal("21.75"), 4, RoundingMode.HALF_UP);
+            BigDecimal absentCut = daySalary.multiply(BigDecimal.valueOf(absentDays))
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal lateCut = LATE_EARLY_FINE.multiply(BigDecimal.valueOf(lateCount + earlyCount));
+            salary.setOtherDeduction(absentCut.add(lateCut));
+
+            // 3) 绩效联动：当月评分取最高分（sys_performance.status 语义未统一，这里不做状态过滤）
+            List<Performance> perfList = performanceMapper.selectList(
+                    new LambdaQueryWrapper<Performance>()
+                            .eq(Performance::getEmpId, emp.getId())
+                            .eq(Performance::getPeriod, salaryMonth)
+                            .orderByDesc(Performance::getTotalScore));
+            Performance best = perfList.isEmpty() ? null : perfList.get(0);
+            BigDecimal bonus = BigDecimal.ZERO;
+            if (best != null && best.getTotalScore() != null) {
+                BigDecimal rate = best.getTotalScore().min(PERFORMANCE_FULL_SCORE)
+                        .divide(PERFORMANCE_FULL_SCORE, 4, RoundingMode.HALF_UP);
+                bonus = base.multiply(PERFORMANCE_MAX_RATE).multiply(rate).setScale(2, RoundingMode.HALF_UP);
+            }
+            salary.setPerformanceBonus(bonus);
+
+            // 4) 五险一金按比例估算
+            salary.setSocialSecurity(base.multiply(SOCIAL_SECURITY_RATE).setScale(2, RoundingMode.HALF_UP));
+            salary.setHousingFund(base.multiply(HOUSING_FUND_RATE).setScale(2, RoundingMode.HALF_UP));
+            salary.setOvertimePay(BigDecimal.ZERO);
+            salary.setAllowance(BigDecimal.ZERO);
+
+            // 5) 简化月度个税：（应发 − 起征点 − 社保公积金）按月度税率表
+            BigDecimal taxable = base.add(bonus).subtract(TAX_THRESHOLD)
+                    .subtract(salary.getSocialSecurity()).subtract(salary.getHousingFund());
+            salary.setTax(monthlyTax(taxable.max(BigDecimal.ZERO)));
+
+            // 6) 实发 = 应发 − 各项扣除（复用既有逻辑）；保底实发不为负（当月无考勤的新员工避免扣穿）
+            calculateNetSalary(salary);
+            if (salary.getNetSalary().compareTo(BigDecimal.ZERO) < 0) {
+                salary.setOtherDeduction(salary.getOtherDeduction().add(salary.getNetSalary()));
+                calculateNetSalary(salary);
+            }
+
+            String perfText = best != null && best.getTotalScore() != null
+                    ? best.getTotalScore().stripTrailingZeros().toPlainString() + "分" : "无";
+            salary.setRemark(String.format(
+                    "系统计算：出勤%d天/缺勤%d天/迟到早退%d次；绩效%s；缺勤扣%.2f元",
+                    attendDays, absentDays, lateCount + earlyCount, perfText, absentCut));
+            salary.setStatus(1);
+            salary.setCreateTime(LocalDateTime.now());
+            salary.setUpdateTime(LocalDateTime.now());
+            salaryMapper.insert(salary);
+            created++;
+        }
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("month", salaryMonth);
+        data.put("total", employees.size());
+        data.put("created", created);
+        data.put("skipped", skipped);
+        return data;
+    }
+
+    /**
+     * 统计 [start, end] 内的工作日（周一至周五）
+     */
+    private long countWorkDays(LocalDate start, LocalDate end) {
+        long count = 0;
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            DayOfWeek w = d.getDayOfWeek();
+            if (w != DayOfWeek.SATURDAY && w != DayOfWeek.SUNDAY) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 简化个税：按月度税率表速算（不考虑专项附加扣除）
+     */
+    private BigDecimal monthlyTax(BigDecimal taxable) {
+        BigDecimal[] brackets = {
+                new BigDecimal("3000"), new BigDecimal("12000"), new BigDecimal("25000"),
+                new BigDecimal("35000"), new BigDecimal("55000"), new BigDecimal("80000")
+        };
+        BigDecimal[] rates = {
+                new BigDecimal("0.03"), new BigDecimal("0.10"), new BigDecimal("0.20"),
+                new BigDecimal("0.25"), new BigDecimal("0.30"), new BigDecimal("0.35"), new BigDecimal("0.45")
+        };
+        BigDecimal[] deductions = {
+                BigDecimal.ZERO, new BigDecimal("210"), new BigDecimal("1410"),
+                new BigDecimal("2660"), new BigDecimal("4410"), new BigDecimal("7160"), new BigDecimal("15160")
+        };
+        int level = brackets.length;
+        for (int i = 0; i < brackets.length; i++) {
+            if (taxable.compareTo(brackets[i]) <= 0) {
+                level = i;
+                break;
+            }
+        }
+        return taxable.multiply(rates[level]).subtract(deductions[level])
+                .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**

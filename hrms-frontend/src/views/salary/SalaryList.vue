@@ -1,8 +1,8 @@
 <template>
   <div class="salary-container">
     <el-card shadow="hover">
-      <!-- 统计概览 -->
-      <el-row :gutter="20" class="stat-row">
+      <!-- 统计概览（仅管理员，普通员工不展示全员统计） -->
+      <el-row v-if="isAdmin" :gutter="20" class="stat-row">
         <el-col :xs="12" :sm="6">
           <div class="stat-card primary">
             <div class="stat-label">本月应发总额</div>
@@ -66,11 +66,14 @@
 
       <!-- 操作栏 -->
       <div class="action-bar">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
-        <el-button type="success" :icon="Money" @click="handleGenerate">生成工资条</el-button>
-        <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
-        <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
-        <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
+        <template v-if="isAdmin">
+          <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
+          <el-button type="success" :icon="MagicStick" :loading="calcLoading" @click="handleCalculate">一键计算薪资</el-button>
+          <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
+          <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
+          <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
+        </template>
+        <span v-else class="self-note">普通员工仅可查看本人薪资记录</span>
       </div>
 
       <!-- 表格 -->
@@ -105,8 +108,8 @@
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">工资条</el-button>
-            <el-button type="primary" link size="small" @click="handleEdit(row)">调整</el-button>
-            <el-button type="success" link size="small" @click="handleSend(row)">发送</el-button>
+            <el-button v-if="isAdmin" type="primary" link size="small" @click="handleEdit(row)">调整</el-button>
+            <el-button type="success" link size="small" @click="handleDownloadPayslip(row)">PDF</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -240,9 +243,14 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Search, Refresh, Plus, Money, TrendCharts, Setting, Download } from '@element-plus/icons-vue'
-import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi } from '@/api/salary'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download } from '@element-plus/icons-vue'
+import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, downloadPayslipApi } from '@/api/salary'
+import { useUserStore } from '@/store/user'
+
+const userStore = useUserStore()
+// P3-2：普通员工只看本人薪资，管理操作仅管理员可见
+const isAdmin = computed(() => userStore.role === 'admin')
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
@@ -383,6 +391,7 @@ const buildChange = (cur, prev) => {
 }
 
 const loadStats = async () => {
+  if (!isAdmin.value) return
   try {
     const month = currentMonth()
     const now = new Date()
@@ -463,8 +472,30 @@ const handleView = (row) => {
   payslipVisible.value = true
 }
 
-const handleSend = (row) => {
-  ElMessage.success(`已向 ${row.name} 发送工资条`)
+// P2-3 下载工资条 PDF（管理员任意员工 / 普通员工仅自己）
+const handleDownloadPayslip = async (row) => {
+  try {
+    const response = await downloadPayslipApi({ empId: row.empId, salaryMonth: row.salaryMonth })
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      const json = JSON.parse(text)
+      ElMessage.error(json.message || '下载失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `工资条_${row.name}_${row.salaryMonth}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('工资条 PDF 已下载')
+  } catch (e) {
+    // 拦截器已提示
+  }
 }
 
 // 新增模式下选择员工后带出姓名/部门展示
@@ -513,9 +544,31 @@ const handleSubmit = async () => {
   }
 }
 
-// 后端暂无工资条生成/批量调薪/薪资结构/导出接口，保留演示逻辑
-const handleGenerate = () => {
-  ElMessage.success('工资条生成成功')
+// P2-2 一键计算月度薪资：底薪 + 考勤扣款 + 绩效奖金联动，已有记录跳过
+const calcLoading = ref(false)
+const handleCalculate = async () => {
+  const month = currentMonth()
+  try {
+    await ElMessageBox.confirm(
+      `将按「档案底薪 + 当月考勤扣款（缺勤/迟到早退）+ 绩效奖金联动 + 五险一金个税估算」为在职员工生成 ${month} 薪资记录；已有当月记录的员工将跳过。是否继续？`,
+      '一键计算薪资',
+      { confirmButtonText: '开始计算', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  calcLoading.value = true
+  try {
+    const res = await calculateSalaryApi(month)
+    const d = res.data || {}
+    ElMessage.success(`${month} 计算完成：新增 ${d.created ?? 0} 条，跳过 ${d.skipped ?? 0} 条（已有记录）`)
+    await loadData()
+    loadStats()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    calcLoading.value = false
+  }
 }
 
 const handleBatchAdjust = () => {

@@ -64,6 +64,36 @@ const routes = [
         meta: { title: '绩效管理', icon: 'TrendCharts' }
       },
       {
+        path: 'approval',
+        name: 'Approval',
+        component: () => import('@/views/approval/ApprovalCenter.vue'),
+        meta: { title: '审批中心', icon: 'DocumentChecked' }
+      },
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/profile/Profile.vue'),
+        meta: { title: '个人中心' }
+      },
+      {
+        path: 'message',
+        name: 'Message',
+        component: () => import('@/views/message/MessageList.vue'),
+        meta: { title: '消息中心', icon: 'ChatDotRound' }
+      },
+      {
+        path: 'reminder',
+        name: 'Reminder',
+        component: () => import('@/views/reminder/ReminderList.vue'),
+        meta: { title: '到期提醒', icon: 'Bell', requiresAdmin: true }
+      },
+      {
+        path: 'audit',
+        name: 'Audit',
+        component: () => import('@/views/system/AuditLogList.vue'),
+        meta: { title: '审计日志', icon: 'Document', requiresAdmin: true }
+      },
+      {
         path: 'analytics',
         name: 'Analytics',
         component: () => import('@/views/analytics/Analytics.vue'),
