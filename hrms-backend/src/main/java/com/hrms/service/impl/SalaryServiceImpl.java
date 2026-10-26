@@ -3,13 +3,16 @@ package com.hrms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hrms.entity.Attendance;
 import com.hrms.entity.Employee;
+import com.hrms.entity.Overtime;
 import com.hrms.entity.Performance;
 import com.hrms.entity.Salary;
 import com.hrms.mapper.AttendanceMapper;
 import com.hrms.mapper.EmployeeMapper;
+import com.hrms.mapper.OvertimeMapper;
 import com.hrms.mapper.PerformanceMapper;
 import com.hrms.mapper.SalaryMapper;
 import com.hrms.service.SalaryService;
+import com.hrms.util.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +25,8 @@ import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 薪资Service实现类
@@ -41,6 +46,9 @@ public class SalaryServiceImpl implements SalaryService {
     @Autowired
     private PerformanceMapper performanceMapper;
 
+    @Autowired
+    private OvertimeMapper overtimeMapper;
+
     @Override
     public Salary getById(Long id) {
         return salaryMapper.selectById(id);
@@ -59,7 +67,15 @@ public class SalaryServiceImpl implements SalaryService {
         LambdaQueryWrapper<Salary> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Salary::getSalaryMonth, salaryMonth)
                 .orderByAsc(Salary::getEmpId);
-        return salaryMapper.selectList(queryWrapper);
+        List<Salary> list = salaryMapper.selectList(queryWrapper);
+        // P4-3 部门数据权限：部门经理仅看本部门员工薪资
+        if (UserContext.isManager() && UserContext.getDeptId() != null) {
+            Set<Long> deptEmpIds = employeeMapper.selectList(new LambdaQueryWrapper<Employee>()
+                            .eq(Employee::getDeptId, UserContext.getDeptId()))
+                    .stream().map(Employee::getId).collect(Collectors.toSet());
+            list = list.stream().filter(s -> deptEmpIds.contains(s.getEmpId())).collect(Collectors.toList());
+        }
+        return list;
     }
 
     @Override
@@ -236,18 +252,39 @@ public class SalaryServiceImpl implements SalaryService {
             }
             salary.setPerformanceBonus(bonus);
 
-            // 4) 五险一金按比例估算
-            salary.setSocialSecurity(base.multiply(SOCIAL_SECURITY_RATE).setScale(2, RoundingMode.HALF_UP));
-            salary.setHousingFund(base.multiply(HOUSING_FUND_RATE).setScale(2, RoundingMode.HALF_UP));
-            salary.setOvertimePay(BigDecimal.ZERO);
+            // 4) 加班费联动（P4-1）：当月已通过的加班单，工作日 1.5 倍、周末 2.0 倍时薪
+            BigDecimal overtimePay = BigDecimal.ZERO;
+            BigDecimal totalOtHours = BigDecimal.ZERO;
+            List<Overtime> otList = overtimeMapper.selectList(new LambdaQueryWrapper<Overtime>()
+                    .eq(Overtime::getEmpId, emp.getId())
+                    .eq(Overtime::getStatus, 1)
+                    .between(Overtime::getOvertimeDate, startDate, endDate));
+            if (!otList.isEmpty()) {
+                BigDecimal hourWage = daySalary.divide(new BigDecimal("8"), 4, RoundingMode.HALF_UP);
+                for (Overtime ot : otList) {
+                    if (ot.getHours() == null) {
+                        continue;
+                    }
+                    DayOfWeek w = ot.getOvertimeDate() == null ? DayOfWeek.MONDAY : ot.getOvertimeDate().getDayOfWeek();
+                    BigDecimal rate = (w == DayOfWeek.SATURDAY || w == DayOfWeek.SUNDAY)
+                            ? new BigDecimal("2.0") : new BigDecimal("1.5");
+                    overtimePay = overtimePay.add(hourWage.multiply(rate).multiply(ot.getHours()));
+                    totalOtHours = totalOtHours.add(ot.getHours());
+                }
+            }
+            salary.setOvertimePay(overtimePay.setScale(2, RoundingMode.HALF_UP));
             salary.setAllowance(BigDecimal.ZERO);
 
-            // 5) 简化月度个税：（应发 − 起征点 − 社保公积金）按月度税率表
-            BigDecimal taxable = base.add(bonus).subtract(TAX_THRESHOLD)
+            // 5) 五险一金按比例估算
+            salary.setSocialSecurity(base.multiply(SOCIAL_SECURITY_RATE).setScale(2, RoundingMode.HALF_UP));
+            salary.setHousingFund(base.multiply(HOUSING_FUND_RATE).setScale(2, RoundingMode.HALF_UP));
+
+            // 6) 简化月度个税：（应发 − 起征点 − 社保公积金）按月度税率表
+            BigDecimal taxable = base.add(bonus).add(overtimePay).subtract(TAX_THRESHOLD)
                     .subtract(salary.getSocialSecurity()).subtract(salary.getHousingFund());
             salary.setTax(monthlyTax(taxable.max(BigDecimal.ZERO)));
 
-            // 6) 实发 = 应发 − 各项扣除（复用既有逻辑）；保底实发不为负（当月无考勤的新员工避免扣穿）
+            // 7) 实发 = 应发 − 各项扣除（复用既有逻辑）；保底实发不为负（当月无考勤的新员工避免扣穿）
             calculateNetSalary(salary);
             if (salary.getNetSalary().compareTo(BigDecimal.ZERO) < 0) {
                 salary.setOtherDeduction(salary.getOtherDeduction().add(salary.getNetSalary()));
@@ -256,9 +293,12 @@ public class SalaryServiceImpl implements SalaryService {
 
             String perfText = best != null && best.getTotalScore() != null
                     ? best.getTotalScore().stripTrailingZeros().toPlainString() + "分" : "无";
+            String otText = totalOtHours.compareTo(BigDecimal.ZERO) > 0
+                    ? String.format("；加班%.1fh(¥%s)", totalOtHours, overtimePay.setScale(2, RoundingMode.HALF_UP).toPlainString())
+                    : "";
             salary.setRemark(String.format(
-                    "系统计算：出勤%d天/缺勤%d天/迟到早退%d次；绩效%s；缺勤扣%.2f元",
-                    attendDays, absentDays, lateCount + earlyCount, perfText, absentCut));
+                    "系统计算：出勤%d天/缺勤%d天/迟到早退%d次；绩效%s；缺勤扣%.2f元%s",
+                    attendDays, absentDays, lateCount + earlyCount, perfText, absentCut, otText));
             salary.setStatus(1);
             salary.setCreateTime(LocalDateTime.now());
             salary.setUpdateTime(LocalDateTime.now());

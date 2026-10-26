@@ -73,6 +73,14 @@
               <span>事由：{{ leaveInfo.reason || '-' }}</span>
             </div>
           </div>
+          <div v-else-if="overtimeInfo" class="detail-section">
+            <div class="section-label">加班信息（通过后计入薪资加班费）</div>
+            <div class="leave-grid">
+              <span>加班日期：{{ overtimeInfo.overtimeDate }}</span>
+              <span>时长：{{ overtimeInfo.hours }} 小时</span>
+              <span>事由：{{ overtimeInfo.reason || '-' }}</span>
+            </div>
+          </div>
           <div v-else-if="detail.detail" class="detail-section">
             <div class="section-label">申请内容</div>
             <div class="detail-text">{{ detail.detail }}</div>
@@ -238,6 +246,15 @@ const approverChain = computed(() => {
       return opt ? (opt.nickname || opt.username) : u
     })
     .join(' → ')
+})
+
+const overtimeInfo = computed(() => {
+  if (!detail.value || detail.value.bizType !== '加班' || !detail.value.detail) return null
+  try {
+    return JSON.parse(detail.value.detail)
+  } catch (e) {
+    return null
+  }
 })
 
 const formatTime = (v) => (v ? String(v).replace('T', ' ').slice(0, 16) : '')

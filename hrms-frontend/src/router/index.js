@@ -37,7 +37,8 @@ const routes = [
         path: 'employee',
         name: 'Employee',
         component: () => import('@/views/employee/EmployeeList.vue'),
-        meta: { title: '员工管理', icon: 'User', requiresAdmin: true }
+        // P4-3 部门数据权限：manager 可见本部门员工（数据由后端过滤）
+        meta: { title: '员工管理', icon: 'User', roles: ['admin', 'manager'] }
       },
       {
         path: 'department',
@@ -179,6 +180,10 @@ router.beforeEach((to, from, next) => {
     next({ path: '/home' })
   } else if (to.meta.requiresAdmin && userStore.role !== 'admin') {
     // P045 角色权限：非管理员访问管理页面，弹回首页
+    ElMessage.warning('您没有权限访问该页面')
+    next({ path: '/home' })
+  } else if (to.meta.roles && !to.meta.roles.includes(userStore.role)) {
+    // P4-3 角色白名单：manager 等自定义角色按 roles 数组放行
     ElMessage.warning('您没有权限访问该页面')
     next({ path: '/home' })
   } else {

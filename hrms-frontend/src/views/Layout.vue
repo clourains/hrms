@@ -293,7 +293,8 @@ watch(() => appStore.refreshKey, async () => {
 })
 
 // 企业级菜单规划：首页/仪表盘置顶，人事、业务各归其组，可视化分析统一放到底部
-// adminOnly: true 的菜单仅管理员可见（P045 角色权限）
+// adminOnly: true 的菜单仅管理员可见（P045 角色权限）；
+// roles: 数组指定可访问角色白名单（P4-3，如 manager 可见员工管理）
 const menuGroups = [
   { type: 'item', path: '/home', title: '首页', icon: 'HomeFilled' },
   { type: 'item', path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
@@ -302,7 +303,7 @@ const menuGroups = [
     title: '人事管理',
     icon: 'Avatar',
     children: [
-      { path: '/employee', title: '员工管理', icon: 'User', adminOnly: true },
+      { path: '/employee', title: '员工管理', icon: 'User', roles: ['admin', 'manager'] },
       { path: '/department', title: '部门管理', icon: 'OfficeBuilding', adminOnly: true },
       { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
       { path: '/salary', title: '薪资管理', icon: 'Money' },
@@ -330,14 +331,20 @@ const menuGroups = [
   }
 ]
 
-// 按当前登录角色过滤菜单（P045）
+// 按当前登录角色过滤菜单（P045 / P4-3）
 const visibleMenuGroups = computed(() => {
-  const isAdmin = userStore.role === 'admin'
+  const role = userStore.role
+  const isAdmin = role === 'admin'
+  const canSee = (item) => {
+    if (item.roles) return item.roles.includes(role)
+    if (item.adminOnly) return isAdmin
+    return true
+  }
   const groups = []
   for (const group of menuGroups) {
-    if (group.adminOnly && !isAdmin) continue
+    if (!canSee(group)) continue
     if (group.type === 'group') {
-      const children = group.children.filter(child => !child.adminOnly || isAdmin)
+      const children = group.children.filter(canSee)
       groups.push({ ...group, children })
     } else {
       groups.push(group)

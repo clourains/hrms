@@ -69,6 +69,7 @@
         <template v-if="isAdmin">
           <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
           <el-button type="success" :icon="MagicStick" :loading="calcLoading" @click="handleCalculate">一键计算薪资</el-button>
+          <el-button type="warning" :icon="Promotion" :loading="notifyLoading" @click="handleCalculateAndNotify">计算并推送工资条</el-button>
           <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
           <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
           <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
@@ -244,8 +245,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download } from '@element-plus/icons-vue'
-import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, downloadPayslipApi } from '@/api/salary'
+import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download, Promotion } from '@element-plus/icons-vue'
+import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, calculateAndNotifyApi, downloadPayslipApi } from '@/api/salary'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -568,6 +569,33 @@ const handleCalculate = async () => {
     // 错误提示由 request 拦截器统一处理
   } finally {
     calcLoading.value = false
+  }
+}
+
+// P4-4 一键计算并推送工资条：计算完成后站内信通知员工去薪资页下载 PDF
+const notifyLoading = ref(false)
+const handleCalculateAndNotify = async () => {
+  const month = currentMonth()
+  try {
+    await ElMessageBox.confirm(
+      `将为 ${month} 执行薪资计算，并向每个已绑定账号的员工发送站内信工资条通知（同月已通知过的员工自动跳过）。是否继续？`,
+      '计算并推送工资条',
+      { confirmButtonText: '计算并推送', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch (e) {
+    return
+  }
+  notifyLoading.value = true
+  try {
+    const res = await calculateAndNotifyApi(month)
+    const d = res.data || {}
+    ElMessage.success(`${month} 完成：新增 ${d.created ?? 0} 条，跳过 ${d.skipped ?? 0} 条，站内信通知 ${d.notified ?? 0} 人`)
+    await loadData()
+    loadStats()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    notifyLoading.value = false
   }
 }
 

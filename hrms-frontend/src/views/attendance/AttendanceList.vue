@@ -116,6 +116,8 @@
       <div class="action-bar">
         <el-button type="warning" :icon="EditPen" @click="handleMakeup">补卡申请</el-button>
         <el-button type="success" :icon="Calendar" @click="handleLeave">请假申请</el-button>
+        <el-button type="primary" :icon="Sunrise" @click="handleOvertime">加班申请</el-button>
+        <el-button :icon="List" @click="showMyOvertime">我的加班</el-button>
         <el-button type="primary" :icon="Download" @click="handleExport">导出报表</el-button>
         <el-button :icon="TrendCharts" @click="handleStats">统计分析</el-button>
       </div>
@@ -193,26 +195,39 @@
       </template>
     </el-dialog>
 
-    <!-- 请假申请弹窗 -->
-    <el-dialog v-model="leaveDialogVisible" title="请假申请" width="450px">
+    <!-- 请假申请弹窗（P4-2：真实审批流 + 年假额度） -->
+    <el-dialog v-model="leaveDialogVisible" title="请假申请" width="480px">
+      <el-alert
+        v-if="leaveQuota"
+        :title="`本年度年假：总额 ${leaveQuota.totalDays} 天 · 已用 ${leaveQuota.usedDays} 天 · 剩余 ${leaveQuota.remainDays} 天`"
+        :type="leaveQuota.remainDays > 0 ? 'success' : 'warning'"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 16px"
+      />
       <el-form :model="leaveForm" label-width="100px">
         <el-form-item label="请假类型">
           <el-select v-model="leaveForm.type" placeholder="请选择请假类型" style="width: 100%">
-            <el-option label="年假" value="annual" />
+            <el-option label="年假（占用年假额度）" value="annual" />
             <el-option label="事假" value="personal" />
             <el-option label="病假" value="sick" />
             <el-option label="婚假" value="marriage" />
             <el-option label="产假" value="maternity" />
           </el-select>
         </el-form-item>
-        <el-form-item label="开始时间">
-          <el-date-picker v-model="leaveForm.startDate" type="datetime" placeholder="请选择开始时间" style="width: 100%" />
+        <el-form-item label="开始日期">
+          <el-date-picker v-model="leaveForm.startDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择开始日期" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="结束时间">
-          <el-date-picker v-model="leaveForm.endDate" type="datetime" placeholder="请选择结束时间" style="width: 100%" />
+        <el-form-item label="结束日期">
+          <el-date-picker v-model="leaveForm.endDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择结束日期" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="请假时长">
-          <el-input v-model="leaveForm.duration" placeholder="自动计算" disabled />
+        <el-form-item label="请假天数">
+          <el-input :model-value="leaveDaysText" placeholder="选择日期后自动计算" disabled />
+        </el-form-item>
+        <el-form-item label="审批人">
+          <el-select v-model="leaveForm.approvers" multiple placeholder="按顺序选择审批人" style="width: 100%">
+            <el-option v-for="u in approverOptions" :key="u.username" :label="u.nickname" :value="u.username" />
+          </el-select>
         </el-form-item>
         <el-form-item label="请假事由">
           <el-input v-model="leaveForm.reason" type="textarea" :rows="3" placeholder="请输入请假事由" />
@@ -220,8 +235,51 @@
       </el-form>
       <template #footer>
         <el-button @click="leaveDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitLeave">提交申请</el-button>
+        <el-button type="primary" :loading="leaveSubmitting" @click="submitLeave">提交审批</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 加班申请弹窗（P4-1：走审批流，通过后计入薪资加班费） -->
+    <el-dialog v-model="overtimeDialogVisible" title="加班申请" width="480px">
+      <el-form :model="overtimeForm" label-width="100px">
+        <el-form-item label="加班日期">
+          <el-date-picker v-model="overtimeForm.overtimeDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择加班日期" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="加班时长">
+          <el-input-number v-model="overtimeForm.hours" :min="0.5" :max="24" :step="0.5" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="加班费说明">
+          <div class="ot-rate-hint">工作日 1.5 倍时薪 · 周末 2.0 倍时薪，审批通过后自动计入当月工资</div>
+        </el-form-item>
+        <el-form-item label="审批人">
+          <el-select v-model="overtimeForm.approvers" multiple placeholder="按顺序选择审批人" style="width: 100%">
+            <el-option v-for="u in approverOptions" :key="u.username" :label="u.nickname" :value="u.username" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="加班事由">
+          <el-input v-model="overtimeForm.reason" type="textarea" :rows="3" placeholder="请输入加班事由" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="overtimeDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="overtimeSubmitting" @click="submitOvertime">提交审批</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 我的加班记录弹窗（P4-1） -->
+    <el-dialog v-model="myOvertimeVisible" title="我的加班申请" width="640px">
+      <el-table :data="myOvertimeList" border stripe max-height="420">
+        <el-table-column prop="overtimeDate" label="加班日期" width="110" align="center" />
+        <el-table-column prop="hours" label="时长(小时)" width="100" align="center" />
+        <el-table-column prop="reason" label="事由" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="status" label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="otStatusType(row.status)" size="small">{{ otStatusText(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="instanceId" label="审批单号" width="90" align="center" />
+      </el-table>
+      <div class="ot-note">已通过的加班将按 1.5 / 2.0 倍时薪计入当月工资单</div>
     </el-dialog>
 
     <!-- 导出月报弹窗（P1-3） -->
@@ -247,8 +305,12 @@
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts } from '@element-plus/icons-vue'
-import { getAttendanceListApi, getAttendanceStatsApi, checkInApi, checkOutApi } from '@/api/attendance'
+import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts, Sunrise, List } from '@element-plus/icons-vue'
+import {
+  getAttendanceListApi, getAttendanceStatsApi, checkInApi, checkOutApi,
+  applyOvertimeApi, getMyOvertimeApi, getMyLeaveQuotaApi, submitLeaveApplyApi
+} from '@/api/attendance'
+import { getApproverOptionsApi } from '@/api/approval'
 import { request } from '@/utils/request'
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
@@ -329,12 +391,143 @@ const makeupForm = reactive({
 })
 
 const leaveForm = reactive({
-  type: '',
+  type: 'annual',
   startDate: '',
   endDate: '',
-  duration: '',
+  approvers: [],
   reason: ''
 })
+
+// ===== P4-1 加班申请 / P4-2 请假额度 =====
+const overtimeDialogVisible = ref(false)
+const overtimeSubmitting = ref(false)
+const overtimeForm = reactive({
+  overtimeDate: '',
+  hours: 2,
+  approvers: [],
+  reason: ''
+})
+const myOvertimeVisible = ref(false)
+const myOvertimeList = ref([])
+const leaveSubmitting = ref(false)
+const leaveQuota = ref(null)
+const approverOptions = ref([])
+
+const leaveDaysText = computed(() => {
+  const days = calcLeaveDays()
+  return days > 0 ? `${days} 天` : ''
+})
+
+/** 请假天数 = 起止日期自然日差 + 1 */
+const calcLeaveDays = () => {
+  if (!leaveForm.startDate || !leaveForm.endDate) return 0
+  const s = new Date(leaveForm.startDate)
+  const e = new Date(leaveForm.endDate)
+  if (isNaN(s) || isNaN(e) || e < s) return 0
+  return Math.round((e - s) / 86400000) + 1
+}
+
+const loadApproverOptions = async () => {
+  if (approverOptions.value.length > 0) return
+  try {
+    const res = await getApproverOptionsApi()
+    approverOptions.value = res.data || []
+  } catch (e) {
+    // 拦截器统一提示
+  }
+}
+
+const handleOvertime = () => {
+  overtimeForm.overtimeDate = fmtDate(new Date())
+  overtimeForm.hours = 2
+  overtimeForm.approvers = []
+  overtimeForm.reason = ''
+  overtimeDialogVisible.value = true
+  loadApproverOptions()
+}
+
+const submitOvertime = async () => {
+  if (!overtimeForm.overtimeDate) { ElMessage.warning('请选择加班日期'); return }
+  if (!overtimeForm.approvers.length) { ElMessage.warning('请选择审批人'); return }
+  overtimeSubmitting.value = true
+  try {
+    await applyOvertimeApi({
+      overtimeDate: overtimeForm.overtimeDate,
+      hours: overtimeForm.hours,
+      reason: overtimeForm.reason,
+      approvers: overtimeForm.approvers
+    })
+    ElMessage.success('加班申请已提交，等待审批')
+    overtimeDialogVisible.value = false
+  } catch (e) {
+    // 拦截器统一提示
+  } finally {
+    overtimeSubmitting.value = false
+  }
+}
+
+const showMyOvertime = async () => {
+  myOvertimeVisible.value = true
+  try {
+    const res = await getMyOvertimeApi()
+    myOvertimeList.value = res.data || []
+  } catch (e) {
+    // 拦截器统一提示
+  }
+}
+
+const otStatusText = (s) => ({ 0: '审批中', 1: '已通过', 2: '已驳回', 3: '已撤销' }[s] || '未知')
+const otStatusType = (s) => ({ 0: 'warning', 1: 'success', 2: 'danger', 3: 'info' }[s] || 'info')
+
+const handleLeave = () => {
+  leaveForm.type = 'annual'
+  leaveForm.startDate = ''
+  leaveForm.endDate = ''
+  leaveForm.approvers = []
+  leaveForm.reason = ''
+  leaveDialogVisible.value = true
+  loadApproverOptions()
+  getMyLeaveQuotaApi().then(res => { leaveQuota.value = res.data }).catch(() => {})
+}
+
+const LEAVE_TYPE_TEXT = {
+  annual: '年假', personal: '事假', sick: '病假', marriage: '婚假', maternity: '产假'
+}
+
+const submitLeave = async () => {
+  const days = calcLeaveDays()
+  if (!leaveForm.type) { ElMessage.warning('请选择请假类型'); return }
+  if (!days) { ElMessage.warning('请选择起止日期'); return }
+  if (!leaveForm.approvers.length) { ElMessage.warning('请选择审批人'); return }
+  if (leaveForm.type === 'annual' && leaveQuota.value && days > Number(leaveQuota.value.remainDays)) {
+    ElMessage.error(`年假余额不足：剩余 ${leaveQuota.value.remainDays} 天，本次申请 ${days} 天`)
+    return
+  }
+  leaveSubmitting.value = true
+  try {
+    await submitLeaveApplyApi({
+      bizType: '请假',
+      title: `${myEmp.value.name} 请假 ${days} 天`,
+      detail: {
+        leaveType: LEAVE_TYPE_TEXT[leaveForm.type] || leaveForm.type,
+        startDate: leaveForm.startDate,
+        endDate: leaveForm.endDate,
+        days,
+        reason: leaveForm.reason
+      },
+      approvers: leaveForm.approvers
+    })
+    ElMessage.success('请假申请已提交，等待审批')
+    leaveDialogVisible.value = false
+    if (leaveForm.type === 'annual') {
+      getMyLeaveQuotaApi().then(res => { leaveQuota.value = res.data }).catch(() => {})
+    }
+  } catch (e) {
+    // 拦截器统一提示
+  } finally {
+    leaveSubmitting.value = false
+  }
+}
 
 const pad = (n) => String(n).padStart(2, '0')
 const fmtMonth = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
@@ -497,7 +690,7 @@ const handleReset = () => {
   loadData()
 }
 
-// 补卡/请假：后端暂无对应接口，保留演示逻辑
+// 补卡：后端暂无对应接口，保留演示逻辑
 const handleMakeup = () => {
   makeupDialogVisible.value = true
 }
@@ -505,15 +698,6 @@ const handleMakeup = () => {
 const submitMakeup = () => {
   ElMessage.success('补卡申请已提交，等待审批')
   makeupDialogVisible.value = false
-}
-
-const handleLeave = () => {
-  leaveDialogVisible.value = true
-}
-
-const submitLeave = () => {
-  ElMessage.success('请假申请已提交，等待审批')
-  leaveDialogVisible.value = false
 }
 
 // 导出月报（P1-3）：弹窗选月份/部门，从后端下载 Excel
@@ -698,6 +882,18 @@ onUnmounted(() => {
 
   .action-bar {
     margin-bottom: 16px;
+  }
+
+  .ot-rate-hint {
+    font-size: 12px;
+    color: #909399;
+    line-height: 1.5;
+  }
+
+  .ot-note {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #909399;
   }
 
   .pagination {

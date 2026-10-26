@@ -67,7 +67,7 @@
         </el-table-column>
         <el-table-column prop="departmentName" label="部门" width="120" align="center" />
         <el-table-column prop="position" label="职位" width="120" align="center" />
-        <el-table-column prop="phone" label="手机号" width="130" align="center" />
+        <el-table-column prop="phone" label="手机号" width="150" align="center" class-name="phone-col" />
         <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
         <el-table-column prop="entryDate" label="入职日期" width="120" align="center" />
         <el-table-column prop="status" label="状态" width="90" align="center">
@@ -294,7 +294,8 @@ const formRules = {
   position: [{ required: true, message: '请输入职位', trigger: 'blur' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }
+    // 支持大陆手机号与带连字符的国际号码（如 +1-310-555-1001）
+    { pattern: /^\+?\d[\d\-]{5,19}$/, message: '手机号格式不正确', trigger: 'blur' }
   ],
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
@@ -511,6 +512,13 @@ onMounted(async () => {
 </script>
 
 <style scoped lang="scss">
+  // 国际号码含连字符较长，禁止折行，超出省略
+  :deep(.phone-col .cell) {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
 .employee-container {
   .search-bar {
     margin-bottom: 16px;
