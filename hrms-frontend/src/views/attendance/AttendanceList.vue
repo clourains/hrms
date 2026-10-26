@@ -223,6 +223,24 @@
         <el-button type="primary" @click="submitLeave">提交申请</el-button>
       </template>
     </el-dialog>
+
+    <!-- 导出月报弹窗（P1-3） -->
+    <el-dialog v-model="exportDialogVisible" title="导出考勤月报" width="420px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="考勤月份">
+          <el-date-picker v-model="exportForm.month" type="month" value-format="YYYY-MM" placeholder="请选择月份" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="导出范围">
+          <el-select v-model="exportForm.deptId" placeholder="全部部门" clearable style="width: 100%">
+            <el-option v-for="dept in departmentOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exportLoading" @click="confirmExport">导出 Excel</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -231,6 +249,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts } from '@element-plus/icons-vue'
 import { getAttendanceListApi, getAttendanceStatsApi, checkInApi, checkOutApi } from '@/api/attendance'
+import { request } from '@/utils/request'
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 import { useUserStore } from '@/store/user'
@@ -497,8 +516,52 @@ const submitLeave = () => {
   leaveDialogVisible.value = false
 }
 
+// 导出月报（P1-3）：弹窗选月份/部门，从后端下载 Excel
+const exportDialogVisible = ref(false)
+const exportForm = reactive({
+  month: new Date().toISOString().slice(0, 7),
+  deptId: null
+})
+const exportLoading = ref(false)
+
 const handleExport = () => {
-  ElMessage.info('导出功能演示')
+  exportDialogVisible.value = true
+}
+
+const confirmExport = async () => {
+  if (!exportForm.month) {
+    ElMessage.warning('请选择导出月份')
+    return
+  }
+  exportLoading.value = true
+  try {
+    const params = { month: exportForm.month }
+    if (exportForm.deptId) params.deptId = exportForm.deptId
+    const response = await request.download('/attendance/export', params)
+    // 后端返回 JSON 错误时 blob 类型是 application/json
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      const json = JSON.parse(text)
+      ElMessage.error(json.message || '导出失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: contentType })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `考勤月报_${exportForm.month}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+    exportDialogVisible.value = false
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    exportLoading.value = false
+  }
 }
 
 const handleStats = () => {
