@@ -2,6 +2,8 @@ package com.hrms.controller;
 
 import com.hrms.annotation.RequireRole;
 import com.hrms.entity.Attendance;
+import com.hrms.entity.User;
+import com.hrms.mapper.UserMapper;
 import com.hrms.service.AttendanceService;
 import com.hrms.util.JwtUtil;
 import com.hrms.util.Result;
@@ -24,6 +26,9 @@ public class AttendanceController {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private UserMapper userMapper;
 
     /**
      * 上班打卡
@@ -147,7 +152,8 @@ public class AttendanceController {
     }
 
     /**
-     * 从token中获取员工ID
+     * 从token中获取员工ID（P3-2 修正：按 sys_user.empId 绑定关系取真实员工，
+     * 避免误用 user.id 造成替他人打卡/错位打卡）
      */
     private Long getCurrentEmpId(HttpServletRequest request) {
         String token = request.getHeader("Authorization");
@@ -155,7 +161,10 @@ public class AttendanceController {
             token = token.substring(7);
         }
         Long userId = jwtUtil.getUserIdFromToken(token);
-        // 这里简化处理，实际应该通过userId查询员工ID
-        return userId;
+        User user = userMapper.selectById(userId);
+        if (user == null || user.getEmpId() == null) {
+            throw new RuntimeException("当前账号未绑定员工档案，无法打卡");
+        }
+        return user.getEmpId();
     }
 }

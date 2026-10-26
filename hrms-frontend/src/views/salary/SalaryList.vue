@@ -1,8 +1,8 @@
 <template>
   <div class="salary-container">
     <el-card shadow="hover">
-      <!-- 统计概览 -->
-      <el-row :gutter="20" class="stat-row">
+      <!-- 统计概览（仅管理员，普通员工不展示全员统计） -->
+      <el-row v-if="isAdmin" :gutter="20" class="stat-row">
         <el-col :xs="12" :sm="6">
           <div class="stat-card primary">
             <div class="stat-label">本月应发总额</div>
@@ -66,11 +66,14 @@
 
       <!-- 操作栏 -->
       <div class="action-bar">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
-        <el-button type="success" :icon="MagicStick" :loading="calcLoading" @click="handleCalculate">一键计算薪资</el-button>
-        <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
-        <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
-        <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
+        <template v-if="isAdmin">
+          <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
+          <el-button type="success" :icon="MagicStick" :loading="calcLoading" @click="handleCalculate">一键计算薪资</el-button>
+          <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
+          <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
+          <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
+        </template>
+        <span v-else class="self-note">普通员工仅可查看本人薪资记录</span>
       </div>
 
       <!-- 表格 -->
@@ -105,7 +108,7 @@
         <el-table-column label="操作" width="180" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">工资条</el-button>
-            <el-button type="primary" link size="small" @click="handleEdit(row)">调整</el-button>
+            <el-button v-if="isAdmin" type="primary" link size="small" @click="handleEdit(row)">调整</el-button>
             <el-button type="success" link size="small" @click="handleDownloadPayslip(row)">PDF</el-button>
           </template>
         </el-table-column>
@@ -243,6 +246,11 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download } from '@element-plus/icons-vue'
 import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, downloadPayslipApi } from '@/api/salary'
+import { useUserStore } from '@/store/user'
+
+const userStore = useUserStore()
+// P3-2：普通员工只看本人薪资，管理操作仅管理员可见
+const isAdmin = computed(() => userStore.role === 'admin')
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
@@ -383,6 +391,7 @@ const buildChange = (cur, prev) => {
 }
 
 const loadStats = async () => {
+  if (!isAdmin.value) return
   try {
     const month = currentMonth()
     const now = new Date()

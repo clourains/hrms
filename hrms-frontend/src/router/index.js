@@ -70,6 +70,12 @@ const routes = [
         meta: { title: '审批中心', icon: 'DocumentChecked' }
       },
       {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/profile/Profile.vue'),
+        meta: { title: '个人中心' }
+      },
+      {
         path: 'message',
         name: 'Message',
         component: () => import('@/views/message/MessageList.vue'),

@@ -469,7 +469,7 @@ const toggleFullscreen = () => {
 const handleCommand = async (command) => {
   switch (command) {
     case 'profile':
-      ElMessage.info('个人中心功能开发中')
+      router.push('/profile')
       break
     case 'password':
       ElMessage.info('修改密码功能开发中')

@@ -82,47 +82,66 @@ public class SalaryController {
     }
 
     /**
-     * 根据ID获取薪资记录
+     * 根据ID获取薪资记录（P3-2 越权收紧：非 admin 仅可查本人记录）
      */
     @GetMapping("/{id}")
     public Result<Salary> getById(@PathVariable Long id) {
         try {
             Salary salary = salaryService.getById(id);
+            if (salary != null && !UserContext.isAdmin()
+                    && !salary.getEmpId().equals(currentEmpIdOrThrow())) {
+                return Result.error("无权查看他人薪资记录");
+            }
             return Result.success(salary);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
     }
 
     /**
-     * 获取员工薪资列表
+     * 获取员工薪资列表（P3-2 越权收紧：非 admin 强制查本人）
      */
     @GetMapping("/listByEmpId")
     public Result<List<Salary>> listByEmpId(@RequestParam Long empId) {
         try {
-            List<Salary> list = salaryService.listByEmpId(empId);
+            Long target = empId;
+            if (!UserContext.isAdmin()) {
+                target = currentEmpIdOrThrow();
+            }
+            List<Salary> list = salaryService.listByEmpId(target);
             return Result.success(list);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
     }
 
     /**
-     * 根据月份查询薪资
+     * 根据月份查询薪资（P3-2 越权收紧：非 admin 仅返回本人记录）
      */
     @GetMapping("/listByMonth")
     public Result<List<Salary>> listByMonth(@RequestParam String salaryMonth) {
         try {
             List<Salary> list = salaryService.listByMonth(salaryMonth);
+            if (!UserContext.isAdmin()) {
+                Long myEmpId = currentEmpIdOrThrow();
+                list = list.stream().filter(s -> s.getEmpId().equals(myEmpId)).collect(java.util.stream.Collectors.toList());
+            }
             return Result.success(list);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
     }
 
     /**
-     * 月度薪资统计
+     * 月度薪资统计（全员汇总，仅管理员）
      */
+    @RequireRole("admin")
     @GetMapping("/statistics")
     public Result<Map<String, Object>> statistics(@RequestParam String salaryMonth) {
         try {
@@ -131,6 +150,20 @@ public class SalaryController {
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
+    }
+
+    /**
+     * 当前登录人绑定的员工ID（未绑定抛业务异常）
+     */
+    private Long currentEmpIdOrThrow() {
+        String me = UserContext.get();
+        User user = me == null ? null : userMapper.selectOne(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
+                        .eq(User::getUsername, me));
+        if (user == null || user.getEmpId() == null) {
+            throw new RuntimeException("当前账号未绑定员工档案，无权查看薪资");
+        }
+        return user.getEmpId();
     }
 
     /**
