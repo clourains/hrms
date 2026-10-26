@@ -122,12 +122,14 @@ public class WarehouseServiceImpl implements WarehouseService {
         if (origin == null) {
             throw new RuntimeException("仓库不存在或已删除");
         }
-        Validators.notCleared(origin.getWarehouseCode(), warehouse.getWarehouseCode(), "仓库编码");
-        Validators.notCleared(origin.getWarehouseName(), warehouse.getWarehouseName(), "仓库名称");
-        Validators.notCleared(origin.getCountry(), warehouse.getCountry(), "国家");
-        Validators.notCleared(origin.getCity(), warehouse.getCity(), "城市");
-        Validators.notCleared(origin.getAddress(), warehouse.getAddress(), "详细地址");
-        Validators.notCleared(origin.getManager(), warehouse.getManager(), "负责人");
+        // 编辑与新增同一套口径：必填字段一律不能为空（含历史数据本来就空的情况，编辑时须补齐）
+        Validators.text(warehouse.getWarehouseCode(), "仓库编码");
+        Validators.text(warehouse.getWarehouseName(), "仓库名称");
+        Validators.notNull(warehouse.getType(), "仓库类型");
+        Validators.text(warehouse.getCountry(), "国家");
+        Validators.text(warehouse.getCity(), "城市");
+        Validators.text(warehouse.getAddress(), "详细地址");
+        Validators.text(warehouse.getManager(), "负责人");
         Validators.nonNegative(warehouse.getCapacity(), "容量");
         warehouse.setUpdateTime(LocalDateTime.now());
         return warehouseMapper.updateById(warehouse) > 0;

@@ -97,6 +97,12 @@ public class BusinessServiceImpl implements BusinessService {
         BigDecimal grossProfitUsd = calcGrossProfit();
         result.put("grossProfitUsd", grossProfitUsd);
 
+        // 毛利率：毛利 / 销售额，销售额为 0 时记 0，避免除零
+        BigDecimal grossMarginRate = totalSales.compareTo(BigDecimal.ZERO) == 0
+                ? BigDecimal.ZERO
+                : grossProfitUsd.multiply(BigDecimal.valueOf(100)).divide(totalSales, 2, RoundingMode.HALF_UP);
+        result.put("grossMarginRate", grossMarginRate);
+
         // 收款统计
         BigDecimal totalReceived = sumPayments(1);
         BigDecimal totalPaid = sumPayments(2);
@@ -288,5 +294,92 @@ public class BusinessServiceImpl implements BusinessService {
             map.put("totalQuantity", qtyMap.get(e.getKey()));
             return map;
         }).collect(Collectors.toList());
+    }
+
+    /**
+     * 毛利排行（按客户 / 按产品）
+     *
+     * 口径与 calcGrossProfit 保持一致：毛利 = 售价(USD) - 成本(CNY ÷ 订单汇率快照)，不含运费。
+     * 用订单上存的 exchangeRate 而不是当前汇率，历史订单的毛利不会因为汇率变动被改写。
+     */
+    @Override
+    public Map<String, Object> profitRanking() {
+        List<com.hrms.entity.OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<>());
+
+        Map<Long, BigDecimal> profitByCustomer = new HashMap<>();
+        Map<Long, BigDecimal> revenueByCustomer = new HashMap<>();
+        Map<Long, BigDecimal> profitByProduct = new HashMap<>();
+        Map<Long, BigDecimal> revenueByProduct = new HashMap<>();
+
+        for (com.hrms.entity.OrderItem item : items) {
+            TradeOrder order = tradeOrderMapper.selectById(item.getOrderId());
+            if (order == null || (order.getStatus() != null && order.getStatus() == 9)) {
+                continue;
+            }
+            if (item.getUnitPriceUsd() == null || item.getQuantity() == null) {
+                continue;
+            }
+            Product product = item.getProductId() == null ? null : productMapper.selectById(item.getProductId());
+            BigDecimal rate = order.getExchangeRate() == null ? new BigDecimal("7.2") : order.getExchangeRate();
+            BigDecimal qty = BigDecimal.valueOf(item.getQuantity());
+
+            BigDecimal revenueUsd = item.getUnitPriceUsd().multiply(qty);
+            BigDecimal costUsd = product == null || product.getCostPrice() == null
+                    ? BigDecimal.ZERO
+                    : product.getCostPrice().multiply(qty).divide(rate, 2, RoundingMode.HALF_UP);
+            BigDecimal profitUsd = revenueUsd.subtract(costUsd);
+
+            if (order.getCustomerId() != null) {
+                profitByCustomer.merge(order.getCustomerId(), profitUsd, BigDecimal::add);
+                revenueByCustomer.merge(order.getCustomerId(), revenueUsd, BigDecimal::add);
+            }
+            if (item.getProductId() != null) {
+                profitByProduct.merge(item.getProductId(), profitUsd, BigDecimal::add);
+                revenueByProduct.merge(item.getProductId(), revenueUsd, BigDecimal::add);
+            }
+        }
+
+        List<Map<String, Object>> byCustomer = profitByCustomer.entrySet().stream()
+                .sorted(Map.Entry.<Long, BigDecimal>comparingByValue().reversed())
+                .limit(10)
+                .map(e -> {
+                    Customer customer = customerMapper.selectById(e.getKey());
+                    Map<String, Object> map = new HashMap<String, Object>();
+                    map.put("id", e.getKey());
+                    map.put("name", customer == null ? "未知客户" : customer.getCompanyName());
+                    map.put("country", customer == null ? "" : customer.getCountry());
+                    map.put("profitUsd", e.getValue());
+                    map.put("revenueUsd", revenueByCustomer.get(e.getKey()));
+                    map.put("marginRate", marginRate(e.getValue(), revenueByCustomer.get(e.getKey())));
+                    return map;
+                }).collect(Collectors.toList());
+
+        List<Map<String, Object>> byProduct = profitByProduct.entrySet().stream()
+                .sorted(Map.Entry.<Long, BigDecimal>comparingByValue().reversed())
+                .limit(10)
+                .map(e -> {
+                    Product product = productMapper.selectById(e.getKey());
+                    Map<String, Object> map = new HashMap<String, Object>();
+                    map.put("id", e.getKey());
+                    map.put("name", product == null ? "未知产品" : product.getName());
+                    map.put("sku", product == null ? "" : product.getSku());
+                    map.put("profitUsd", e.getValue());
+                    map.put("revenueUsd", revenueByProduct.get(e.getKey()));
+                    map.put("marginRate", marginRate(e.getValue(), revenueByProduct.get(e.getKey())));
+                    return map;
+                }).collect(Collectors.toList());
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("byCustomer", byCustomer);
+        result.put("byProduct", byProduct);
+        return result;
+    }
+
+    /** 毛利率（%），收入为 0 或空时记 0 */
+    private BigDecimal marginRate(BigDecimal profit, BigDecimal revenue) {
+        if (profit == null || revenue == null || revenue.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return profit.multiply(BigDecimal.valueOf(100)).divide(revenue, 2, RoundingMode.HALF_UP);
     }
 }

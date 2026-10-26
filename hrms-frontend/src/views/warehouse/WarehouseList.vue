@@ -505,23 +505,17 @@ const whFormRef = ref(null)
 const defaultWhForm = { id: null, warehouseCode: '', warehouseName: '', type: 1, country: '中国', city: '', address: '', manager: '', capacity: 10000, status: 1 }
 const whForm = reactive({ ...defaultWhForm })
 
-// 新增时必填：仓库编码、类型、名称、国家、城市、详细地址、负责人
-// 编辑时只保留编码/类型/名称，历史仓库缺城市、地址、负责人的还能正常改别的字段
-const whRules = computed(() => {
-  const base = {
-    warehouseCode: [{ required: true, message: '请输入仓库编码', trigger: 'blur' }],
-    warehouseName: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }],
-    type: [{ required: true, message: '请选择仓库类型', trigger: 'change' }]
-  }
-  if (isEditWh.value) return base
-  return {
-    ...base,
-    country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
-    city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
-    address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }],
-    manager: [{ required: true, message: '请输入负责人', trigger: 'blur' }]
-  }
-})
+// 新增和编辑都必须填满：仓库编码、类型、名称、国家、城市、详细地址、负责人
+// 早期编辑时只校验前三项，等于留了个「新增必填 → 编辑清空」的后门，这里统一成一套规则
+const whRules = {
+  warehouseCode: [{ required: true, message: '请输入仓库编码', trigger: 'blur' }],
+  warehouseName: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }],
+  type: [{ required: true, message: '请选择仓库类型', trigger: 'change' }],
+  country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
+  city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+  address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }],
+  manager: [{ required: true, message: '请输入负责人', trigger: 'blur' }]
+}
 
 const loadWarehouses = async () => {
   whLoading.value = true

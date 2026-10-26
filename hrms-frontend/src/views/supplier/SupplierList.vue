@@ -127,23 +127,17 @@ const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0, sortField: nul
 const defaultForm = { id: null, supplierCode: '', companyName: '', contactName: '', country: '中国', city: '', phone: '', email: '', category: '', status: 1, remark: '' }
 const form = reactive({ ...defaultForm })
 
-// 新增时必填：编码、公司名称、联系人、电话、国家、城市、供应类别
-// 编辑时只保留编码和名称，避免历史数据缺联系人的老供应商改不了
-const rules = computed(() => {
-  const base = {
-    supplierCode: [{ required: true, message: '请输入编码', trigger: 'blur' }],
-    companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }]
-  }
-  if (isEdit.value) return base
-  return {
-    ...base,
-    contactName: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
-    phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
-    country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
-    city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
-    category: [{ required: true, message: '请输入供应类别', trigger: 'blur' }]
-  }
-})
+// 新增和编辑都必须填满：编码、公司名称、联系人、电话、国家、城市、供应类别
+// 早期编辑时只校验前两项，等于留了个「新增必填 → 编辑清空」的后门，这里统一成一套规则
+const rules = {
+  supplierCode: [{ required: true, message: '请输入编码', trigger: 'blur' }],
+  companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }],
+  contactName: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+  phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
+  country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
+  city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+  category: [{ required: true, message: '请输入供应类别', trigger: 'blur' }]
+}
 
 const loadData = async () => {
   loading.value = true
