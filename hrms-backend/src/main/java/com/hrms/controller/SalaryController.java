@@ -74,6 +74,24 @@ public class SalaryController {
     }
 
     /**
+     * 一键计算月度薪资（P2-2）：考勤扣款 + 绩效奖金联动，已有记录的员工跳过
+     */
+    @RequireRole("admin")
+    @AuditLog(module = "薪资管理", action = "一键计算")
+    @PostMapping("/calculate")
+    public Result<Map<String, Object>> calculate(@RequestBody Map<String, String> body) {
+        try {
+            String month = body.get("salaryMonth");
+            if (month == null || !month.matches("\\d{4}-\\d{2}")) {
+                return Result.error("请提供正确的月份（yyyy-MM）");
+            }
+            return Result.success("计算完成", salaryService.calculateMonth(month));
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
      * 新增薪资记录
      */
     @RequireRole("admin")

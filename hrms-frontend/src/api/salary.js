@@ -45,6 +45,11 @@ export const getSalaryStatsApi = (params) => {
   return request.get('/salary/statistics', params)
 }
 
+// 一键计算月度薪资（P2-2，管理员）：考勤扣款 + 绩效奖金联动
+export const calculateSalaryApi = (salaryMonth) => {
+  return request.post('/salary/calculate', { salaryMonth })
+}
+
 // 生成工资条
 export const generatePayrollApi = (data) => {
   return request.post('/salary/generate', data)
