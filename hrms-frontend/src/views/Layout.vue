@@ -266,6 +266,7 @@ const menuGroups = [
       { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
       { path: '/salary', title: '薪资管理', icon: 'Money' },
       { path: '/performance', title: '绩效管理', icon: 'TrendCharts' },
+      { path: '/approval', title: '审批中心', icon: 'DocumentChecked' },
       { path: '/message', title: '消息中心', icon: 'ChatDotRound' },
       { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true },
       { path: '/audit', title: '审计日志', icon: 'Document', adminOnly: true }

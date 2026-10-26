@@ -64,6 +64,12 @@ const routes = [
         meta: { title: '绩效管理', icon: 'TrendCharts' }
       },
       {
+        path: 'approval',
+        name: 'Approval',
+        component: () => import('@/views/approval/ApprovalCenter.vue'),
+        meta: { title: '审批中心', icon: 'DocumentChecked' }
+      },
+      {
         path: 'message',
         name: 'Message',
         component: () => import('@/views/message/MessageList.vue'),
