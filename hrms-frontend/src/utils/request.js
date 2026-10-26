@@ -31,6 +31,10 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (response) => {
+    // 文件下载（blob）不走业务码校验，直接放行
+    if (response.config.responseType === 'blob') {
+      return response
+    }
     const res = response.data
     // 根据后端约定的状态码处理
     if (res.code !== 200 && res.code !== 0) {

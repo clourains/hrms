@@ -65,4 +65,13 @@ public interface SalaryService {
      * @return 是否成功
      */
     boolean deleteById(Long id);
+
+    /**
+     * 一键计算某月薪资（P2-2）：按员工档案底薪 + 当月考勤扣款 + 绩效奖金联动，
+     * 为所有在职员工生成薪资记录；已有当月记录的员工跳过不覆盖。
+     *
+     * @param salaryMonth 月份（格式：yyyy-MM）
+     * @return 计算结果统计（total/created/skipped）
+     */
+    Map<String, Object> calculateMonth(String salaryMonth);
 }
