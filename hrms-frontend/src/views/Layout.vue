@@ -311,8 +311,19 @@ const menuGroups = [
       { path: '/performance', title: '绩效管理', icon: 'TrendCharts' },
       { path: '/approval', title: '审批中心', icon: 'DocumentChecked' },
       { path: '/message', title: '消息中心', icon: 'ChatDotRound' },
-      { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true },
-      { path: '/audit', title: '审计日志', icon: 'Document', adminOnly: true }
+      { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true }
+    ]
+  },
+  {
+    type: 'group',
+    title: '系统管理',
+    icon: 'Setting',
+    adminOnly: true,
+    children: [
+      { path: '/user', title: '用户管理', icon: 'User' },
+      { path: '/loginLog', title: '登录日志', icon: 'Key' },
+      { path: '/config', title: '参数配置', icon: 'Tools' },
+      { path: '/audit', title: '审计日志', icon: 'Document' }
     ]
   },
   {

@@ -95,6 +95,24 @@ const routes = [
         meta: { title: '审计日志', icon: 'Document', requiresAdmin: true }
       },
       {
+        path: 'user',
+        name: 'User',
+        component: () => import('@/views/system/UserList.vue'),
+        meta: { title: '用户管理', icon: 'User', requiresAdmin: true }
+      },
+      {
+        path: 'loginLog',
+        name: 'LoginLog',
+        component: () => import('@/views/system/LoginLogList.vue'),
+        meta: { title: '登录日志', icon: 'Key', requiresAdmin: true }
+      },
+      {
+        path: 'config',
+        name: 'Config',
+        component: () => import('@/views/system/ConfigList.vue'),
+        meta: { title: '参数配置', icon: 'Tools', requiresAdmin: true }
+      },
+      {
         path: 'analytics',
         name: 'Analytics',
         component: () => import('@/views/analytics/Analytics.vue'),

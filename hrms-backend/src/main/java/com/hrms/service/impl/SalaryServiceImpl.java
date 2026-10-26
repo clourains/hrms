@@ -49,6 +49,9 @@ public class SalaryServiceImpl implements SalaryService {
     @Autowired
     private OvertimeMapper overtimeMapper;
 
+    @Autowired
+    private com.hrms.service.SysConfigService sysConfigService;
+
     @Override
     public Salary getById(Long id) {
         return salaryMapper.selectById(id);
@@ -168,21 +171,30 @@ public class SalaryServiceImpl implements SalaryService {
         return salaryMapper.deleteById(id) > 0;
     }
 
-    /** 迟到/早退单次扣款（元） */
-    private static final BigDecimal LATE_EARLY_FINE = new BigDecimal("50");
-    /** 社保个人缴纳比例（占底薪） */
-    private static final BigDecimal SOCIAL_SECURITY_RATE = new BigDecimal("0.105");
-    /** 公积金个人缴纳比例（占底薪） */
-    private static final BigDecimal HOUSING_FUND_RATE = new BigDecimal("0.07");
-    /** 绩效奖金上限系数：满分绩效可拿底薪的 20% */
-    private static final BigDecimal PERFORMANCE_MAX_RATE = new BigDecimal("0.2");
-    /** 绩效满分（5 个维度 × 100 分） */
-    private static final BigDecimal PERFORMANCE_FULL_SCORE = new BigDecimal("500");
-    /** 个税起征点（月） */
-    private static final BigDecimal TAX_THRESHOLD = new BigDecimal("5000");
+    /** 以下常量仅作兜底默认值，实际取值以 sys_config 参数为准（P5-3 参数可配） */
+    private static final BigDecimal DEFAULT_LATE_EARLY_FINE = new BigDecimal("50");
+    private static final BigDecimal DEFAULT_SOCIAL_SECURITY_RATE = new BigDecimal("0.105");
+    private static final BigDecimal DEFAULT_HOUSING_FUND_RATE = new BigDecimal("0.07");
+    private static final BigDecimal DEFAULT_PERFORMANCE_MAX_RATE = new BigDecimal("0.2");
+    private static final BigDecimal DEFAULT_PERFORMANCE_FULL_SCORE = new BigDecimal("500");
+    private static final BigDecimal DEFAULT_TAX_THRESHOLD = new BigDecimal("5000");
+    private static final BigDecimal DEFAULT_WORK_DAYS_BASE = new BigDecimal("21.75");
+    private static final BigDecimal DEFAULT_OT_WEEKDAY_RATE = new BigDecimal("1.5");
+    private static final BigDecimal DEFAULT_OT_WEEKEND_RATE = new BigDecimal("2.0");
 
     @Override
     public Map<String, Object> calculateMonth(String salaryMonth) {
+        // P5-3：算薪参数从 sys_config 读取（循环外取一次，失败回退默认值）
+        BigDecimal lateEarlyFine = sysConfigService.getDecimal("salary.lateEarlyFine", DEFAULT_LATE_EARLY_FINE);
+        BigDecimal socialSecurityRate = sysConfigService.getDecimal("salary.socialSecurityRate", DEFAULT_SOCIAL_SECURITY_RATE);
+        BigDecimal housingFundRate = sysConfigService.getDecimal("salary.housingFundRate", DEFAULT_HOUSING_FUND_RATE);
+        BigDecimal performanceMaxRate = sysConfigService.getDecimal("salary.performanceMaxRate", DEFAULT_PERFORMANCE_MAX_RATE);
+        BigDecimal performanceFullScore = sysConfigService.getDecimal("salary.performanceFullScore", DEFAULT_PERFORMANCE_FULL_SCORE);
+        BigDecimal taxThreshold = sysConfigService.getDecimal("salary.taxThreshold", DEFAULT_TAX_THRESHOLD);
+        BigDecimal workDaysBase = sysConfigService.getDecimal("salary.workDaysBase", DEFAULT_WORK_DAYS_BASE);
+        BigDecimal otWeekdayRate = sysConfigService.getDecimal("attendance.otWeekdayRate", DEFAULT_OT_WEEKDAY_RATE);
+        BigDecimal otWeekendRate = sysConfigService.getDecimal("attendance.otWeekendRate", DEFAULT_OT_WEEKEND_RATE);
+
         YearMonth yearMonth = YearMonth.parse(salaryMonth);
         LocalDate startDate = yearMonth.atDay(1);
         LocalDate endDate = yearMonth.atEndOfMonth();
@@ -231,10 +243,10 @@ public class SalaryServiceImpl implements SalaryService {
                 }
             }
             long absentDays = Math.max(0, workDays - attendDays);
-            BigDecimal daySalary = base.divide(new BigDecimal("21.75"), 4, RoundingMode.HALF_UP);
+            BigDecimal daySalary = base.divide(workDaysBase, 4, RoundingMode.HALF_UP);
             BigDecimal absentCut = daySalary.multiply(BigDecimal.valueOf(absentDays))
                     .setScale(2, RoundingMode.HALF_UP);
-            BigDecimal lateCut = LATE_EARLY_FINE.multiply(BigDecimal.valueOf(lateCount + earlyCount));
+            BigDecimal lateCut = lateEarlyFine.multiply(BigDecimal.valueOf(lateCount + earlyCount));
             salary.setOtherDeduction(absentCut.add(lateCut));
 
             // 3) 绩效联动：当月评分取最高分（sys_performance.status 语义未统一，这里不做状态过滤）
@@ -246,9 +258,9 @@ public class SalaryServiceImpl implements SalaryService {
             Performance best = perfList.isEmpty() ? null : perfList.get(0);
             BigDecimal bonus = BigDecimal.ZERO;
             if (best != null && best.getTotalScore() != null) {
-                BigDecimal rate = best.getTotalScore().min(PERFORMANCE_FULL_SCORE)
-                        .divide(PERFORMANCE_FULL_SCORE, 4, RoundingMode.HALF_UP);
-                bonus = base.multiply(PERFORMANCE_MAX_RATE).multiply(rate).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal rate = best.getTotalScore().min(performanceFullScore)
+                        .divide(performanceFullScore, 4, RoundingMode.HALF_UP);
+                bonus = base.multiply(performanceMaxRate).multiply(rate).setScale(2, RoundingMode.HALF_UP);
             }
             salary.setPerformanceBonus(bonus);
 
@@ -267,7 +279,7 @@ public class SalaryServiceImpl implements SalaryService {
                     }
                     DayOfWeek w = ot.getOvertimeDate() == null ? DayOfWeek.MONDAY : ot.getOvertimeDate().getDayOfWeek();
                     BigDecimal rate = (w == DayOfWeek.SATURDAY || w == DayOfWeek.SUNDAY)
-                            ? new BigDecimal("2.0") : new BigDecimal("1.5");
+                            ? otWeekendRate : otWeekdayRate;
                     overtimePay = overtimePay.add(hourWage.multiply(rate).multiply(ot.getHours()));
                     totalOtHours = totalOtHours.add(ot.getHours());
                 }
@@ -276,11 +288,11 @@ public class SalaryServiceImpl implements SalaryService {
             salary.setAllowance(BigDecimal.ZERO);
 
             // 5) 五险一金按比例估算
-            salary.setSocialSecurity(base.multiply(SOCIAL_SECURITY_RATE).setScale(2, RoundingMode.HALF_UP));
-            salary.setHousingFund(base.multiply(HOUSING_FUND_RATE).setScale(2, RoundingMode.HALF_UP));
+            salary.setSocialSecurity(base.multiply(socialSecurityRate).setScale(2, RoundingMode.HALF_UP));
+            salary.setHousingFund(base.multiply(housingFundRate).setScale(2, RoundingMode.HALF_UP));
 
             // 6) 简化月度个税：（应发 − 起征点 − 社保公积金）按月度税率表
-            BigDecimal taxable = base.add(bonus).add(overtimePay).subtract(TAX_THRESHOLD)
+            BigDecimal taxable = base.add(bonus).add(overtimePay).subtract(taxThreshold)
                     .subtract(salary.getSocialSecurity()).subtract(salary.getHousingFund());
             salary.setTax(monthlyTax(taxable.max(BigDecimal.ZERO)));
 
