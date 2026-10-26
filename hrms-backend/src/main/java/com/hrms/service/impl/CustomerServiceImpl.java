@@ -104,13 +104,14 @@ public class CustomerServiceImpl implements CustomerService {
         if (origin == null) {
             throw new RuntimeException("客户不存在或已删除");
         }
-        Validators.notCleared(origin.getCustomerCode(), customer.getCustomerCode(), "客户编码");
-        Validators.notCleared(origin.getCompanyName(), customer.getCompanyName(), "公司名称");
-        Validators.notCleared(origin.getContactName(), customer.getContactName(), "联系人");
-        Validators.notCleared(origin.getPhone(), customer.getPhone(), "电话");
-        Validators.notCleared(origin.getCountry(), customer.getCountry(), "国家");
-        Validators.notCleared(origin.getCity(), customer.getCity(), "城市");
-        Validators.notCleared(origin.getAddress(), customer.getAddress(), "地址");
+        // 编辑与新增同一套口径：必填字段一律不能为空（含历史数据本来就空的情况，编辑时须补齐）
+        Validators.text(customer.getCustomerCode(), "客户编码");
+        Validators.text(customer.getCompanyName(), "公司名称");
+        Validators.text(customer.getContactName(), "联系人");
+        Validators.text(customer.getPhone(), "电话");
+        Validators.text(customer.getCountry(), "国家");
+        Validators.text(customer.getCity(), "城市");
+        Validators.text(customer.getAddress(), "地址");
         Validators.nonNegative(customer.getCreditLimitUsd(), "信用额度");
         customer.setUpdateTime(LocalDateTime.now());
         return customerMapper.updateById(customer) > 0;

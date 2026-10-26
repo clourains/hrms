@@ -98,6 +98,51 @@
           </div>
         </el-col>
       </el-row>
+      <!-- 图表行 4：毛利排行（按客户 / 按产品） -->
+      <el-row :gutter="16" class="chart-row">
+        <el-col :lg="12" :md="24">
+          <div class="chart-panel">
+            <div class="panel-header">
+              <span class="panel-title">客户毛利 TOP10</span>
+              <span class="panel-tip">毛利 = 售价 − 成本(按订单汇率折算)，未计运费</span>
+            </div>
+            <el-table :data="profitRanking.byCustomer" size="small" max-height="330" class="profit-table">
+              <el-table-column type="index" label="#" width="45" align="center" />
+              <el-table-column prop="name" label="客户" min-width="150" show-overflow-tooltip />
+              <el-table-column prop="country" label="国家" width="95" />
+              <el-table-column label="毛利(USD)" width="120" align="right">
+                <template #default="{ row }">
+                  <span :class="row.profitUsd >= 0 ? 'profit-up' : 'profit-down'">{{ formatNum(row.profitUsd) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="毛利率" width="95" align="right">
+                <template #default="{ row }">{{ formatRate(row.marginRate) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-col>
+        <el-col :lg="12" :md="24">
+          <div class="chart-panel">
+            <div class="panel-header">
+              <span class="panel-title">产品毛利 TOP10</span>
+              <span class="panel-tip">用于识别真正赚钱的品类</span>
+            </div>
+            <el-table :data="profitRanking.byProduct" size="small" max-height="330" class="profit-table">
+              <el-table-column type="index" label="#" width="45" align="center" />
+              <el-table-column prop="name" label="产品" min-width="150" show-overflow-tooltip />
+              <el-table-column prop="sku" label="SKU" width="115" />
+              <el-table-column label="毛利(USD)" width="120" align="right">
+                <template #default="{ row }">
+                  <span :class="row.profitUsd >= 0 ? 'profit-up' : 'profit-down'">{{ formatNum(row.profitUsd) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="毛利率" width="95" align="right">
+                <template #default="{ row }">{{ formatRate(row.marginRate) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-col>
+      </el-row>
     </template>
   </div>
 </template>
@@ -108,7 +153,7 @@ import * as echarts from 'echarts'
 import { DataAnalysis, Refresh, Money, TrendCharts, Tickets, User, Wallet, Box, Coin, ShoppingCart } from '@element-plus/icons-vue'
 import {
   getBusinessOverviewApi, getMonthlySalesApi, getTopCustomersApi,
-  getTopProductsApi, getCountryDistributionApi, getInventoryValueApi
+  getTopProductsApi, getCountryDistributionApi, getInventoryValueApi, getProfitRankingApi
 } from '@/api/trade'
 
 const loading = ref(false)
@@ -120,6 +165,7 @@ const topCustomers = ref([])
 const topProducts = ref([])
 const countryDistribution = ref([])
 const inventoryValue = ref([])
+const profitRanking = ref({ byCustomer: [], byProduct: [] })
 
 const monthlyChartRef = ref(null)
 const customerChartRef = ref(null)
@@ -146,18 +192,21 @@ const coreMetrics = ref([
 
 const formatNum = (n) => (n == null ? '0.00' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const formatInt = (n) => (n == null ? '0' : Number(n).toLocaleString('en-US'))
+// 毛利率：后端已按百分比返回（45.67 = 45.67%）
+const formatRate = (n) => (n == null ? '—' : Number(n).toFixed(2) + '%')
 
 const loadAllData = async () => {
   loading.value = true
   updateTime.value = new Date().toLocaleString('zh-CN')
   try {
-    const [ov, monthly, customers, products, countries, inventory] = await Promise.all([
+    const [ov, monthly, customers, products, countries, inventory, profit] = await Promise.all([
       getBusinessOverviewApi(),
       getMonthlySalesApi(),
       getTopCustomersApi(),
       getTopProductsApi(),
       getCountryDistributionApi(),
-      getInventoryValueApi()
+      getInventoryValueApi(),
+      getProfitRankingApi()
     ])
 
     overview.value = ov.data
@@ -166,6 +215,7 @@ const loadAllData = async () => {
     topProducts.value = products.data || []
     countryDistribution.value = countries.data || []
     inventoryValue.value = inventory.data || []
+    profitRanking.value = profit.data || { byCustomer: [], byProduct: [] }
 
     updateCoreMetrics()
 
@@ -184,6 +234,7 @@ const updateCoreMetrics = () => {
   coreMetrics.value[0].value = '$' + formatNum(s.totalSalesUsd)
   coreMetrics.value[1].value = '$' + formatNum(s.yearSalesUsd)
   coreMetrics.value[2].value = '$' + formatNum(s.grossProfitUsd)
+  coreMetrics.value[2].footer = '毛利率 ' + formatRate(s.grossMarginRate) + ' · 销售额 - 产品成本 (USD)'
   coreMetrics.value[3].value = formatInt(s.totalOrders) + ' 单'
   coreMetrics.value[4].value = formatInt(s.totalCustomers) + ' 家'
   coreMetrics.value[5].value = '$' + formatNum(s.pendingReceivableUsd)
@@ -391,6 +442,12 @@ onUnmounted(() => {
 }
 
 .chart-content { width: 100%; height: 280px; padding: 10px; &.chart-large { height: 320px; } }
+
+// 毛利排行：右侧小字说明口径，表格紧凑一点
+.panel-tip { font-size: 12px; color: #909399; }
+.profit-table { padding: 4px 8px 8px; }
+.profit-up { color: #F56C6C; font-weight: 600; }
+.profit-down { color: #67C23A; font-weight: 600; }
 
 .fund-panel {
   display: grid;
