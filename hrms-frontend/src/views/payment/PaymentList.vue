@@ -1,25 +1,37 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item label="关键字">
-            <el-input v-model="searchForm.keyword" placeholder="收付款单号 / 订单号" clearable style="width: 220px" @keyup.enter="handleSearch" />
-          </el-form-item>
-          <el-form-item label="类型">
-            <el-select v-model="searchForm.type" placeholder="全部" clearable style="width: 120px">
-              <el-option label="收款" :value="1" />
-              <el-option label="付款" :value="2" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
+  <div class="page-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="收付款管理"
+      description="登记客户回款与供应商付款，自动折算人民币金额"
+      icon="Money"
+    >
+      <template #actions>
         <el-button type="primary" :icon="Plus" @click="handleAdd">登记收付款</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keyword" placeholder="收付款单号 / 订单号" clearable style="width: 220px" @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="searchForm.type" placeholder="全部" clearable style="width: 120px">
+            <el-option label="收款" :value="1" />
+            <el-option label="付款" :value="2" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 收付款列表 -->
+    <div class="table-card">
       <el-table v-loading="loading" :data="tableData" border stripe>
         <el-table-column label="单号" width="170">
           <template #default="{ row }">{{ row.payment.paymentNo }}</template>
@@ -34,7 +46,7 @@
         </el-table-column>
         <el-table-column label="金额(USD)" width="130" align="right">
           <template #default="{ row }">
-            <span :style="{ color: row.payment.type === 1 ? '#67C23A' : '#F56C6C', fontWeight: 600 }">
+            <span :style="{ color: row.payment.type === 1 ? 'var(--el-color-success)' : 'var(--el-color-danger)', fontWeight: 600 }">
               {{ row.payment.type === 1 ? '+' : '-' }}${{ formatNum(row.payment.amount) }}
             </span>
           </template>
@@ -66,17 +78,18 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="pagination.pageNum"
-        v-model:page-size="pagination.pageSize"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        class="pagination"
-        @size-change="loadData"
-        @current-change="loadData"
-      />
-    </el-card>
+      <div class="pagination page-pagination">
+        <el-pagination
+          v-model:current-page="pagination.pageNum"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="loadData"
+          @current-change="loadData"
+        />
+      </div>
+    </div>
 
     <el-dialog v-model="dialogVisible" title="登记收付款" width="560px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
@@ -138,6 +151,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getPaymentPageApi, addPaymentApi, deletePaymentApi, getOrderPageApi } from '@/api/trade'
 
 const loading = ref(false)
@@ -211,9 +225,3 @@ onMounted(() => {
   loadOrderOptions()
 })
 </script>
-
-<style scoped>
-.page-container { width: 100%; }
-.search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-</style>

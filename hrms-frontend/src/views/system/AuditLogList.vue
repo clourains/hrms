@@ -1,36 +1,43 @@
 <template>
-  <div class="audit-container">
-    <el-card shadow="hover">
-      <!-- 搜索栏 -->
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item label="操作人">
-            <el-input v-model="searchForm.username" placeholder="请输入操作人" clearable style="width: 160px" />
-          </el-form-item>
-          <el-form-item label="模块">
-            <el-select v-model="searchForm.module" placeholder="请选择模块" clearable style="width: 160px">
-              <el-option v-for="m in moduleOptions" :key="m" :label="m" :value="m" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="时间范围">
-            <el-date-picker
-              v-model="searchForm.range"
-              type="daterange"
-              value-format="YYYY-MM-DD"
-              range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              style="width: 260px"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
-      </div>
+  <div class="audit-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="审计日志"
+      description="记录敏感模块的关键操作，支持按操作人、模块、时间追溯"
+      icon="Document"
+    />
 
-      <!-- 表格 -->
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
+        <el-form-item label="操作人">
+          <el-input v-model="searchForm.username" placeholder="请输入操作人" clearable style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="模块">
+          <el-select v-model="searchForm.module" placeholder="请选择模块" clearable style="width: 160px">
+            <el-option v-for="m in moduleOptions" :key="m" :label="m" :value="m" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="时间范围">
+          <el-date-picker
+            v-model="searchForm.range"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            style="width: 260px"
+          />
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 日志表格 -->
+    <div class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
         <el-table-column prop="createTime" label="操作时间" width="170" align="center">
           <template #default="{ row }">
@@ -66,7 +73,7 @@
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination">
+      <div class="pagination page-pagination">
         <el-pagination
           v-model:current-page="pagination.current"
           v-model:page-size="pagination.size"
@@ -78,13 +85,14 @@
           @current-change="loadData"
         />
       </div>
-    </el-card>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getAuditLogListApi } from '@/api/auditLog'
 
 // 审计覆盖的模块（与后端 @AuditLog 注解保持一致）
@@ -145,17 +153,3 @@ const formatTime = (t) => {
 
 onMounted(loadData)
 </script>
-
-<style scoped>
-.audit-container {
-  padding: 0;
-}
-.search-bar {
-  margin-bottom: 12px;
-}
-.pagination {
-  margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
-}
-</style>

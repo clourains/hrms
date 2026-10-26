@@ -1,24 +1,36 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item label="关键字">
-            <el-input v-model="searchForm.keyword" placeholder="订单号" clearable style="width: 200px" @keyup.enter="handleSearch" />
-          </el-form-item>
-          <el-form-item label="订单状态">
-            <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 130px">
-              <el-option v-for="(label, s) in statusMap" :key="s" :label="label" :value="Number(s)" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
+  <div class="page-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="销售订单"
+      description="跟进订单从确认到签收的全流程，管理订单明细与付款状态"
+      icon="ShoppingCart"
+    >
+      <template #actions>
         <el-button type="primary" :icon="Plus" @click="handleAdd">新建订单</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keyword" placeholder="订单号" clearable style="width: 200px" @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="订单状态">
+          <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 130px">
+            <el-option v-for="(label, s) in statusMap" :key="s" :label="label" :value="Number(s)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 订单列表 -->
+    <div class="table-card">
       <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
         <el-table-column label="订单号" width="170" prop="orderNo" sortable="custom">
           <template #default="{ row }">
@@ -35,7 +47,7 @@
         </el-table-column>
         <el-table-column label="总金额(USD)" width="130" align="right" prop="totalAmountUsd" sortable="custom">
           <template #default="{ row }">
-            <span style="color: #F56C6C; font-weight: 600">${{ formatNum(row.order.totalAmountUsd) }}</span>
+            <span style="color: var(--el-color-danger); font-weight: 600">${{ formatNum(row.order.totalAmountUsd) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="订单状态" width="100" align="center" prop="status" sortable="custom">
@@ -61,17 +73,18 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="pagination.pageNum"
-        v-model:page-size="pagination.pageSize"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        class="pagination"
-        @size-change="handleSizeChange"
-        @current-change="loadData"
-      />
-    </el-card>
+      <div class="pagination page-pagination">
+        <el-pagination
+          v-model:current-page="pagination.pageNum"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="loadData"
+        />
+      </div>
+    </div>
 
     <!-- 新建订单对话框 -->
     <el-dialog v-model="dialogVisible" title="新建销售订单" width="900px" destroy-on-close top="5vh">
@@ -193,6 +206,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete, View } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   getOrderPageApi, createOrderApi, updateOrderStatusApi, deleteOrderApi,
   getOrderItemsApi, getCustomerListApi, getProductListApi, getWarehouseListApi
@@ -368,11 +382,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-container { width: 100%; }
-.search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
 .items-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
-.total-info { font-size: 14px; color: #606266; }
-.total-num { font-weight: 600; color: #409EFF; }
-.total-amount { font-weight: 600; color: #F56C6C; font-size: 16px; }
+.total-info { font-size: 14px; color: var(--el-text-color-regular); }
+.total-num { font-weight: 600; color: var(--el-color-primary); }
+.total-amount { font-weight: 600; color: var(--el-color-danger); font-size: 16px; }
 </style>
