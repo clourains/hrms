@@ -20,9 +20,9 @@ export const addDepartmentApi = (data) => {
   return request.post('/department', data)
 }
 
-// 更新部门
-export const updateDepartmentApi = (id, data) => {
-  return request.put(`/department/${id}`, data)
+// 更新部门（后端为 PUT /department，id 放在请求体里）
+export const updateDepartmentApi = (data) => {
+  return request.put('/department', data)
 }
 
 // 删除部门

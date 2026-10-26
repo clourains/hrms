@@ -231,6 +231,8 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Delete, View, Edit } from '@element-plus/icons-vue'
+import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi } from '@/api/employee'
+import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
 const submitLoading = ref(false)
@@ -254,31 +256,11 @@ const pagination = reactive({
   total: 0
 })
 
-const tableData = ref([
-  { id: 1, employeeNo: 'E001', name: '张三', avatar: '', gender: 1, departmentId: 1, departmentName: '技术部', position: '高级工程师', phone: '13800138001', email: 'zhangsan@example.com', entryDate: '2022-01-15', status: 1, birthday: '1990-05-20', address: '北京市朝阳区', remark: '' },
-  { id: 2, employeeNo: 'E002', name: '李四', avatar: '', gender: 2, departmentId: 1, departmentName: '技术部', position: '前端工程师', phone: '13800138002', email: 'lisi@example.com', entryDate: '2022-03-20', status: 1, birthday: '1992-08-15', address: '北京市海淀区', remark: '' },
-  { id: 3, employeeNo: 'E003', name: '王五', avatar: '', gender: 1, departmentId: 2, departmentName: '产品部', position: '产品经理', phone: '13800138003', email: 'wangwu@example.com', entryDate: '2021-06-10', status: 1, birthday: '1988-12-03', address: '北京市西城区', remark: '' },
-  { id: 4, employeeNo: 'E004', name: '赵六', avatar: '', gender: 1, departmentId: 3, departmentName: '市场部', position: '市场专员', phone: '13800138004', email: 'zhaoliu@example.com', entryDate: '2023-02-01', status: 2, birthday: '1995-07-22', address: '北京市东城区', remark: '试用期' },
-  { id: 5, employeeNo: 'E005', name: '钱七', avatar: '', gender: 2, departmentId: 4, departmentName: '运营部', position: '运营主管', phone: '13800138005', email: 'qianqi@example.com', entryDate: '2020-09-01', status: 1, birthday: '1991-04-18', address: '北京市丰台区', remark: '' },
-  { id: 6, employeeNo: 'E006', name: '孙八', avatar: '', gender: 1, departmentId: 5, departmentName: '人事部', position: 'HR专员', phone: '13800138006', email: 'sunba@example.com', entryDate: '2022-08-15', status: 1, birthday: '1994-11-30', address: '北京市石景山区', remark: '' },
-  { id: 7, employeeNo: 'E007', name: '周九', avatar: '', gender: 2, departmentId: 6, departmentName: '财务部', position: '会计', phone: '13800138007', email: 'zhoujiu@example.com', entryDate: '2021-04-20', status: 1, birthday: '1990-02-14', address: '北京市通州区', remark: '' },
-  { id: 8, employeeNo: 'E008', name: '吴十', avatar: '', gender: 1, departmentId: 7, departmentName: '行政部', position: '行政专员', phone: '13800138008', email: 'wushi@example.com', entryDate: '2023-01-10', status: 2, birthday: '1996-06-05', address: '北京市顺义区', remark: '试用期' },
-  { id: 9, employeeNo: 'E009', name: '郑十一', avatar: '', gender: 1, departmentId: 1, departmentName: '技术部', position: '后端工程师', phone: '13800138009', email: 'zheng11@example.com', entryDate: '2022-05-18', status: 1, birthday: '1993-09-12', address: '北京市昌平区', remark: '' },
-  { id: 10, employeeNo: 'E010', name: '冯十二', avatar: '', gender: 2, departmentId: 8, departmentName: '销售部', position: '销售经理', phone: '13800138010', email: 'feng12@example.com', entryDate: '2019-11-01', status: 0, birthday: '1987-03-25', address: '北京市大兴区', remark: '已离职' }
-])
+// P042：员工列表改为真实接口分页加载，mock 数据已移除
+const tableData = ref([])
 
-pagination.total = tableData.value.length
-
-const departmentOptions = ref([
-  { id: 1, name: '技术部' },
-  { id: 2, name: '产品部' },
-  { id: 3, name: '市场部' },
-  { id: 4, name: '运营部' },
-  { id: 5, name: '人事部' },
-  { id: 6, name: '财务部' },
-  { id: 7, name: '行政部' },
-  { id: 8, name: '销售部' }
-])
+const departmentOptions = ref([])
+let deptNameMap = {}
 
 const formData = reactive({
   id: null,
@@ -325,9 +307,72 @@ const getStatusTagType = (status) => {
   return map[status] || 'info'
 }
 
+/** 日期格式化：Date 对象或 ISO 字符串统一为 yyyy-MM-dd（后端 LocalDate 格式） */
+const fmtDate = (value) => {
+  if (!value) return null
+  if (typeof value === 'string') return value.slice(0, 10)
+  const d = new Date(value)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 后端实体字段 empNo/deptId 与页面展示字段 employeeNo/departmentName 做归一化 */
+const normalizeEmployee = (emp) => ({
+  id: emp.id,
+  employeeNo: emp.empNo,
+  name: emp.name,
+  avatar: emp.avatar || '',
+  gender: emp.gender,
+  departmentId: emp.deptId,
+  departmentName: deptNameMap[emp.deptId] || '-',
+  position: emp.position,
+  phone: emp.phone,
+  email: emp.email,
+  entryDate: fmtDate(emp.entryDate) || '',
+  status: emp.status,
+  birthday: fmtDate(emp.birthday) || '',
+  address: emp.address || '',
+  remark: ''
+})
+
+const loadDepartments = async () => {
+  try {
+    const res = await getDepartmentListApi()
+    const depts = res.data || []
+    departmentOptions.value = depts.map(d => ({ id: d.id, name: d.deptName }))
+    deptNameMap = {}
+    depts.forEach(d => { deptNameMap[d.id] = d.deptName })
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+const fetchList = async () => {
+  loading.value = true
+  try {
+    // 后端 EmployeeQueryDTO 仅支持 name/deptId/position/status 条件
+    const payload = {
+      pageNum: pagination.currentPage,
+      pageSize: pagination.pageSize
+    }
+    if (searchForm.name) payload.name = searchForm.name
+    if (searchForm.departmentId) payload.deptId = searchForm.departmentId
+    if (searchForm.position) payload.position = searchForm.position
+    if (searchForm.status !== '') payload.status = Number(searchForm.status)
+    const res = await getEmployeePageApi(payload)
+    const page = res.data || {}
+    tableData.value = (page.list || []).map(normalizeEmployee)
+    pagination.total = page.total || 0
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    loading.value = false
+  }
+}
+
 const handleSearch = () => {
   pagination.currentPage = 1
-  ElMessage.success('搜索功能演示')
+  fetchList()
 }
 
 const handleReset = () => {
@@ -335,6 +380,7 @@ const handleReset = () => {
     searchForm[key] = ''
   })
   pagination.currentPage = 1
+  fetchList()
 }
 
 const handleSelectionChange = (selection) => {
@@ -366,13 +412,14 @@ const handleDelete = (row) => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    const index = tableData.value.findIndex(item => item.id === row.id)
-    if (index > -1) {
-      tableData.value.splice(index, 1)
-      pagination.total--
+  }).then(async () => {
+    try {
+      await deleteEmployeeApi(row.id)
+      ElMessage.success('删除成功')
+      await fetchList()
+    } catch (e) {
+      // 错误提示由 request 拦截器统一处理
     }
-    ElMessage.success('删除成功')
   }).catch(() => {})
 }
 
@@ -381,44 +428,50 @@ const handleBatchDelete = () => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    tableData.value = tableData.value.filter(item => !selectedIds.value.includes(item.id))
-    pagination.total = tableData.value.length
-    selectedIds.value = []
-    ElMessage.success('批量删除成功')
+  }).then(async () => {
+    try {
+      await batchDeleteEmployeeApi(selectedIds.value)
+      ElMessage.success('批量删除成功')
+      selectedIds.value = []
+      await fetchList()
+    } catch (e) {
+      // 错误提示由 request 拦截器统一处理
+    }
   }).catch(() => {})
 }
 
 const handleSubmit = async () => {
   if (!formRef.value) return
-  await formRef.value.validate((valid) => {
-    if (valid) {
-      submitLoading.value = true
-      setTimeout(() => {
-        if (formData.id) {
-          // 编辑
-          const index = tableData.value.findIndex(item => item.id === formData.id)
-          if (index > -1) {
-            const dept = departmentOptions.value.find(d => d.id === formData.departmentId)
-            formData.departmentName = dept?.name || ''
-            tableData.value[index] = { ...formData }
-          }
-          ElMessage.success('编辑成功')
-        } else {
-          // 新增
-          const dept = departmentOptions.value.find(d => d.id === formData.departmentId)
-          const newEmployee = {
-            ...formData,
-            id: Date.now(),
-            departmentName: dept?.name || ''
-          }
-          tableData.value.unshift(newEmployee)
-          pagination.total++
-          ElMessage.success('新增成功')
-        }
-        dialogVisible.value = false
-        submitLoading.value = false
-      }, 500)
+  await formRef.value.validate(async (valid) => {
+    if (!valid) return
+    submitLoading.value = true
+    try {
+      // 映射回后端字段（empNo/deptId）；备注为纯前端展示字段，后端无对应字段不上送
+      const payload = {
+        empNo: formData.employeeNo,
+        name: formData.name,
+        gender: formData.gender,
+        birthday: fmtDate(formData.birthday),
+        deptId: formData.departmentId,
+        position: formData.position,
+        phone: formData.phone,
+        email: formData.email,
+        entryDate: fmtDate(formData.entryDate),
+        status: formData.status,
+        address: formData.address
+      }
+      if (formData.id) {
+        payload.id = formData.id
+        await updateEmployeeApi(payload)
+        ElMessage.success('编辑成功')
+      } else {
+        await addEmployeeApi(payload)
+        ElMessage.success('新增成功')
+      }
+      dialogVisible.value = false
+      await fetchList()
+    } finally {
+      submitLoading.value = false
     }
   })
 }
@@ -433,15 +486,17 @@ const handleExport = () => {
 
 const handleSizeChange = (size) => {
   pagination.pageSize = size
+  fetchList()
 }
 
 const handleCurrentChange = (page) => {
   pagination.currentPage = page
+  fetchList()
 }
 
-onMounted(() => {
-  // 实际项目中调用接口获取数据
-  // fetchEmployeeList()
+onMounted(async () => {
+  await loadDepartments()
+  fetchList()
 })
 </script>
 

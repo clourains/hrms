@@ -104,6 +104,16 @@ public class SalaryServiceImpl implements SalaryService {
 
     @Override
     public boolean save(Salary salary) {
+        // P042：同员工同月防重（逻辑删除的记录不算），避免裸 SQL 唯一键报错
+        Long empId = salary.getEmpId();
+        String month = salary.getSalaryMonth();
+        if (empId != null && month != null) {
+            LambdaQueryWrapper<Salary> dupWrapper = new LambdaQueryWrapper<>();
+            dupWrapper.eq(Salary::getEmpId, empId).eq(Salary::getSalaryMonth, month);
+            if (salaryMapper.selectCount(dupWrapper) > 0) {
+                throw new RuntimeException("该员工本月薪资记录已存在，请直接编辑原记录");
+            }
+        }
         // 自动计算实发工资
         calculateNetSalary(salary);
         salary.setCreateTime(LocalDateTime.now());

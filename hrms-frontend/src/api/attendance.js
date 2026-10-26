@@ -35,9 +35,9 @@ export const approveAttendanceApi = (id, data) => {
   return request.put(`/attendance/approve/${id}`, data)
 }
 
-// 获取考勤统计
+// 获取考勤统计（后端为 GET /attendance/statistics，参数 empId、month）
 export const getAttendanceStatsApi = (params) => {
-  return request.get('/attendance/stats', params)
+  return request.get('/attendance/statistics', params)
 }
 
 // 获取月度考勤报表

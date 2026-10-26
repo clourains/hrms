@@ -7,14 +7,14 @@
           <div class="stat-card primary">
             <div class="stat-label">本月应发总额</div>
             <div class="stat-value">¥{{ formatMoney(totalStats.totalPayroll) }}</div>
-            <div class="stat-sub">较上月 <span class="up">+5.2%</span></div>
+            <div class="stat-sub">较上月 <span class="up">{{ totalStats.payrollChange }}</span></div>
           </div>
         </el-col>
         <el-col :xs="12" :sm="6">
           <div class="stat-card success">
             <div class="stat-label">人均薪资</div>
             <div class="stat-value">¥{{ formatMoney(totalStats.avgSalary) }}</div>
-            <div class="stat-sub">较上月 <span class="up">+3.8%</span></div>
+            <div class="stat-sub">较上月 <span class="up">{{ totalStats.avgChange }}</span></div>
           </div>
         </el-col>
         <el-col :xs="12" :sm="6">
@@ -49,9 +49,7 @@
           </el-form-item>
           <el-form-item label="部门">
             <el-select v-model="searchForm.departmentId" placeholder="请选择部门" clearable style="width: 160px">
-              <el-option label="技术部" :value="1" />
-              <el-option label="产品部" :value="2" />
-              <el-option label="市场部" :value="3" />
+              <el-option v-for="dept in departmentOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="薪资范围">
@@ -122,6 +120,8 @@
           :total="pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
         />
       </div>
     </el-card>
@@ -132,7 +132,22 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="员工姓名">
-              <el-input v-model="formData.name" disabled />
+              <el-select
+                v-if="!formData.id"
+                v-model="formData.empId"
+                filterable
+                placeholder="请选择员工"
+                style="width: 100%"
+                @change="handleEmployeeChange"
+              >
+                <el-option
+                  v-for="emp in employeeOptions"
+                  :key="emp.id"
+                  :label="emp.name + '（' + emp.employeeNo + '）'"
+                  :value="emp.id"
+                />
+              </el-select>
+              <el-input v-else v-model="formData.name" disabled />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -189,7 +204,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -224,21 +239,28 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Plus, Money, TrendCharts, Setting, Download } from '@element-plus/icons-vue'
+import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi } from '@/api/salary'
+import { getEmployeeListApi } from '@/api/employee'
+import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
+const submitLoading = ref(false)
 const dialogVisible = ref(false)
 const payslipVisible = ref(false)
 const dialogTitle = ref('')
 const payslipMonth = ref('')
 
+// P042：统计卡改为真实接口数据，环比由上月统计计算
 const totalStats = reactive({
-  totalPayroll: 1856800,
-  avgSalary: 12650,
-  socialInsurance: 385600,
-  incomeTax: 128500
+  totalPayroll: 0,
+  avgSalary: 0,
+  socialInsurance: 0,
+  incomeTax: 0,
+  payrollChange: '0.0%',
+  avgChange: '0.0%'
 })
 
 const searchForm = reactive({
@@ -252,24 +274,20 @@ const searchForm = reactive({
 const pagination = reactive({
   currentPage: 1,
   pageSize: 10,
-  total: 56
+  total: 0
 })
 
-const tableData = ref([
-  { id: 1, employeeNo: 'E001', name: '张三', department: '技术部', position: '高级工程师', baseSalary: 18000, performanceSalary: 5000, bonus: 2000, deduction: 200, socialInsurance: 3200, incomeTax: 1800, netSalary: 19800 },
-  { id: 2, employeeNo: 'E002', name: '李四', department: '技术部', position: '前端工程师', baseSalary: 12000, performanceSalary: 3000, bonus: 1000, deduction: 0, socialInsurance: 2100, incomeTax: 850, netSalary: 13050 },
-  { id: 3, employeeNo: 'E003', name: '王五', department: '产品部', position: '产品经理', baseSalary: 15000, performanceSalary: 4000, bonus: 1500, deduction: 100, socialInsurance: 2700, incomeTax: 1200, netSalary: 16500 },
-  { id: 4, employeeNo: 'E004', name: '赵六', department: '市场部', position: '市场专员', baseSalary: 8000, performanceSalary: 2000, bonus: 800, deduction: 0, socialInsurance: 1400, incomeTax: 350, netSalary: 9050 },
-  { id: 5, employeeNo: 'E005', name: '钱七', department: '运营部', position: '运营主管', baseSalary: 13000, performanceSalary: 3500, bonus: 1200, deduction: 50, socialInsurance: 2300, incomeTax: 950, netSalary: 14400 },
-  { id: 6, employeeNo: 'E006', name: '孙八', department: '人事部', position: 'HR专员', baseSalary: 9000, performanceSalary: 2000, bonus: 800, deduction: 0, socialInsurance: 1600, incomeTax: 420, netSalary: 9780 },
-  { id: 7, employeeNo: 'E007', name: '周九', department: '财务部', position: '会计', baseSalary: 10000, performanceSalary: 2500, bonus: 1000, deduction: 0, socialInsurance: 1800, incomeTax: 580, netSalary: 11120 },
-  { id: 8, employeeNo: 'E008', name: '吴十', department: '行政部', position: '行政专员', baseSalary: 7500, performanceSalary: 1500, bonus: 600, deduction: 0, socialInsurance: 1300, incomeTax: 280, netSalary: 8020 },
-  { id: 9, employeeNo: 'E009', name: '郑十一', department: '技术部', position: '后端工程师', baseSalary: 16000, performanceSalary: 4500, bonus: 1800, deduction: 150, socialInsurance: 2900, incomeTax: 1500, netSalary: 17750 },
-  { id: 10, employeeNo: 'E010', name: '冯十二', department: '销售部', position: '销售经理', baseSalary: 10000, performanceSalary: 8000, bonus: 3000, deduction: 200, socialInsurance: 1800, incomeTax: 1600, netSalary: 17400 }
-])
+// P042：薪资列表改为真实接口加载（后端按月份查询全量，前端做条件过滤+分页）
+const allRows = ref([])
+const tableData = ref([])
+const departmentOptions = ref([])
+const employeeOptions = ref([])
+let deptNameMap = {}
+let empMap = {}
 
 const formData = reactive({
   id: null,
+  empId: null,
   name: '',
   department: '',
   month: '',
@@ -292,8 +310,123 @@ const formatMoney = (value) => {
   return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+const pad = (n) => String(n).padStart(2, '0')
+const fmtMonth = (value) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value.slice(0, 7)
+  const d = new Date(value)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+}
+
+const currentMonth = () => (searchForm.month ? fmtMonth(searchForm.month) : fmtMonth(new Date()))
+
+/**
+ * 后端字段 performanceBonus/overtimePay/allowance/socialSecurity/housingFund/tax/otherDeduction
+ * 与页面展示字段 performanceSalary/bonus/socialInsurance/incomeTax/deduction 做归一化
+ */
+const normalizeSalary = (item) => {
+  const emp = empMap[item.empId] || {}
+  return {
+    id: item.id,
+    empId: item.empId,
+    employeeNo: emp.empNo || '-',
+    name: emp.name || '-',
+    department: emp.departmentName || '-',
+    position: emp.position || '-',
+    salaryMonth: item.salaryMonth,
+    baseSalary: Number(item.baseSalary || 0),
+    performanceSalary: Number(item.performanceBonus || 0),
+    bonus: Number((Number(item.overtimePay || 0) + Number(item.allowance || 0)).toFixed(2)),
+    deduction: Number(item.otherDeduction || 0),
+    socialInsurance: Number((Number(item.socialSecurity || 0) + Number(item.housingFund || 0)).toFixed(2)),
+    incomeTax: Number(item.tax || 0),
+    netSalary: Number(item.netSalary || 0),
+    remark: item.remark || ''
+  }
+}
+
+const loadBase = async () => {
+  try {
+    const [empRes, deptRes] = await Promise.all([getEmployeeListApi(), getDepartmentListApi()])
+    const depts = deptRes.data || []
+    deptNameMap = {}
+    depts.forEach(d => { deptNameMap[d.id] = d.deptName })
+    departmentOptions.value = depts.map(d => ({ id: d.id, name: d.deptName }))
+    const emps = empRes.data || []
+    empMap = {}
+    emps.forEach(e => {
+      empMap[e.id] = { ...e, departmentName: deptNameMap[e.deptId] || '-' }
+    })
+    employeeOptions.value = emps.map(e => ({ id: e.id, employeeNo: e.empNo, name: e.name }))
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+const loadData = async () => {
+  loading.value = true
+  try {
+    const res = await getSalaryListApi({ salaryMonth: currentMonth() })
+    allRows.value = (res.data || []).map(normalizeSalary)
+    refreshView()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    loading.value = false
+  }
+}
+
+const buildChange = (cur, prev) => {
+  if (!prev) return '0.0%'
+  const pct = (((cur - prev) / prev) * 100).toFixed(1)
+  return pct > 0 ? `+${pct}%` : `${pct}%`
+}
+
+const loadStats = async () => {
+  try {
+    const month = currentMonth()
+    const now = new Date()
+    const prevMonth = fmtMonth(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+    const [curRes, prevRes] = await Promise.all([
+      getSalaryStatsApi({ salaryMonth: month }),
+      getSalaryStatsApi({ salaryMonth: prevMonth })
+    ])
+    const cur = curRes.data || {}
+    const prev = prevRes.data || {}
+    const curNet = Number(cur.totalNetSalary || 0)
+    const prevNet = Number(prev.totalNetSalary || 0)
+    const count = cur.employeeCount || 0
+    const prevCount = prev.employeeCount || 0
+    totalStats.totalPayroll = curNet
+    totalStats.avgSalary = count ? Number((curNet / count).toFixed(2)) : 0
+    totalStats.socialInsurance = Number((Number(cur.totalSocialSecurity || 0) + Number(cur.totalHousingFund || 0)).toFixed(2))
+    totalStats.incomeTax = Number(cur.totalTax || 0)
+    totalStats.payrollChange = buildChange(curNet, prevNet)
+    totalStats.avgChange = buildChange(
+      count ? curNet / count : 0,
+      prevCount ? prevNet / prevCount : 0
+    )
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+/** 前端条件过滤 + 分页切片（后端列表接口仅支持按月份查询） */
+const refreshView = () => {
+  let rows = allRows.value
+  if (searchForm.name) rows = rows.filter(r => r.name.includes(searchForm.name))
+  if (searchForm.departmentId) rows = rows.filter(r => r.department === (deptNameMap[searchForm.departmentId] || ''))
+  if (searchForm.minSalary != null) rows = rows.filter(r => r.netSalary >= searchForm.minSalary)
+  if (searchForm.maxSalary != null) rows = rows.filter(r => r.netSalary <= searchForm.maxSalary)
+  pagination.total = rows.length
+  const startIdx = (pagination.currentPage - 1) * pagination.pageSize
+  tableData.value = rows.slice(startIdx, startIdx + pagination.pageSize)
+}
+
 const handleSearch = () => {
-  ElMessage.success('搜索功能演示')
+  pagination.currentPage = 1
+  loadData()
+  loadStats()
 }
 
 const handleReset = () => {
@@ -302,6 +435,9 @@ const handleReset = () => {
   })
   searchForm.minSalary = null
   searchForm.maxSalary = null
+  pagination.currentPage = 1
+  loadData()
+  loadStats()
 }
 
 const handleAdd = () => {
@@ -309,18 +445,21 @@ const handleAdd = () => {
   Object.keys(formData).forEach(key => {
     formData[key] = typeof formData[key] === 'number' ? 0 : ''
   })
+  formData.id = null
+  formData.empId = null
   dialogVisible.value = true
 }
 
 const handleEdit = (row) => {
   dialogTitle.value = '调整薪资'
   Object.assign(formData, row)
+  formData.month = row.salaryMonth
   dialogVisible.value = true
 }
 
 const handleView = (row) => {
   Object.assign(formData, row)
-  payslipMonth.value = '2024年1月'
+  payslipMonth.value = row.salaryMonth
   payslipVisible.value = true
 }
 
@@ -328,11 +467,53 @@ const handleSend = (row) => {
   ElMessage.success(`已向 ${row.name} 发送工资条`)
 }
 
-const handleSubmit = () => {
-  ElMessage.success('保存成功')
-  dialogVisible.value = false
+// 新增模式下选择员工后带出姓名/部门展示
+const handleEmployeeChange = (empId) => {
+  const emp = empMap[empId]
+  formData.name = emp?.name || ''
+  formData.department = emp?.departmentName || ''
 }
 
+const handleSubmit = async () => {
+  if (!formData.empId) {
+    ElMessage.warning('请选择员工')
+    return
+  }
+  submitLoading.value = true
+  try {
+    // 映射回后端字段；实发工资由后端重新计算
+    const payload = {
+      empId: formData.empId,
+      salaryMonth: fmtMonth(formData.month) || currentMonth(),
+      baseSalary: formData.baseSalary,
+      performanceBonus: formData.performanceSalary,
+      overtimePay: 0,
+      allowance: formData.bonus,
+      socialSecurity: formData.socialInsurance,
+      housingFund: 0,
+      tax: formData.incomeTax,
+      otherDeduction: formData.deduction,
+      remark: formData.remark
+    }
+    if (formData.id) {
+      payload.id = formData.id
+      await updateSalaryApi(payload)
+      ElMessage.success('调整成功')
+    } else {
+      await addSalaryApi(payload)
+      ElMessage.success('新增成功')
+    }
+    dialogVisible.value = false
+    await loadData()
+    loadStats()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    submitLoading.value = false
+  }
+}
+
+// 后端暂无工资条生成/批量调薪/薪资结构/导出接口，保留演示逻辑
 const handleGenerate = () => {
   ElMessage.success('工资条生成成功')
 }
@@ -348,6 +529,21 @@ const handleStructure = () => {
 const handleExport = () => {
   ElMessage.info('导出功能演示')
 }
+
+const handleSizeChange = () => {
+  pagination.currentPage = 1
+  refreshView()
+}
+
+const handleCurrentChange = () => {
+  refreshView()
+}
+
+onMounted(async () => {
+  await loadBase()
+  loadData()
+  loadStats()
+})
 </script>
 
 <style scoped lang="scss">

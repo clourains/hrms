@@ -105,7 +105,9 @@ CREATE TABLE IF NOT EXISTS sys_salary (
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_emp_id (emp_id),
     INDEX idx_salary_month (salary_month),
-    UNIQUE KEY uk_emp_month (emp_id, salary_month)
+    -- P042：不用 UNIQUE KEY，逻辑删除的行会永久占用唯一键导致删后无法重建；
+    -- 同员工同月的防重由 Service 层查重保证（仅对未删除记录）
+    KEY idx_emp_month (emp_id, salary_month)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='薪资表';
 
 -- 绩效表
@@ -128,7 +130,8 @@ CREATE TABLE IF NOT EXISTS sys_performance (
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_emp_id (emp_id),
     INDEX idx_period (period),
-    UNIQUE KEY uk_emp_period (emp_id, period)
+    -- 同上：逻辑删除与唯一键冲突，防重由 Service 层查重保证
+    KEY idx_emp_period (emp_id, period)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='绩效表';
 
 -- 招聘表

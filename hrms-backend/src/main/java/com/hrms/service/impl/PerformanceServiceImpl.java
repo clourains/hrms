@@ -61,6 +61,16 @@ public class PerformanceServiceImpl implements PerformanceService {
 
     @Override
     public boolean save(Performance performance) {
+        // P042：同员工同周期防重（逻辑删除的记录不算），避免裸 SQL 唯一键报错
+        Long empId = performance.getEmpId();
+        String period = performance.getPeriod();
+        if (empId != null && period != null) {
+            LambdaQueryWrapper<Performance> dupWrapper = new LambdaQueryWrapper<>();
+            dupWrapper.eq(Performance::getEmpId, empId).eq(Performance::getPeriod, period);
+            if (performanceMapper.selectCount(dupWrapper) > 0) {
+                throw new RuntimeException("该员工本考核周期绩效记录已存在，请直接编辑原记录");
+            }
+        }
         calculateTotalScore(performance);
         determineGrade(performance);
         performance.setCreateTime(LocalDateTime.now());
