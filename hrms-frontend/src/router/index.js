@@ -64,6 +64,18 @@ const routes = [
         meta: { title: '绩效管理', icon: 'TrendCharts' }
       },
       {
+        path: 'reminder',
+        name: 'Reminder',
+        component: () => import('@/views/reminder/ReminderList.vue'),
+        meta: { title: '到期提醒', icon: 'Bell', requiresAdmin: true }
+      },
+      {
+        path: 'audit',
+        name: 'Audit',
+        component: () => import('@/views/system/AuditLogList.vue'),
+        meta: { title: '审计日志', icon: 'Document', requiresAdmin: true }
+      },
+      {
         path: 'analytics',
         name: 'Analytics',
         component: () => import('@/views/analytics/Analytics.vue'),
