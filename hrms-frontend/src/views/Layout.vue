@@ -226,6 +226,18 @@ const menuGroups = [
       { path: '/shipment', title: '物流跟踪', icon: 'Ship' },
       { path: '/payment', title: '收付款', icon: 'Wallet' }
     ]
+  },
+  {
+    type: 'group',
+    title: '招聘管理',
+    icon: 'Promotion',
+    adminOnly: true,
+    children: [
+      { path: '/recruit/requisition', title: '招聘需求', icon: 'Promotion' },
+      { path: '/recruit/candidate', title: '候选人', icon: 'UserFilled' },
+      { path: '/recruit/interview', title: '面试安排', icon: 'Calendar' },
+      { path: '/recruit/probation', title: '转正管理', icon: 'CircleCheck' }
+    ]
   }
 ]
 
