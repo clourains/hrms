@@ -195,7 +195,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import ApprovalCard from '@/components/ApprovalCard.vue'
@@ -212,7 +213,16 @@ import {
   getApproverOptionsApi
 } from '@/api/approval'
 
-const activeTab = ref('todo')
+// 支持消息快速通道深链：/approval?tab=todo|mine|done
+const route = useRoute()
+const validTabs = ['todo', 'mine', 'done']
+const activeTab = ref(validTabs.includes(route.query.tab) ? route.query.tab : 'todo')
+watch(() => route.query.tab, (tab) => {
+  if (validTabs.includes(tab) && tab !== activeTab.value) {
+    activeTab.value = tab
+    loadActiveTab()
+  }
+})
 const todoList = ref([])
 const myList = ref([])
 const doneList = ref([])

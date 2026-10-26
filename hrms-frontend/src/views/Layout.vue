@@ -276,6 +276,7 @@ import SettingsDrawer from '@/components/SettingsDrawer.vue'
 import LockScreen from '@/components/LockScreen.vue'
 import logoMark from '@/assets/logo-mark.png'
 import { useAppStore } from '@/store/app'
+import { messageJumpTarget } from '@/utils/messageJump'
 
 const route = useRoute()
 const router = useRouter()
@@ -483,7 +484,8 @@ const openMessage = async (m) => {
     }
   }
   msgVisible.value = false
-  router.push('/message')
+  // 快速通道：审批/薪资类消息直达处理页面，其余进消息中心
+  router.push(messageJumpTarget(m) || '/message')
 }
 
 const msgReadAll = async () => {

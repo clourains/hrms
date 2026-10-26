@@ -8,6 +8,7 @@
             <el-select v-model="searchForm.msgType" placeholder="全部类型" clearable style="width: 140px">
               <el-option label="系统" value="系统" />
               <el-option label="审批" value="审批" />
+              <el-option label="薪资" value="薪资" />
               <el-option label="提醒" value="提醒" />
             </el-select>
           </el-form-item>
@@ -65,6 +66,14 @@
             </div>
           </div>
           <div class="msg-actions">
+            <el-button
+              v-if="jumpTarget(msg)"
+              type="primary"
+              link
+              size="small"
+              :icon="Promotion"
+              @click.stop="handleJump(msg)"
+            >{{ jumpLabel(msg) }}</el-button>
             <el-button type="danger" link size="small" :icon="Delete" @click.stop="handleDelete(msg)">删除</el-button>
           </div>
         </div>
@@ -80,6 +89,9 @@
           <span>{{ formatTime(currentMsg.createTime) }}</span>
         </div>
         <div class="detail-content">{{ currentMsg.content }}</div>
+        <div v-if="jumpTarget(currentMsg)" class="detail-jump">
+          <el-button type="primary" :icon="Promotion" @click="handleJump(currentMsg)">{{ jumpLabel(currentMsg) }}</el-button>
+        </div>
       </template>
     </el-drawer>
 
@@ -134,8 +146,10 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Check, Delete, Promotion, Bell, EditPen, Warning } from '@element-plus/icons-vue'
+import { messageJumpTarget as jumpTarget, messageJumpLabel as jumpLabel } from '@/utils/messageJump'
 import {
   getMessageInboxApi,
   getUnreadCountApi,
@@ -240,6 +254,24 @@ const handleView = async (msg) => {
       // 忽略
     }
   }
+}
+
+// 快速通道：标记已读后直达处理页面
+const router = useRouter()
+const handleJump = async (msg) => {
+  const target = jumpTarget(msg)
+  if (!target) return
+  detailVisible.value = false
+  if (msg.isRead === 0) {
+    try {
+      await markMessageReadApi(msg.id)
+      msg.isRead = 1
+      await refreshUnread()
+    } catch (e) {
+      // 忽略
+    }
+  }
+  router.push(target)
 }
 
 const handleReadAll = async () => {
@@ -417,6 +449,10 @@ onMounted(loadData)
     line-height: 1.8;
     white-space: pre-wrap;
     padding-top: 16px;
+  }
+
+  .detail-jump {
+    padding-top: 20px;
   }
 }
 </style>
