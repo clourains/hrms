@@ -35,6 +35,39 @@ public class AnalyticsServiceImpl implements AnalyticsService {
     @Autowired
     private PerformanceMapper performanceMapper;
 
+    /**
+     * 入职离职趋势（M1-5）：按入职日期/离职日期真实按月聚合。
+     * 离职日期为新列 leave_date，历史数据为空时离职线自然为 0，
+     * 随着办理离职填写离职日期，曲线逐步积累真实数据。
+     */
+    @Override
+    public List<Map<String, Object>> getTurnoverTrend(int months) {
+        int range = Math.max(1, Math.min(months, 24));
+        DateTimeFormatter monthFmt = DateTimeFormatter.ofPattern("yyyy-MM");
+        LocalDate currentMonthStart = LocalDate.now().withDayOfMonth(1);
+
+        List<Employee> allEmployees = employeeMapper.selectList(null);
+
+        List<Map<String, Object>> trend = new ArrayList<>();
+        for (int i = range - 1; i >= 0; i--) {
+            String monthKey = currentMonthStart.minusMonths(i).format(monthFmt);
+            long hireCount = allEmployees.stream()
+                    .filter(e -> e.getEntryDate() != null
+                            && e.getEntryDate().format(monthFmt).equals(monthKey))
+                    .count();
+            long leaveCount = allEmployees.stream()
+                    .filter(e -> e.getLeaveDate() != null
+                            && e.getLeaveDate().format(monthFmt).equals(monthKey))
+                    .count();
+            Map<String, Object> item = new HashMap<>();
+            item.put("month", monthKey);
+            item.put("hireCount", hireCount);
+            item.put("leaveCount", leaveCount);
+            trend.add(item);
+        }
+        return trend;
+    }
+
     @Override
     public DashboardStats getDashboardStats() {
         DashboardStats stats = new DashboardStats();

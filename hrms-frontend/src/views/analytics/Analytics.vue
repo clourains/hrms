@@ -186,7 +186,7 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { DataAnalysis, CaretTop, CaretBottom, User, UserFilled, Warning, TrendCharts, Money, Lightning, InfoFilled, Refresh } from '@element-plus/icons-vue'
-import { getDashboardStatsApi, getEmployeeStructureApi, getAttendanceAnalysisApi, getSalaryAnalysisApi, getPerformanceAnalysisApi, getTalentPredictionApi, getAiInsightsApi } from '@/api/analytics'
+import { getDashboardStatsApi, getEmployeeStructureApi, getAttendanceAnalysisApi, getSalaryAnalysisApi, getPerformanceAnalysisApi, getTalentPredictionApi, getAiInsightsApi, getTurnoverTrendApi } from '@/api/analytics'
 
 const loading = ref(false)
 const updateTime = ref(new Date().toLocaleString('zh-CN'))
@@ -218,13 +218,15 @@ let attendanceChart = null
 let radarChart = null
 let trendChart = null
 
-// 入职离职趋势数据（暂无后端历史接口，先以演示数据展示）
+// 入职离职趋势数据（M1-5：真实统计接口，按入职/离职日期按月聚合）
 const TREND_PERIODS = { year: 12, halfYear: 6, quarter: 3 }
 const trendPeriod = ref('year')
-const trendMonths = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
-const trendHireData = [10, 15, 8, 12, 18, 14, 10, 16, 13, 12, 15, 12]
-const trendLeaveData = [5, 3, 4, 6, 2, 5, 4, 3, 5, 4, 3, 3]
-const trendSlice = () => -1 * (TREND_PERIODS[trendPeriod.value] || 12)
+const trendData = ref([])
+
+const loadTrendData = async (months) => {
+  const res = await getTurnoverTrendApi(months)
+  trendData.value = res.data || []
+}
 
 const coreMetrics = ref([
   { title: '员工总数', value: '--', trend: 0, icon: 'User', color: '#409EFF' },
@@ -244,14 +246,15 @@ const loadAllData = async () => {
   loading.value = true
   updateTime.value = new Date().toLocaleString('zh-CN')
   try {
-    const [stats, structure, attendance, salary, performance, prediction, insights] = await Promise.all([
+    const [stats, structure, attendance, salary, performance, prediction, insights, trend] = await Promise.all([
       getDashboardStatsApi(),
       getEmployeeStructureApi(),
       getAttendanceAnalysisApi(),
       getSalaryAnalysisApi(),
       getPerformanceAnalysisApi(),
       getTalentPredictionApi(),
-      getAiInsightsApi()
+      getAiInsightsApi(),
+      getTurnoverTrendApi(TREND_PERIODS[trendPeriod.value] || 12)
     ])
 
     dashboardStats.value = stats.data
@@ -261,6 +264,7 @@ const loadAllData = async () => {
     performanceAnalysis.value = performance.data
     talentPrediction.value = prediction.data
     aiInsights.value = insights.data || []
+    trendData.value = trend.data || []
 
     updateCoreMetrics()
     hiringData.value = prediction.data?.recruitmentDemand || []
@@ -471,23 +475,22 @@ const initRadarChart = () => {
   })
 }
 
-// 入职离职趋势图（历史流动数据，紧邻 AI 流失预测形成"历史-预测"呼应）
+// 入职离职趋势图（真实统计数据，紧邻 AI 流失预测形成"历史-预测"呼应）
 const initTrendChart = () => {
   if (!trendChartRef.value) return
   trendChart = echarts.init(trendChartRef.value)
-  const n = TREND_PERIODS[trendPeriod.value] || 12
   trendChart.setOption({
     tooltip: { trigger: 'axis' },
     legend: { data: ['入职人数', '离职人数'], top: 0 },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-    xAxis: { type: 'category', boundaryGap: false, data: trendMonths.slice(n ? -n : 0) },
-    yAxis: { type: 'value' },
+    xAxis: { type: 'category', boundaryGap: false, data: trendData.value.map(d => d.month) },
+    yAxis: { type: 'value', minInterval: 1 },
     series: [
       {
         name: '入职人数',
         type: 'line',
         smooth: true,
-        data: trendHireData.slice(n ? -n : 0),
+        data: trendData.value.map(d => d.hireCount),
         itemStyle: { color: '#67C23A' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -500,7 +503,7 @@ const initTrendChart = () => {
         name: '离职人数',
         type: 'line',
         smooth: true,
-        data: trendLeaveData.slice(n ? -n : 0),
+        data: trendData.value.map(d => d.leaveCount),
         itemStyle: { color: '#F56C6C' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -513,14 +516,14 @@ const initTrendChart = () => {
   })
 }
 
-watch(trendPeriod, () => {
+watch(trendPeriod, async () => {
   if (!trendChart) return
-  const n = TREND_PERIODS[trendPeriod.value] || 12
+  await loadTrendData(TREND_PERIODS[trendPeriod.value] || 12)
   trendChart.setOption({
-    xAxis: { data: trendMonths.slice(n ? -n : 0) },
+    xAxis: { data: trendData.value.map(d => d.month) },
     series: [
-      { data: trendHireData.slice(n ? -n : 0) },
-      { data: trendLeaveData.slice(n ? -n : 0) }
+      { data: trendData.value.map(d => d.hireCount) },
+      { data: trendData.value.map(d => d.leaveCount) }
     ]
   })
 })

@@ -185,6 +185,11 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col v-if="formData.status === 0" :span="12">
+            <el-form-item label="离职日期" prop="leaveDate">
+              <el-date-picker v-model="formData.leaveDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择离职日期" style="width: 100%" />
+            </el-form-item>
+          </el-col>
           <el-col :span="24">
             <el-form-item label="地址" prop="address">
               <el-input v-model="formData.address" placeholder="请输入地址" />
@@ -215,6 +220,7 @@
         <el-descriptions-item label="手机号">{{ formData.phone }}</el-descriptions-item>
         <el-descriptions-item label="邮箱">{{ formData.email }}</el-descriptions-item>
         <el-descriptions-item label="入职日期">{{ formData.entryDate }}</el-descriptions-item>
+        <el-descriptions-item v-if="formData.leaveDate" label="离职日期">{{ formData.leaveDate }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="getStatusTagType(formData.status)" size="small">
             {{ getStatusText(formData.status) }}
@@ -274,6 +280,7 @@ const formData = reactive({
   phone: '',
   email: '',
   entryDate: '',
+  leaveDate: '',
   status: 1,
   address: '',
   remark: ''
@@ -329,6 +336,7 @@ const normalizeEmployee = (emp) => ({
   phone: emp.phone,
   email: emp.email,
   entryDate: fmtDate(emp.entryDate) || '',
+  leaveDate: fmtDate(emp.leaveDate) || '',
   status: emp.status,
   birthday: fmtDate(emp.birthday) || '',
   address: emp.address || '',
@@ -457,6 +465,8 @@ const handleSubmit = async () => {
         phone: formData.phone,
         email: formData.email,
         entryDate: fmtDate(formData.entryDate),
+        // 离职日期仅离职状态时上送（M1-5 入离职趋势统计来源）
+        leaveDate: formData.status === 0 ? fmtDate(formData.leaveDate) : null,
         status: formData.status,
         address: formData.address
       }

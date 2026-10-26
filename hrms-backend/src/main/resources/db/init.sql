@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS sys_employee (
     position VARCHAR(50) COMMENT '职位',
     job_level VARCHAR(50) COMMENT '职级',
     entry_date DATE COMMENT '入职日期',
+    leave_date DATE COMMENT '离职日期（办理离职时填写，用于入离职趋势统计）',
     work_years INT DEFAULT 0 COMMENT '工龄(年)',
     education VARCHAR(20) COMMENT '学历',
     major VARCHAR(50) COMMENT '专业',
