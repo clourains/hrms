@@ -213,33 +213,65 @@
     <!-- 锁屏遮罩 -->
     <LockScreen />
 
-    <!-- 全局搜索（P022） -->
-    <el-dialog v-model="searchVisible" title="搜索" width="520px" append-to-body>
+    <!-- 全局搜索（P022 菜单 + P7-1 员工/消息，Ctrl+K 唤起） -->
+    <el-dialog v-model="searchVisible" title="全局搜索" width="560px" append-to-body>
       <el-input
         ref="searchInputRef"
         v-model="searchKeyword"
-        placeholder="输入页面名称，如 库存 / 物流 / 订单"
+        placeholder="搜索页面 / 员工 / 消息（Ctrl+K）"
         prefix-icon="Search"
         clearable
       />
-      <div class="search-list">
+      <div class="search-list" v-loading="searchLoading" element-loading-text="搜索中...">
+        <!-- 页面 -->
+        <div v-if="filteredMenus.length > 0" class="search-group-title">页面</div>
         <div
           v-for="m in filteredMenus"
-          :key="m.path"
+          :key="'menu-' + m.path"
           class="search-item"
           @click="goMenu(m.path)"
         >
           <el-icon><component :is="m.icon" /></el-icon>
           <span>{{ m.title }}</span>
         </div>
-        <el-empty v-if="filteredMenus.length === 0" description="没有匹配的页面" :image-size="56" />
+
+        <!-- 员工 -->
+        <div v-if="empResults.length > 0" class="search-group-title">员工</div>
+        <div
+          v-for="e in empResults"
+          :key="'emp-' + e.id"
+          class="search-item"
+          @click="goEmployee(e)"
+        >
+          <el-icon><User /></el-icon>
+          <span>{{ e.name }}</span>
+          <span class="search-item-sub">{{ e.empNo }}</span>
+        </div>
+
+        <!-- 消息 -->
+        <div v-if="msgResults.length > 0" class="search-group-title">消息</div>
+        <div
+          v-for="msg in msgResults"
+          :key="'msg-' + msg.id"
+          class="search-item"
+          @click="goMessageCenter"
+        >
+          <el-icon><ChatDotRound /></el-icon>
+          <span class="search-item-msg">{{ msg.title }}</span>
+        </div>
+
+        <el-empty
+          v-if="searchKeyword && filteredMenus.length === 0 && empResults.length === 0 && msgResults.length === 0"
+          description="没有匹配的结果"
+          :image-size="56"
+        />
       </div>
     </el-dialog>
   </el-container>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -250,6 +282,7 @@ import {
   markMessageReadApi,
   readAllMessagesApi
 } from '@/api/message'
+import { getEmployeeListApi } from '@/api/employee'
 import {
   User,
   OfficeBuilding,
@@ -395,10 +428,17 @@ const defaultOpeneds = computed(() => {
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
 
-// ========== 顶部搜索（P022） ==========
+// ========== 全局搜索（P022 菜单 + P7-1 员工/消息） ==========
 const searchVisible = ref(false)
 const searchKeyword = ref('')
 const searchInputRef = ref(null)
+const searchLoading = ref(false)
+const empResults = ref([])
+const msgResults = ref([])
+let empCache = null
+let searchTimer = null
+
+const canSeeEmployee = computed(() => ['admin', 'manager'].includes(userStore.role))
 
 const filteredMenus = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
@@ -408,14 +448,64 @@ const filteredMenus = computed(() => {
 
 const openSearch = () => {
   searchKeyword.value = ''
+  empResults.value = []
+  msgResults.value = []
   searchVisible.value = true
   nextTick(() => searchInputRef.value?.focus())
+}
+
+// 关键词变化时防抖搜索员工（客户端过滤缓存）和消息（服务端模糊）
+watch(searchKeyword, (kw) => {
+  clearTimeout(searchTimer)
+  const k = kw.trim()
+  if (!k) {
+    empResults.value = []
+    msgResults.value = []
+    return
+  }
+  searchTimer = setTimeout(() => doGlobalSearch(k), 300)
+})
+
+const doGlobalSearch = async (kw) => {
+  searchLoading.value = true
+  try {
+    // 员工：admin/manager 可见，首次拉全量后本地过滤
+    if (canSeeEmployee.value) {
+      if (!empCache) {
+        const res = await getEmployeeListApi()
+        empCache = res.code === 200 ? (res.data || []) : []
+      }
+      empResults.value = empCache
+        .filter(e => (e.name || '').includes(kw) || (e.empNo || '').toLowerCase().includes(kw.toLowerCase()))
+        .slice(0, 5)
+    }
+    // 消息：服务端按关键字模糊
+    const msgRes = await getMessageInboxApi({ keyword: kw })
+    msgResults.value = msgRes.code === 200 ? (msgRes.data || []).slice(0, 5) : []
+  } catch {
+    // 搜索失败静默，不影响菜单搜索
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+const goEmployee = (emp) => {
+  searchVisible.value = false
+  router.push({ path: '/employee', query: { name: emp.name } })
 }
 
 const goMenu = (path) => {
   searchVisible.value = false
   if (route.path === path) return
   router.push(path)
+}
+
+// Ctrl+K / Cmd+K 唤起全局搜索
+const onGlobalKeydown = (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    openSearch()
+  }
 }
 
 // ========== 顶部通知：库存预警（P022） ==========
@@ -450,6 +540,10 @@ const refreshWarningCount = async () => {
 }
 
 onMounted(refreshWarningCount)
+
+// Ctrl+K 全局搜索快捷键注册/注销
+window.addEventListener('keydown', onGlobalKeydown)
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 // 切换页面时刷新红点，避免库存变动后数字不更新
 watch(() => route.path, () => {
@@ -513,6 +607,7 @@ const msgReadAll = async () => {
 
 const goMessageCenter = () => {
   msgVisible.value = false
+  searchVisible.value = false
   router.push('/message')
 }
 
@@ -772,6 +867,16 @@ const handleCommand = async (command) => {
 
   &:hover { background-color: var(--el-fill-color-light); color: var(--el-color-primary); }
 }
+
+/* 搜索分组（P7-1） */
+.search-group-title {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+.search-item-sub { font-size: 12px; color: var(--el-text-color-placeholder); }
+.search-item-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 路由过渡动画 */
 .fade-enter-active,

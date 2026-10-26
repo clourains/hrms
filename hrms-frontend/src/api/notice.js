@@ -7,7 +7,7 @@ export const getActiveNoticesApi = () => request.get('/notice/active')
 export const readNoticeApi = (id) => request.post(`/notice/read/${id}`)
 
 // 管理端分页列表
-export const getNoticeListApi = (params) => request.get('/notice/list', { params })
+export const getNoticeListApi = (params) => request.get('/notice/list', params)
 
 // 发布公告
 export const createNoticeApi = (data) => request.post('/notice', data)

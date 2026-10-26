@@ -239,15 +239,61 @@
         <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- Excel 导入弹窗（P7-2） -->
+    <el-dialog v-model="importVisible" title="批量导入员工" width="600px" destroy-on-close>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="请按模板格式填写：工号/姓名/性别(男/女)/部门(名称)/职位/手机号 为必填；工号不可重复，部门须与系统中已有部门同名"
+        style="margin-bottom: 14px"
+      />
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px">
+        <el-button link type="primary" :icon="Download" @click="downloadTemplate">下载导入模板</el-button>
+        <el-upload
+          :auto-upload="false"
+          :show-file-list="true"
+          :limit="1"
+          accept=".xlsx,.xls"
+          :on-change="onImportFileChange"
+        >
+          <el-button :icon="Upload">选择文件</el-button>
+        </el-upload>
+      </div>
+
+      <!-- 导入结果：失败行反馈 -->
+      <template v-if="importResult">
+        <el-alert
+          :type="importResult.failed === 0 ? 'success' : 'warning'"
+          :closable="false"
+          show-icon
+          :title="`导入完成：成功 ${importResult.success} 条，失败 ${importResult.failed} 条`"
+          style="margin-bottom: 10px"
+        />
+        <el-table v-if="importResult.errors && importResult.errors.length > 0" :data="importResult.errors" size="small" border max-height="220">
+          <el-table-column prop="row" label="行号" width="70" align="center" />
+          <el-table-column prop="empNo" label="工号" width="110" />
+          <el-table-column prop="name" label="姓名" width="90" />
+          <el-table-column prop="reason" label="失败原因" min-width="200" show-overflow-tooltip />
+        </el-table>
+      </template>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importLoading" @click="submitImport">开始导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Delete, View, Edit } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi } from '@/api/employee'
+import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi, importEmployeeApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
@@ -497,8 +543,63 @@ const handleSubmit = async () => {
   })
 }
 
+// P7-2 Excel 导入：弹窗 + 模板下载 + 失败行反馈
+const importVisible = ref(false)
+const importLoading = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+
 const handleImport = () => {
-  ElMessage.info('导入功能演示')
+  importFile.value = null
+  importResult.value = null
+  importVisible.value = true
+}
+
+const downloadTemplate = () => {
+  // 直接走后端模板接口（携带 token 由浏览器同源会话无效，这里用 axios 下载更稳）
+  const base = import.meta.env.VITE_API_BASE || '/api'
+  const token = localStorage.getItem('token') || ''
+  fetch(`${base}/employee/importTemplate`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = '员工导入模板.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+    .catch(() => ElMessage.error('模板下载失败'))
+}
+
+const onImportFileChange = (file) => {
+  importFile.value = file.raw
+}
+
+const submitImport = async () => {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    const res = await importEmployeeApi(fd)
+    if (res.code === 200) {
+      importResult.value = res.data
+      if (res.data.failed === 0) {
+        ElMessage.success(`导入成功 ${res.data.success} 条`)
+      } else {
+        ElMessage.warning(`成功 ${res.data.success} 条，失败 ${res.data.failed} 条，详见下方列表`)
+      }
+      fetchList()
+    } else {
+      ElMessage.error(res.msg || '导入失败')
+    }
+  } finally {
+    importLoading.value = false
+  }
 }
 
 const handleExport = () => {
@@ -515,7 +616,13 @@ const handleCurrentChange = (page) => {
   fetchList()
 }
 
+const route = useRoute()
+
 onMounted(async () => {
+  // P7-1 全局搜索跳转：?name=xxx 自动带入姓名筛选
+  if (route.query.name) {
+    searchForm.name = String(route.query.name)
+  }
   await loadDepartments()
   fetchList()
 })

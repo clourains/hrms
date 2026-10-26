@@ -1,8 +1,8 @@
-import { request } from '@/utils/request'
+﻿import { request } from '@/utils/request'
 
 // 分页查询用户列表（P5-1，仅管理员）
 export const getUserListApi = (params) => {
-  return request.get('/user/list', { params })
+  return request.get('/user/list', params)
 }
 
 // 新建用户

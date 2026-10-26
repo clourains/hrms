@@ -1,4 +1,4 @@
-import { request } from '@/utils/request'
+﻿import { request } from '@/utils/request'
 
 // ==================== 仪表盘 ====================
 
@@ -18,21 +18,21 @@ export const getEmployeeStructureApi = () => {
 
 // 获取考勤分析
 export const getAttendanceAnalysisApi = (params) => {
-  return request.get('/analytics/attendance', { params })
+  return request.get('/analytics/attendance', params)
 }
 
 // ==================== 薪资分析 ====================
 
 // 获取薪资分析
 export const getSalaryAnalysisApi = (params) => {
-  return request.get('/analytics/salary', { params })
+  return request.get('/analytics/salary', params)
 }
 
 // ==================== 绩效分析 ====================
 
 // 获取绩效分析
 export const getPerformanceAnalysisApi = (params) => {
-  return request.get('/analytics/performance', { params })
+  return request.get('/analytics/performance', params)
 }
 
 // ==================== 人才预测 ====================
