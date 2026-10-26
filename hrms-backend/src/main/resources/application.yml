@@ -23,6 +23,17 @@ spring:
       test-while-idle: true
       test-on-borrow: false
       test-on-return: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 123456
+      timeout: 3000ms
+
+# 业务配置
+hrms:
+  # 登出 token 黑名单实现：redis（默认，集中式）/ memory（无 Redis 环境兜底）
+  token-blacklist: redis
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml

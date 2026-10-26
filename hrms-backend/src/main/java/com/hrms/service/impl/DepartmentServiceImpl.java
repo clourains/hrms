@@ -6,6 +6,8 @@ import com.hrms.mapper.DepartmentMapper;
 import com.hrms.service.DepartmentService;
 import com.hrms.util.Validators;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -23,6 +25,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     private DepartmentMapper departmentMapper;
 
     @Override
+    @Cacheable(cacheNames = "deptTree", key = "'tree'")
     public List<Department> tree() {
         // 获取所有部门
         List<Department> allDepts = listAll();
@@ -62,6 +65,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     }
 
     @Override
+    @CacheEvict(cacheNames = "deptTree", allEntries = true)
     public boolean save(Department department) {
         Validators.text(department.getDeptName(), "部门名称");
         Validators.text(department.getDeptCode(), "部门编码");
@@ -74,6 +78,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     }
 
     @Override
+    @CacheEvict(cacheNames = "deptTree", allEntries = true)
     public boolean update(Department department) {
         if (department.getId() == null) {
             throw new RuntimeException("部门不存在");
@@ -89,6 +94,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     }
 
     @Override
+    @CacheEvict(cacheNames = "deptTree", allEntries = true)
     public boolean deleteById(Long id) {
         // 检查是否有子部门
         LambdaQueryWrapper<Department> queryWrapper = new LambdaQueryWrapper<>();
