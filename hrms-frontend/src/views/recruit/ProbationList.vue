@@ -11,6 +11,27 @@
       </el-col>
     </el-row>
 
+    <!-- 到期预警：只在有即将到期或已逾期时出现，正常不显示 -->
+    <el-alert
+      v-if="expireTotal > 0"
+      class="expire-alert"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        <span class="expire-text">
+          有
+          <span v-if="expiringCount > 0"><b>{{ expiringCount }}</b> 人 {{ warnDays }} 天内到期</span>
+          <span v-if="expiringCount > 0 && overdueCount > 0">，</span>
+          <span v-if="overdueCount > 0"><b class="expire-danger">{{ overdueCount }}</b> 人已逾期未办理</span>
+          <span v-if="overdueCount > 0" class="expire-note">，请尽快办理转正或延期</span>
+          <span v-else class="expire-note">，请及时安排转正评估</span>
+          <el-button link type="primary" class="expire-link" @click="showExpiring">点击查看</el-button>
+        </span>
+      </template>
+    </el-alert>
+
     <el-card shadow="hover">
       <div class="search-bar">
         <el-form :inline="true" :model="searchForm">
@@ -31,7 +52,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="到期提醒">
-            <el-switch v-model="onlyExpiring" active-text="30天内到期" @change="handleSearch" />
+            <el-switch v-model="onlyExpiring" :active-text="`${warnDays}天内到期`" @change="handleSearch" />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
@@ -214,18 +235,27 @@
     </el-dialog>
 
     <!-- 延长试用期 -->
-    <el-dialog v-model="extendVisible" title="延长试用期" width="460px" destroy-on-close>
+    <el-dialog v-model="extendVisible" title="延长试用期" width="500px" destroy-on-close>
       <el-form label-width="110px">
         <el-form-item label="原结束日期">
           <span>{{ currentRow?.probationEnd }}</span>
         </el-form-item>
         <el-form-item label="新结束日期">
-          <el-date-picker
-            v-model="extendForm.newEnd"
-            type="date"
-            value-format="YYYY-MM-DD"
-            style="width: 100%"
-          />
+          <div style="width: 100%">
+            <el-date-picker
+              v-model="extendForm.newEnd"
+              type="date"
+              value-format="YYYY-MM-DD"
+              :disabled-date="disabledExtendDate"
+              :placeholder="maxExtendText ? '最晚可选 ' + maxExtendText : '请选择'"
+              style="width: 100%"
+            />
+            <div class="extend-tip">
+              单次延长不超过 <b>{{ EXTEND_MAX_DAYS }} 天</b>，最晚可延至 <b>{{ maxExtendText || '-' }}</b>
+              <br />
+              累计试用期不超过 {{ TOTAL_MAX_MONTHS }} 个月（自 {{ currentRow?.probationStart || '-' }} 起算）
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="延期原因">
           <el-input v-model="extendForm.evaluation" type="textarea" :rows="2" placeholder="选填，建议写明原因" />
@@ -255,6 +285,11 @@ import {
 } from '@/api/recruit'
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
+import {
+  PROBATION_EXPIRE_DAYS,
+  PROBATION_EXTEND_MAX_DAYS,
+  PROBATION_TOTAL_MAX_MONTHS
+} from '@/utils/constants'
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -303,12 +338,71 @@ const rules = {
 const confirmForm = reactive({ score: 80, evaluation: '' })
 const extendForm = reactive({ newEnd: '', evaluation: '' })
 
+/** 单次延长上限（天）、累计上限（月）、到期提醒天数统一取自 constants.js */
+const EXTEND_MAX_DAYS = PROBATION_EXTEND_MAX_DAYS
+const TOTAL_MAX_MONTHS = PROBATION_TOTAL_MAX_MONTHS
+
+/** 到期提醒天数：优先用后端回传的口径，拿不到时退回本地常量 */
+const warnDays = computed(() => Number(stats.value.expireWarnDays) || PROBATION_EXPIRE_DAYS)
+
+const parseDate = (s) => {
+  if (!s) return null
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
+
+const fmtDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+/** 最晚可延至 = min(原结束日期 + 30 天, 试用开始 + 6 个月) */
+const maxExtendDate = computed(() => {
+  const row = currentRow.value
+  if (!row?.probationEnd) return null
+  const base = parseDate(row.probationEnd)
+  if (!base) return null
+  const byExtend = new Date(base)
+  byExtend.setDate(byExtend.getDate() + EXTEND_MAX_DAYS)
+  let limit = byExtend
+  const start = parseDate(row.probationStart)
+  if (start) {
+    const byTotal = new Date(start)
+    byTotal.setMonth(byTotal.getMonth() + TOTAL_MAX_MONTHS)
+    if (byTotal < limit) limit = byTotal
+  }
+  return limit
+})
+
+const maxExtendText = computed(() => (maxExtendDate.value ? fmtDate(maxExtendDate.value) : ''))
+
+const disabledExtendDate = (date) => {
+  const row = currentRow.value
+  if (!row?.probationEnd) return false
+  const end = parseDate(row.probationEnd)
+  if (end && date <= end) return true
+  if (maxExtendDate.value && date > maxExtendDate.value) return true
+  return false
+}
+
+// 临期与逾期分开统计，文案里也分开写，避免"N 人到期"是个 0 却硬要念一遍的别扭说法
+const expiringCount = computed(() => Number(stats.value.expiringSoon) || 0)
+const overdueCount = computed(() => Number(stats.value.overdue) || 0)
+
 const statCards = computed(() => [
   { label: '试用中', value: stats.value.probationing ?? 0, sub: '待办理转正', color: '#E6A23C' },
-  { label: '30 天内到期', value: stats.value.expiringIn30 ?? 0, sub: '需要安排评估', color: '#409EFF' },
+  { label: `${warnDays.value} 天内到期`, value: expiringCount.value, sub: '需要安排评估', color: '#409EFF' },
   { label: '已逾期', value: stats.value.overdue ?? 0, sub: '超过试用期未办理', color: '#F56C6C' },
   { label: '本月已转正', value: stats.value.regularThisMonth ?? 0, sub: `累计未通过 ${stats.value.failedTotal ?? 0} 人`, color: '#67C23A' }
 ])
+
+// 到期预警总数：即将到期 + 已逾期
+const expireTotal = computed(() => expiringCount.value + overdueCount.value)
+
+// 点预警条：直接筛出即将到期（含已逾期）
+const showExpiring = () => {
+  onlyExpiring.value = true
+  handleSearch()
+}
 
 const daysText = (days) => {
   if (days === null || days === undefined) return '-'
@@ -321,7 +415,7 @@ const daysType = (days) => {
   if (days === null || days === undefined) return 'info'
   if (days < 0) return 'danger'
   if (days <= 7) return 'danger'
-  if (days <= 30) return 'warning'
+  if (days <= warnDays.value) return 'warning'
   return 'info'
 }
 
@@ -330,7 +424,7 @@ const loadData = async () => {
   try {
     const res = await getProbationPageApi({
       ...searchForm,
-      expireDays: onlyExpiring.value ? 30 : null,
+      expireDays: onlyExpiring.value ? warnDays.value : null,
       pageNum: pagination.pageNum,
       pageSize: pagination.pageSize
     })
@@ -342,7 +436,8 @@ const loadData = async () => {
 }
 
 const loadStats = async () => {
-  const res = await getProbationStatisticsApi()
+  // 把当前提醒天数传给后端，保证统计口径、提示条、筛选条件三者始终一致
+  const res = await getProbationStatisticsApi({ expireDays: PROBATION_EXPIRE_DAYS })
   stats.value = res.data || {}
 }
 
@@ -477,6 +572,23 @@ const submitExtend = async () => {
     ElMessage.warning('请选择新的结束日期')
     return
   }
+  const end = parseDate(currentRow.value?.probationEnd)
+  const picked = parseDate(extendForm.newEnd)
+  if (end && picked) {
+    const days = Math.round((picked - end) / 86400000)
+    if (days <= 0) {
+      ElMessage.warning('新的结束日期必须晚于原结束日期')
+      return
+    }
+    if (days > EXTEND_MAX_DAYS) {
+      ElMessage.warning(`单次延长不得超过 ${EXTEND_MAX_DAYS} 天，当前选了 ${days} 天`)
+      return
+    }
+  }
+  if (maxExtendDate.value && picked && picked > maxExtendDate.value) {
+    ElMessage.warning(`累计试用期不得超过 ${TOTAL_MAX_MONTHS} 个月，最晚可延至 ${maxExtendText.value}`)
+    return
+  }
   submitting.value = true
   try {
     await extendProbationApi(currentRow.value.id, { ...extendForm })
@@ -525,4 +637,14 @@ onMounted(async () => {
 .eval { color: #606266; }
 .muted { color: #c0c4cc; }
 .tip { margin-left: 8px; font-size: 12px; color: #b1b3b8; }
+.extend-tip { margin-top: 6px; font-size: 12px; color: #909399; line-height: 1.6; }
+.extend-tip b { color: #e6a23c; font-weight: 600; }
+
+/* 到期预警条 */
+.expire-alert { margin-bottom: 12px; }
+.expire-text { font-size: 13px; }
+.expire-text b { color: #e6a23c; font-weight: 700; padding: 0 2px; }
+.expire-text b.expire-danger { color: #F56C6C; }
+.expire-text .expire-note { color: #909399; }
+.expire-link { margin-left: 8px; font-size: 13px; }
 </style>

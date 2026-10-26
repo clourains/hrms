@@ -38,7 +38,9 @@ public interface ProbationService {
     boolean extend(Long id, LocalDate newEnd, String evaluation);
 
     /**
-     * 试用期概览：试用中、30 天内到期、已逾期、本月已转正
+     * 试用期概览：试用中、N 天内到期、已逾期、本月已转正
+     *
+     * @param expireDays 到期提醒的提前天数，为空时取默认值 30
      */
-    Map<String, Object> statistics();
+    Map<String, Object> statistics(Integer expireDays);
 }

@@ -70,7 +70,17 @@
         </el-tab-pane>
 
         <!-- ========== 库存总览 ========== -->
-        <el-tab-pane label="库存总览" name="inventory">
+        <el-tab-pane name="inventory">
+          <template #label>
+            <span class="tab-with-badge">
+              库存总览
+              <!-- 只在有库存不足时出现，正常不显示 -->
+              <template v-if="lowStockCount > 0">
+                <span class="low-badge">{{ lowStockCount }}</span>
+                <span class="low-hint" @click.stop="gotoLowStock">库存不足，点击查看</span>
+              </template>
+            </span>
+          </template>
           <div class="search-bar">
             <el-form :inline="true" :model="invSearch">
               <el-form-item label="产品">
@@ -479,7 +489,8 @@ import {
   getInventoryPageApi, getInventoryLogsApi, changeStockApi, getProductListApi,
   updateWarningQuantityApi, transferStockApi,
   getStockCheckPageApi, getStockCheckDetailApi, getStockCheckRowsApi,
-  createStockCheckApi, updateStockCheckApi, confirmStockCheckApi, cancelStockCheckApi
+  createStockCheckApi, updateStockCheckApi, confirmStockCheckApi, cancelStockCheckApi,
+  getInventoryWarningCountApi
 } from '@/api/trade'
 
 const activeTab = ref('warehouse')
@@ -488,6 +499,26 @@ const route = useRoute()
 
 const productLabel = (p) => `${p.name} (${p.sku})${p.status === 0 ? ' · 已下架' : ''}`
 const isLowStock = (row) => (row.availableQuantity ?? 0) <= (row.warningQuantity ?? 0)
+
+// ========== 库存不足提醒 ==========
+// 只在有不足时渲染红字/数字，正常（0 条）完全不显示
+const lowStockCount = ref(0)
+
+const loadLowStockCount = async () => {
+  try {
+    const res = await getInventoryWarningCountApi()
+    lowStockCount.value = Number(res.data || 0)
+  } catch (e) {
+    lowStockCount.value = 0
+  }
+}
+
+// 点红字：切到库存总览并自动勾上"只看低库存"
+const gotoLowStock = () => {
+  activeTab.value = 'inventory'
+  invSearch.lowStock = true
+  handleInvSearch()
+}
 const changeTypeText = (t) => ({ 1: '入库', 2: '出库', 3: '锁定', 4: '解锁' }[t] || '未知')
 const changeTypeTag = (t) => ({ 1: 'success', 2: 'danger', 3: 'warning', 4: 'info' }[t] || 'info')
 const changeColor = (t) => ({ 1: '#67C23A', 2: '#F56C6C', 3: '#E6A23C', 4: '#909399' }[t] || '#303133')
@@ -665,6 +696,7 @@ const handleEditWarning = async (row) => {
     await updateWarningQuantityApi(row.id, Number(value))
     ElMessage.success('预警值已更新')
     loadInventory()
+    loadLowStockCount()
   } catch (e) {
     // 取消或校验失败，忽略
   }
@@ -702,6 +734,7 @@ const handleSubmitStock = async () => {
     stockDialogVisible.value = false
     loadInventory()
     loadLogs()
+    loadLowStockCount()
   } finally {
     submitting.value = false
   }
@@ -1027,6 +1060,7 @@ onMounted(() => {
   loadLogs()
   loadProductOptions()
   loadWarehouseOptions()
+  loadLowStockCount()
   applyTabFromQuery()
 })
 </script>
@@ -1041,4 +1075,28 @@ onMounted(() => {
 .check-tip strong { margin: 0 4px; }
 .check-toolbar-right { display: flex; align-items: center; gap: 12px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
+
+/* 库存不足提醒：只在有不足时出现 */
+.tab-with-badge { display: inline-flex; align-items: center; gap: 6px; }
+.low-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #F56C6C;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 600;
+}
+.low-hint {
+  color: #F56C6C;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  border-bottom: 1px dashed #F56C6C;
+  line-height: 1.2;
+}
+.low-hint:hover { color: #c45656; border-bottom-color: #c45656; }
 </style>

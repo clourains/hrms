@@ -33,7 +33,8 @@ export const submitInterviewResultApi = (id, data) => request.put(`/recruit/inte
 
 // ========== 试用期转正 ==========
 export const getProbationPageApi = (data) => request.post('/recruit/probation/page', data)
-export const getProbationStatisticsApi = () => request.get('/recruit/probation/statistics')
+// params 可选，用于传 expireDays 指定到期提醒天数
+export const getProbationStatisticsApi = (params = {}) => request.get('/recruit/probation/statistics', params)
 export const addProbationApi = (data) => request.post('/recruit/probation', data)
 export const updateProbationApi = (data) => request.put('/recruit/probation', data)
 export const deleteProbationApi = (id) => request.delete(`/recruit/probation/${id}`)

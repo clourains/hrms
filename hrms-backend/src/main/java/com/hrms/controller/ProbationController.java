@@ -28,10 +28,11 @@ public class ProbationController {
         return Result.success(probationService.pageQuery(queryDTO));
     }
 
-    /** 试用期概览：试用中、30 天内到期、已逾期、本月转正 */
+    /** 试用期概览：试用中、N 天内到期、已逾期、本月转正 */
     @GetMapping("/statistics")
-    public Result<Map<String, Object>> statistics() {
-        return Result.success(probationService.statistics());
+    public Result<Map<String, Object>> statistics(
+            @RequestParam(required = false) Integer expireDays) {
+        return Result.success(probationService.statistics(expireDays));
     }
 
     @GetMapping("/{id}")

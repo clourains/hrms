@@ -18,18 +18,36 @@
         text-color="#bfcbd9"
         active-text-color="#409EFF"
         class="sidebar-menu"
+        @open="onGroupOpen"
+        @close="onGroupClose"
       >
         <template v-for="group in visibleMenuGroups" :key="group.title">
           <!-- 顶级菜单项 -->
           <el-menu-item v-if="group.type === 'item'" :index="group.path">
             <el-icon><component :is="group.icon" /></el-icon>
-            <template #title>{{ group.title }}</template>
+            <template #title>
+              <span class="menu-label">{{ group.title }}</span>
+              <span v-if="menuBadges[group.path] > 0" class="menu-badge">{{ menuBadges[group.path] }}</span>
+            </template>
           </el-menu-item>
           <!-- 分组菜单（children 过滤后为空的组不再渲染） -->
           <el-sub-menu v-else-if="group.children.length > 0" :index="group.title">
             <template #title>
-              <el-icon><component :is="group.icon" /></el-icon>
-              <span>{{ group.title }}</span>
+              <el-icon class="group-icon">
+                <component :is="group.icon" />
+                <!-- 侧边栏整体折叠时：数字浮在图标右上角 -->
+                <i v-if="isCollapse && groupTotal(group) > 0" class="menu-badge badge-float">
+                  {{ groupTotal(group) }}
+                </i>
+              </el-icon>
+              <span class="menu-label">{{ group.title }}</span>
+              <!-- 侧边栏展开但这一组收起时：数字挂在组名右侧；组展开后不再显示，交给子项自己显示 -->
+              <span
+                v-if="!isCollapse && !openedGroups.includes(group.title) && groupTotal(group) > 0"
+                class="menu-badge"
+              >
+                {{ groupTotal(group) }}
+              </span>
             </template>
             <el-menu-item
               v-for="child in group.children"
@@ -37,7 +55,10 @@
               :index="child.path"
             >
               <el-icon><component :is="child.icon" /></el-icon>
-              <template #title>{{ child.title }}</template>
+              <template #title>
+                <span class="menu-label">{{ child.title }}</span>
+                <span v-if="menuBadges[child.path] > 0" class="menu-badge">{{ menuBadges[child.path] }}</span>
+              </template>
             </el-menu-item>
           </el-sub-menu>
         </template>
@@ -111,40 +132,10 @@
               </div>
             </div>
           </el-popover>
-          <el-popover
-            v-model:visible="noticeVisible"
-            placement="bottom-end"
-            :width="360"
-            trigger="click"
-            @show="loadWarnings"
-          >
-            <template #reference>
-              <el-badge :value="warningCount" :max="99" :hidden="warningCount === 0" class="header-icon">
-                <el-icon :size="18"><Bell /></el-icon>
-              </el-badge>
-            </template>
-            <div class="notice-panel">
-              <div class="notice-head">
-                <span>库存预警</span>
-                <el-button link type="primary" @click="goWarning">查看全部</el-button>
-              </div>
-              <el-empty v-if="warnings.length === 0" description="暂无预警" :image-size="56" />
-              <div v-else class="notice-list">
-                <div v-for="w in warnings.slice(0, 6)" :key="w.id" class="notice-item" @click="goWarning">
-                  <div class="notice-title">
-                    {{ w.productName || '未知产品' }}
-                    <span class="notice-sku">{{ w.sku }}</span>
-                  </div>
-                  <div class="notice-sub">
-                    {{ w.warehouseName }} · 可用 {{ w.availableQuantity }} / 预警值 {{ w.warningQuantity }}
-                  </div>
-                </div>
-                <div v-if="warnings.length > 6" class="notice-more" @click="goWarning">
-                  还有 {{ warnings.length - 6 }} 条，点击查看全部
-                </div>
-              </div>
-            </div>
-          </el-popover>
+          <!--
+            库存预警不再单独占一个顶部图标，
+            改为在侧边栏「业务管理 / 仓库库存」上显示数字角标 + 仓库页内红字提示
+          -->
           <el-tooltip content="全屏" placement="bottom">
             <el-icon class="header-icon" :size="18" @click="toggleFullscreen">
               <FullScreen />
@@ -214,11 +205,13 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
-import { getInventoryWarningApi, getInventoryWarningCountApi } from '@/api/trade'
+import { getInventoryWarningCountApi } from '@/api/trade'
+import { getProbationPageApi } from '@/api/recruit'
+import { PROBATION_EXPIRE_DAYS } from '@/utils/constants'
 import {
   getMessageInboxApi,
   getUnreadCountApi,
@@ -369,42 +362,67 @@ const goMenu = (path) => {
   router.push(path)
 }
 
-// ========== 顶部通知：库存预警（P022） ==========
-const noticeVisible = ref(false)
-const warningCount = ref(0)
-const warnings = ref([])
+// ========== 侧边栏菜单角标（库存不足 / 转正到期）==========
+// 数字沿菜单树向上汇总：组收起时挂在组名（折叠态挂在图标）上，组展开后只在对应子项显示
+const menuBadges = reactive({
+  '/warehouse': 0,           // 库存不足条数
+  '/recruit/probation': 0    // 临近到期 + 已逾期的试用期人数
+})
 
-const loadWarnings = async () => {
-  try {
-    const res = await getInventoryWarningApi()
-    warnings.value = res.data || []
-    warningCount.value = warnings.value.length
-  } catch (e) {
-    warnings.value = []
-    warningCount.value = 0
+const groupTotal = (group) => (group.children || [])
+  .reduce((sum, child) => sum + (menuBadges[child.path] || 0), 0)
+
+// 记录当前展开的分组，用于"展开了就不再在组名上重复显示数字"
+const openedGroups = ref([...defaultOpeneds.value])
+
+const onGroupOpen = (index) => {
+  if (!openedGroups.value.includes(index)) {
+    openedGroups.value.push(index)
   }
 }
 
-const goWarning = () => {
-  noticeVisible.value = false
-  // 库存预警页已合并到"库存总览"，这里直接带筛选条件过去
-  router.push({ path: '/warehouse', query: { tab: 'inventory', lowStock: '1' } })
+const onGroupClose = (index) => {
+  openedGroups.value = openedGroups.value.filter(item => item !== index)
 }
 
-const refreshWarningCount = async () => {
+// 20 秒节流：切换路由频繁，避免每次跳页都打两个接口
+let badgeFetchedAt = 0
+
+const refreshMenuBadges = async (force = false) => {
+  const now = Date.now()
+  if (!force && now - badgeFetchedAt < 20000) {
+    return
+  }
+  badgeFetchedAt = now
+
+  // 库存不足：低于预警值的库存条数
   try {
     const res = await getInventoryWarningCountApi()
-    warningCount.value = res.data || 0
+    menuBadges['/warehouse'] = Number(res.data || 0)
   } catch (e) {
-    // 未登录或接口异常时不显示红点即可
+    menuBadges['/warehouse'] = 0
+  }
+
+  // 转正到期：试用中且临近结束日期（含已逾期），天数与转正管理页共用同一常量
+  try {
+    const res = await getProbationPageApi({
+      pageNum: 1, pageSize: 1, status: 1, expireDays: PROBATION_EXPIRE_DAYS
+    })
+    menuBadges['/recruit/probation'] = Number(res.data?.total || 0)
+  } catch (e) {
+    // 非管理员访问会被拒，静默不显示
+    menuBadges['/recruit/probation'] = 0
   }
 }
 
-onMounted(refreshWarningCount)
+onMounted(() => {
+  refreshMenuBadges(true)
+  refreshMsgCount()
+})
 
-// 切换页面时刷新红点，避免库存变动后数字不更新
+// 切换页面时刷新角标，避免数据变动后数字不更新
 watch(() => route.path, () => {
-  refreshWarningCount()
+  refreshMenuBadges()
   refreshMsgCount()
 })
 
@@ -668,6 +686,44 @@ const handleCommand = async (command) => {
   padding: 20px;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* 侧边栏菜单角标 */
+.menu-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-badge {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: #F56C6C;
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* 侧边栏折叠时，数字浮在分组图标右上角 */
+.badge-float {
+  position: absolute;
+  top: -7px;
+  right: -10px;
+  margin-left: 0;
+  transform: scale(0.85);
+  transform-origin: right top;
+}
+
+.group-icon {
+  position: relative;
 }
 
 /* 顶部通知面板 */

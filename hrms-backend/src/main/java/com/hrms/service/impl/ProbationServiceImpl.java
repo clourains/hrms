@@ -34,6 +34,15 @@ import java.util.stream.Collectors;
 @Service
 public class ProbationServiceImpl implements ProbationService {
 
+    /** 单次延长试用期上限（天）：企业普遍规定试用期延长原则上不超过 1 个月 */
+    private static final int EXTEND_MAX_DAYS = 30;
+
+    /** 累计试用期上限（月）：劳动合同法第十九条，最长不得超过 6 个月 */
+    private static final int TOTAL_MAX_MONTHS = 6;
+
+    /** 到期提醒默认天数：前端不传 expireDays 时使用，与前端 PROBATION_EXPIRE_DAYS 保持一致 */
+    private static final int EXPIRE_WARN_DAYS = 30;
+
     private static final Map<String, SortUtil.OrderCol> PROBATION_SORT = new HashMap<>();
 
     static {
@@ -265,8 +274,21 @@ public class ProbationServiceImpl implements ProbationService {
         if (probation.getProbationEnd() != null && !newEnd.isAfter(probation.getProbationEnd())) {
             throw new RuntimeException("新的结束日期必须晚于原结束日期");
         }
-        if (newEnd.isAfter(LocalDate.now().plusMonths(7))) {
-            throw new RuntimeException("试用期总长不宜超过 6 个月，请核对日期");
+        // 单次延长不超过 30 天：延长试用期属于劳动合同变更，制度上以短为宜
+        if (probation.getProbationEnd() != null) {
+            long extendDays = ChronoUnit.DAYS.between(probation.getProbationEnd(), newEnd);
+            if (extendDays > EXTEND_MAX_DAYS) {
+                throw new RuntimeException("单次延长试用期不得超过 " + EXTEND_MAX_DAYS
+                        + " 天（本次 " + extendDays + " 天），请调整结束日期");
+            }
+        }
+        // 累计不超过 6 个月：劳动合同法第十九条，三年以上固定期限合同试用期最长 6 个月
+        if (probation.getProbationStart() != null) {
+            LocalDate totalLimit = probation.getProbationStart().plusMonths(TOTAL_MAX_MONTHS);
+            if (newEnd.isAfter(totalLimit)) {
+                throw new RuntimeException("累计试用期不得超过 " + TOTAL_MAX_MONTHS + " 个月（自 "
+                        + probation.getProbationStart() + " 起算），最晚可至 " + totalLimit);
+            }
         }
 
         Probation update = new Probation();
@@ -280,15 +302,19 @@ public class ProbationServiceImpl implements ProbationService {
     }
 
     @Override
-    public Map<String, Object> statistics() {
+    public Map<String, Object> statistics(Integer expireDays) {
         LocalDate today = LocalDate.now();
+        // 未传参时取默认提醒天数，与前端 PROBATION_EXPIRE_DAYS 保持一致
+        int warnDays = (expireDays == null || expireDays <= 0) ? EXPIRE_WARN_DAYS : expireDays;
         Map<String, Object> stats = new LinkedHashMap<>();
+        // 当前生效的提醒天数，前端据此渲染「N 天内到期」文案，避免两边各写死一个数字
+        stats.put("expireWarnDays", warnDays);
         stats.put("probationing", probationMapper.selectCount(new LambdaQueryWrapper<Probation>()
                 .eq(Probation::getStatus, Probation.STATUS_PROBATION)));
-        stats.put("expiringIn30", probationMapper.selectCount(new LambdaQueryWrapper<Probation>()
+        stats.put("expiringSoon", probationMapper.selectCount(new LambdaQueryWrapper<Probation>()
                 .eq(Probation::getStatus, Probation.STATUS_PROBATION)
                 .ge(Probation::getProbationEnd, today)
-                .le(Probation::getProbationEnd, today.plusDays(30))));
+                .le(Probation::getProbationEnd, today.plusDays(warnDays))));
         stats.put("overdue", probationMapper.selectCount(new LambdaQueryWrapper<Probation>()
                 .eq(Probation::getStatus, Probation.STATUS_PROBATION)
                 .lt(Probation::getProbationEnd, today)));
