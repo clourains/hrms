@@ -61,9 +61,7 @@
         <el-form :inline="true" :model="searchForm">
           <el-form-item label="考核周期">
             <el-select v-model="searchForm.cycleId" placeholder="请选择周期" style="width: 180px">
-              <el-option label="2024年Q1" :value="1" />
-              <el-option label="2023年Q4" :value="2" />
-              <el-option label="2023年Q3" :value="3" />
+              <el-option v-for="p in periodOptions" :key="p.value" :label="p.label" :value="p.value" />
             </el-select>
           </el-form-item>
           <el-form-item label="员工姓名">
@@ -71,9 +69,7 @@
           </el-form-item>
           <el-form-item label="部门">
             <el-select v-model="searchForm.departmentId" placeholder="请选择部门" clearable style="width: 160px">
-              <el-option label="技术部" :value="1" />
-              <el-option label="产品部" :value="2" />
-              <el-option label="市场部" :value="3" />
+              <el-option v-for="dept in departmentOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="绩效等级">
@@ -173,6 +169,8 @@
           :total="pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
         />
       </div>
     </el-card>
@@ -215,37 +213,86 @@
         <el-button type="primary" @click="submitSelfReview">提交自评</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新增绩效弹窗 -->
+    <el-dialog v-model="addDialogVisible" title="新增绩效" width="600px" destroy-on-close>
+      <el-form ref="addFormRef" :model="addForm" :rules="addRules" label-width="120px">
+        <el-form-item label="员工" prop="empId">
+          <el-select v-model="addForm.empId" filterable placeholder="请选择员工" style="width: 100%">
+            <el-option
+              v-for="emp in employeeOptions"
+              :key="emp.id"
+              :label="emp.name + '（' + emp.employeeNo + '）'"
+              :value="emp.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="考核周期" prop="period">
+          <el-select v-model="addForm.period" placeholder="请选择考核周期" style="width: 100%">
+            <el-option v-for="p in periodOptions" :key="p.value" :label="p.label" :value="p.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工作质量" prop="workQuality">
+          <el-input-number v-model="addForm.workQuality" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="工作效率" prop="workEfficiency">
+          <el-input-number v-model="addForm.workEfficiency" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="工作态度" prop="workAttitude">
+          <el-input-number v-model="addForm.workAttitude" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="团队协作" prop="teamwork">
+          <el-input-number v-model="addForm.teamwork" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="创新改进" prop="innovation">
+          <el-input-number v-model="addForm.innovation" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="评语">
+          <el-input v-model="addForm.comment" type="textarea" :rows="2" placeholder="请输入评语" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="addDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitLoading" @click="submitAdd">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Search, Refresh, Plus, Upload, Download, Setting, TrendCharts,
   Trophy, Medal, Star, Warning
 } from '@element-plus/icons-vue'
+import { getPerformanceListApi, getPerformanceStatsApi, addPerformanceApi } from '@/api/performance'
+import { getEmployeeListApi } from '@/api/employee'
+import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
 const reviewDialogVisible = ref(false)
+const addDialogVisible = ref(false)
+const addFormRef = ref(null)
+const submitLoading = ref(false)
 
-const currentCycle = reactive({
-  id: 1,
-  name: '2024年第一季度',
-  startDate: '2024-01-01',
-  endDate: '2024-03-31',
-  status: 'ongoing'
-})
+const pad = (n) => String(n).padStart(2, '0')
 
-const stats = reactive({
-  gradeS: 38,
-  gradeA: 95,
-  gradeB: 85,
-  gradeC: 38
-})
+// P042：考核周期改为按自然月生成（与后端 period 字段 yyyy-MM 格式一致），不再写死
+const buildPeriodOptions = () => {
+  const options = []
+  const now = new Date()
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+    options.push({ label: `${d.getFullYear()}年${d.getMonth() + 1}月`, value })
+  }
+  return options
+}
+const periodOptions = ref(buildPeriodOptions())
 
 const searchForm = reactive({
-  cycleId: 1,
+  cycleId: periodOptions.value[0].value,
   name: '',
   departmentId: '',
   grade: '',
@@ -255,21 +302,38 @@ const searchForm = reactive({
 const pagination = reactive({
   currentPage: 1,
   pageSize: 10,
-  total: 56
+  total: 0
 })
 
-const tableData = ref([
-  { id: 1, employeeNo: 'E001', name: '张三', department: '技术部', position: '高级工程师', selfScore: 92, managerScore: 90, finalScore: 90.5, grade: 'A', status: 'completed' },
-  { id: 2, employeeNo: 'E002', name: '李四', department: '技术部', position: '前端工程师', selfScore: 85, managerScore: 82, finalScore: 83, grade: 'B', status: 'completed' },
-  { id: 3, employeeNo: 'E003', name: '王五', department: '产品部', position: '产品经理', selfScore: 95, managerScore: null, finalScore: null, grade: null, status: 'pending_manager' },
-  { id: 4, employeeNo: 'E004', name: '赵六', department: '市场部', position: '市场专员', selfScore: null, managerScore: null, finalScore: null, grade: null, status: 'pending_self' },
-  { id: 5, employeeNo: 'E005', name: '钱七', department: '运营部', position: '运营主管', selfScore: 88, managerScore: 92, finalScore: 91, grade: 'A', status: 'pending_interview' },
-  { id: 6, employeeNo: 'E006', name: '孙八', department: '人事部', position: 'HR专员', selfScore: 80, managerScore: 78, finalScore: 79, grade: 'C', status: 'completed' },
-  { id: 7, employeeNo: 'E007', name: '周九', department: '财务部', position: '会计', selfScore: 86, managerScore: 85, finalScore: 85.5, grade: 'B', status: 'completed' },
-  { id: 8, employeeNo: 'E008', name: '吴十', department: '行政部', position: '行政专员', selfScore: null, managerScore: null, finalScore: null, grade: null, status: 'pending_self' },
-  { id: 9, employeeNo: 'E009', name: '郑十一', department: '技术部', position: '后端工程师', selfScore: 96, managerScore: 94, finalScore: 94.5, grade: 'S', status: 'completed' },
-  { id: 10, employeeNo: 'E010', name: '冯十二', department: '销售部', position: '销售经理', selfScore: 90, managerScore: 88, finalScore: 89, grade: 'B', status: 'pending_interview' }
-])
+// 当前选中周期信息（展示用）
+const currentCycle = computed(() => {
+  const period = searchForm.cycleId || periodOptions.value[0].value
+  const [year, month] = period.split('-').map(Number)
+  const now = new Date()
+  const isOngoing = year === now.getFullYear() && month === now.getMonth() + 1
+  return {
+    name: `${year}年${month}月`,
+    startDate: `${period}-01`,
+    endDate: `${period}-${new Date(year, month, 0).getDate()}`,
+    status: isOngoing ? 'ongoing' : 'ended'
+  }
+})
+
+// P042：等级统计改为真实接口数据（后端只评定 A/B/C/D，S 由总数减去 A/B/C/D 推得）
+const stats = reactive({
+  gradeS: 0,
+  gradeA: 0,
+  gradeB: 0,
+  gradeC: 0
+})
+
+// P042：绩效列表改为真实接口加载（后端按周期查询全量，前端做条件过滤+分页）
+const allRows = ref([])
+const tableData = ref([])
+const departmentOptions = ref([])
+const employeeOptions = ref([])
+let deptNameMap = {}
+let empMap = {}
 
 const currentReview = reactive({
   name: '',
@@ -281,12 +345,29 @@ const reviewForm = reactive({
   improvementPlan: ''
 })
 
+// 指标为纯前端展示数据（后端暂无指标配置接口），不参与提交逻辑
 const indicatorList = ref([
   { id: 1, name: '工作业绩', weight: 40, description: '工作目标完成情况、工作质量和效率', selfScore: 0 },
   { id: 2, name: '工作能力', weight: 25, description: '专业技能、学习能力、问题解决能力', selfScore: 0 },
   { id: 3, name: '工作态度', weight: 20, description: '责任心、积极性、团队协作', selfScore: 0 },
   { id: 4, name: '创新改进', weight: 15, description: '创新意识、流程优化、知识分享', selfScore: 0 }
 ])
+
+const addForm = reactive({
+  empId: null,
+  period: periodOptions.value[0].value,
+  workQuality: 0,
+  workEfficiency: 0,
+  workAttitude: 0,
+  teamwork: 0,
+  innovation: 0,
+  comment: ''
+})
+
+const addRules = {
+  empId: [{ required: true, message: '请选择员工', trigger: 'change' }],
+  period: [{ required: true, message: '请选择考核周期', trigger: 'change' }]
+}
 
 const getGradeTagType = (grade) => {
   const map = { S: 'success', A: 'primary', B: 'warning', C: 'danger', D: 'info' }
@@ -313,18 +394,128 @@ const getStatusTagType = (status) => {
   return map[status] || 'info'
 }
 
+const normalizeRow = (item) => {
+  const emp = empMap[item.empId] || {}
+  return {
+    id: item.id,
+    employeeNo: emp.empNo || '-',
+    name: emp.name || '-',
+    department: emp.departmentName || '-',
+    position: emp.position || '-',
+    // 后端无自评/上级评分字段，两列只能显示未提交
+    selfScore: null,
+    managerScore: null,
+    finalScore: item.totalScore != null ? Number(item.totalScore) : null,
+    grade: item.grade || null,
+    // 后端无流程状态字段，已有成绩的记录统一按已完成展示
+    status: 'completed'
+  }
+}
+
+const loadBase = async () => {
+  try {
+    const [empRes, deptRes] = await Promise.all([getEmployeeListApi(), getDepartmentListApi()])
+    const depts = deptRes.data || []
+    deptNameMap = {}
+    depts.forEach(d => { deptNameMap[d.id] = d.deptName })
+    departmentOptions.value = depts.map(d => ({ id: d.id, name: d.deptName }))
+    const emps = empRes.data || []
+    empMap = {}
+    emps.forEach(e => {
+      empMap[e.id] = { ...e, departmentName: deptNameMap[e.deptId] || '-' }
+    })
+    employeeOptions.value = emps.map(e => ({ id: e.id, employeeNo: e.empNo, name: e.name }))
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+const loadData = async () => {
+  loading.value = true
+  try {
+    const [listRes, statsRes] = await Promise.all([
+      getPerformanceListApi({ period: searchForm.cycleId }),
+      getPerformanceStatsApi({ period: searchForm.cycleId })
+    ])
+    allRows.value = (listRes.data || []).map(normalizeRow)
+    const s = statsRes.data || {}
+    const abcd = (s.gradeACount || 0) + (s.gradeBCount || 0) + (s.gradeCCount || 0) + (s.gradeDCount || 0)
+    stats.gradeS = Math.max((s.totalCount || 0) - abcd, 0)
+    stats.gradeA = s.gradeACount || 0
+    stats.gradeB = s.gradeBCount || 0
+    stats.gradeC = (s.gradeCCount || 0) + (s.gradeDCount || 0)
+    refreshView()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 前端条件过滤 + 分页切片（后端列表接口仅支持按周期查询） */
+const refreshView = () => {
+  let rows = allRows.value
+  if (searchForm.name) rows = rows.filter(r => r.name.includes(searchForm.name))
+  if (searchForm.departmentId) rows = rows.filter(r => r.department === (deptNameMap[searchForm.departmentId] || ''))
+  if (searchForm.grade) rows = rows.filter(r => r.grade === searchForm.grade)
+  if (searchForm.status) rows = rows.filter(r => r.status === searchForm.status)
+  pagination.total = rows.length
+  const startIdx = (pagination.currentPage - 1) * pagination.pageSize
+  tableData.value = rows.slice(startIdx, startIdx + pagination.pageSize)
+}
+
 const handleSearch = () => {
-  ElMessage.success('搜索功能演示')
+  pagination.currentPage = 1
+  loadData()
 }
 
 const handleReset = () => {
   Object.keys(searchForm).forEach(key => {
     searchForm[key] = ''
   })
+  searchForm.cycleId = periodOptions.value[0].value
+  pagination.currentPage = 1
+  loadData()
 }
 
 const handleAdd = () => {
-  ElMessage.info('新增绩效功能演示')
+  Object.assign(addForm, {
+    empId: null,
+    period: searchForm.cycleId || periodOptions.value[0].value,
+    workQuality: 0,
+    workEfficiency: 0,
+    workAttitude: 0,
+    teamwork: 0,
+    innovation: 0,
+    comment: ''
+  })
+  addDialogVisible.value = true
+}
+
+const submitAdd = async () => {
+  if (!addFormRef.value) return
+  await addFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    submitLoading.value = true
+    try {
+      // 总分与绩效等级由后端计算
+      await addPerformanceApi({
+        empId: addForm.empId,
+        period: addForm.period,
+        workQuality: addForm.workQuality,
+        workEfficiency: addForm.workEfficiency,
+        workAttitude: addForm.workAttitude,
+        teamwork: addForm.teamwork,
+        innovation: addForm.innovation,
+        comment: addForm.comment
+      })
+      ElMessage.success('新增成功')
+      addDialogVisible.value = false
+      await loadData()
+    } finally {
+      submitLoading.value = false
+    }
+  })
 }
 
 const handleImport = () => {
@@ -343,6 +534,7 @@ const handleAnalytics = () => {
   ElMessage.info('绩效分析功能演示')
 }
 
+// 后端暂无考核周期管理接口，保留演示逻辑
 const handleCreateCycle = () => {
   ElMessage.info('创建考核周期功能演示')
 }
@@ -372,6 +564,20 @@ const submitSelfReview = () => {
   ElMessage.success('自评提交成功')
   reviewDialogVisible.value = false
 }
+
+const handleSizeChange = () => {
+  pagination.currentPage = 1
+  refreshView()
+}
+
+const handleCurrentChange = () => {
+  refreshView()
+}
+
+onMounted(async () => {
+  await loadBase()
+  loadData()
+})
 </script>
 
 <style scoped lang="scss">

@@ -19,14 +19,14 @@
         active-text-color="#409EFF"
         class="sidebar-menu"
       >
-        <template v-for="group in menuGroups" :key="group.title">
+        <template v-for="group in visibleMenuGroups" :key="group.title">
           <!-- 顶级菜单项 -->
           <el-menu-item v-if="group.type === 'item'" :index="group.path">
             <el-icon><component :is="group.icon" /></el-icon>
             <template #title>{{ group.title }}</template>
           </el-menu-item>
-          <!-- 分组菜单 -->
-          <el-sub-menu v-else :index="group.title">
+          <!-- 分组菜单（children 过滤后为空的组不再渲染） -->
+          <el-sub-menu v-else-if="group.children.length > 0" :index="group.title">
             <template #title>
               <el-icon><component :is="group.icon" /></el-icon>
               <span>{{ group.title }}</span>
@@ -196,6 +196,7 @@ const userStore = useUserStore()
 const isCollapse = ref(false)
 
 // 企业级菜单规划：首页/仪表盘置顶，人事、业务各归其组，可视化分析统一放到底部
+// adminOnly: true 的菜单仅管理员可见（P045 角色权限）
 const menuGroups = [
   { type: 'item', path: '/home', title: '首页', icon: 'HomeFilled' },
   { type: 'item', path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
@@ -204,8 +205,8 @@ const menuGroups = [
     title: '人事管理',
     icon: 'Avatar',
     children: [
-      { path: '/employee', title: '员工管理', icon: 'User' },
-      { path: '/department', title: '部门管理', icon: 'OfficeBuilding' },
+      { path: '/employee', title: '员工管理', icon: 'User', adminOnly: true },
+      { path: '/department', title: '部门管理', icon: 'OfficeBuilding', adminOnly: true },
       { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
       { path: '/salary', title: '薪资管理', icon: 'Money' },
       { path: '/performance', title: '绩效管理', icon: 'TrendCharts' }
@@ -215,6 +216,7 @@ const menuGroups = [
     type: 'group',
     title: '业务管理',
     icon: 'Suitcase',
+    adminOnly: true,
     children: [
       { path: '/order', title: '销售订单', icon: 'Tickets' },
       { path: '/product', title: '产品管理', icon: 'Goods' },
@@ -226,6 +228,37 @@ const menuGroups = [
     ]
   }
 ]
+
+// 按当前登录角色过滤菜单（P045）
+const visibleMenuGroups = computed(() => {
+  const isAdmin = userStore.role === 'admin'
+  const groups = []
+  for (const group of menuGroups) {
+    if (group.adminOnly && !isAdmin) continue
+    if (group.type === 'group') {
+      const children = group.children.filter(child => !child.adminOnly || isAdmin)
+      groups.push({ ...group, children })
+    } else {
+      groups.push(group)
+    }
+  }
+  return groups
+})
+
+// 全局搜索用的扁平菜单列表（原代码引用了未定义的 menuItems，这里补上并按角色过滤）
+const menuItems = computed(() => {
+  const items = []
+  for (const group of visibleMenuGroups.value) {
+    if (group.type === 'item') {
+      items.push({ title: group.title, path: group.path, icon: group.icon })
+    } else {
+      for (const child of group.children) {
+        items.push({ title: child.title, path: child.path, icon: child.icon })
+      }
+    }
+  }
+  return items
+})
 
 // 进入页面时自动展开当前路由所在的分组
 const defaultOpeneds = computed(() => {
@@ -248,8 +281,8 @@ const searchInputRef = ref(null)
 
 const filteredMenus = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
-  if (!kw) return menuItems
-  return menuItems.filter(m => m.title.toLowerCase().includes(kw) || m.path.toLowerCase().includes(kw))
+  if (!kw) return menuItems.value
+  return menuItems.value.filter(m => m.title.toLowerCase().includes(kw) || m.path.toLowerCase().includes(kw))
 })
 
 const openSearch = () => {

@@ -10,6 +10,11 @@ public class UserContext {
 
     private static final ThreadLocal<String> CURRENT_USER = new ThreadLocal<>();
 
+    /**
+     * 当前登录用户的角色（P045），如 admin / user
+     */
+    private static final ThreadLocal<String> CURRENT_ROLE = new ThreadLocal<>();
+
     private UserContext() {
     }
 
@@ -19,6 +24,21 @@ public class UserContext {
 
     public static String get() {
         return CURRENT_USER.get();
+    }
+
+    public static void setRole(String role) {
+        CURRENT_ROLE.set(role);
+    }
+
+    public static String getRole() {
+        return CURRENT_ROLE.get();
+    }
+
+    /**
+     * 当前用户是否管理员
+     */
+    public static boolean isAdmin() {
+        return "admin".equals(CURRENT_ROLE.get());
     }
 
     /**
@@ -31,5 +51,6 @@ public class UserContext {
 
     public static void clear() {
         CURRENT_USER.remove();
+        CURRENT_ROLE.remove();
     }
 }

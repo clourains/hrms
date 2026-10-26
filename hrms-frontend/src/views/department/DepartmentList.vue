@@ -78,7 +78,6 @@
                   {{ currentDept.status === 1 ? '启用' : '禁用' }}
                 </el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="部门描述" :span="2">{{ currentDept.description || '-' }}</el-descriptions-item>
             </el-descriptions>
 
             <!-- 部门员工列表 -->
@@ -158,9 +157,6 @@
             <el-radio :label="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="部门描述" prop="description">
-          <el-input v-model="formData.description" type="textarea" :rows="3" placeholder="请输入部门描述" />
-        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -174,6 +170,8 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import { getDepartmentTreeApi, addDepartmentApi, updateDepartmentApi, deleteDepartmentApi } from '@/api/department'
+import { getEmployeeListApi } from '@/api/employee'
 
 const treeRef = ref(null)
 const filterText = ref('')
@@ -188,159 +186,96 @@ const treeProps = {
   label: 'name'
 }
 
-const defaultExpandedKeys = ref([1])
+const defaultExpandedKeys = ref([])
 
-const departmentTree = ref([
-  {
-    id: 1,
-    name: '总公司',
-    code: 'HQ001',
-    leader: '张总',
-    phone: '010-88888888',
-    email: 'hq@company.com',
-    employeeCount: 256,
-    sort: 1,
-    status: 1,
-    description: '公司总部',
-    createTime: '2020-01-01',
-    children: [
-      {
-        id: 2,
-        name: '技术部',
-        code: 'TECH',
-        leader: '李技术',
-        phone: '010-88888801',
-        email: 'tech@company.com',
-        employeeCount: 85,
-        sort: 1,
-        status: 1,
-        description: '负责产品研发',
-        createTime: '2020-01-15',
-        parentId: 1,
-        children: [
-          { id: 21, name: '前端组', code: 'TECH-FE', leader: '王前端', employeeCount: 25, sort: 1, status: 1, parentId: 2 },
-          { id: 22, name: '后端组', code: 'TECH-BE', leader: '赵后端', employeeCount: 35, sort: 2, status: 1, parentId: 2 },
-          { id: 23, name: '测试组', code: 'TECH-QA', leader: '钱测试', employeeCount: 15, sort: 3, status: 1, parentId: 2 },
-          { id: 24, name: '运维组', code: 'TECH-OPS', leader: '孙运维', employeeCount: 10, sort: 4, status: 1, parentId: 2 }
-        ]
-      },
-      {
-        id: 3,
-        name: '产品部',
-        code: 'PROD',
-        leader: '周产品',
-        phone: '010-88888802',
-        email: 'product@company.com',
-        employeeCount: 35,
-        sort: 2,
-        status: 1,
-        description: '负责产品规划与设计',
-        createTime: '2020-01-20',
-        parentId: 1,
-        children: [
-          { id: 31, name: '产品组', code: 'PROD-PM', leader: '吴产品', employeeCount: 20, sort: 1, status: 1, parentId: 3 },
-          { id: 32, name: '设计组', code: 'PROD-UI', leader: '郑设计', employeeCount: 15, sort: 2, status: 1, parentId: 3 }
-        ]
-      },
-      {
-        id: 4,
-        name: '市场部',
-        code: 'MKT',
-        leader: '冯市场',
-        phone: '010-88888803',
-        email: 'marketing@company.com',
-        employeeCount: 28,
-        sort: 3,
-        status: 1,
-        description: '负责市场营销推广',
-        createTime: '2020-02-01',
-        parentId: 1,
-        children: []
-      },
-      {
-        id: 5,
-        name: '运营部',
-        code: 'OPS',
-        leader: '陈运营',
-        phone: '010-88888804',
-        email: 'operation@company.com',
-        employeeCount: 32,
-        sort: 4,
-        status: 1,
-        description: '负责产品运营',
-        createTime: '2020-02-10',
-        parentId: 1,
-        children: []
-      },
-      {
-        id: 6,
-        name: '人事部',
-        code: 'HR',
-        leader: '褚人事',
-        phone: '010-88888805',
-        email: 'hr@company.com',
-        employeeCount: 18,
-        sort: 5,
-        status: 1,
-        description: '负责人力资源管理',
-        createTime: '2020-01-05',
-        parentId: 1,
-        children: []
-      },
-      {
-        id: 7,
-        name: '财务部',
-        code: 'FIN',
-        leader: '卫财务',
-        phone: '010-88888806',
-        email: 'finance@company.com',
-        employeeCount: 15,
-        sort: 6,
-        status: 1,
-        description: '负责财务管理',
-        createTime: '2020-01-05',
-        parentId: 1,
-        children: []
-      },
-      {
-        id: 8,
-        name: '行政部',
-        code: 'ADM',
-        leader: '蒋行政',
-        phone: '010-88888807',
-        email: 'admin@company.com',
-        employeeCount: 20,
-        sort: 7,
-        status: 1,
-        description: '负责行政管理',
-        createTime: '2020-01-05',
-        parentId: 1,
-        children: []
-      },
-      {
-        id: 9,
-        name: '销售部',
-        code: 'SALES',
-        leader: '沈销售',
-        phone: '010-88888808',
-        email: 'sales@company.com',
-        employeeCount: 23,
-        sort: 8,
-        status: 1,
-        description: '负责销售业务',
-        createTime: '2020-03-01',
-        parentId: 1,
-        children: []
-      }
-    ]
+// P042：部门数据改为真实接口加载，mock 数据已移除
+const departmentTree = ref([])
+const deptEmployees = ref([])
+
+// 全量员工缓存：用于统计部门人数和展示部门员工列表
+let rawEmployees = []
+
+/**
+ * 后端部门实体字段为 deptName/deptCode，页面内部统一用 name/code，
+ * 加载时归一化，提交时再映射回后端字段
+ */
+const normalizeDept = (dept) => ({
+  id: dept.id,
+  name: dept.deptName,
+  code: dept.deptCode,
+  parentId: dept.parentId,
+  leader: dept.leader,
+  phone: dept.phone,
+  email: dept.email,
+  sort: dept.sort,
+  status: dept.status,
+  createTime: dept.createTime ? String(dept.createTime).slice(0, 10) : '',
+  employeeCount: 0,
+  children: []
+})
+
+/** 按 parentId 把扁平部门列表组装成树 */
+const buildTree = (nodes, parentId) =>
+  nodes
+    .filter(node => node.parentId === parentId)
+    .map(node => ({ ...node, children: buildTree(nodes, node.id) }))
+
+const findNode = (nodes, id) => {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children) {
+      const found = findNode(node.children, id)
+      if (found) return found
+    }
   }
-])
+  return null
+}
 
-const deptEmployees = ref([
-  { employeeNo: 'E001', name: '张三', position: '高级工程师', phone: '13800138001', entryDate: '2022-01-15', status: 1 },
-  { employeeNo: 'E002', name: '李四', position: '前端工程师', phone: '13800138002', entryDate: '2022-03-20', status: 1 },
-  { employeeNo: 'E009', name: '郑十一', position: '后端工程师', phone: '13800138009', entryDate: '2022-05-18', status: 1 }
-])
+/** 部门员工列表：从全量员工里按部门过滤 */
+const loadDeptEmployees = (deptId) => {
+  deptEmployees.value = rawEmployees
+    .filter(emp => emp.deptId === deptId)
+    .map(emp => ({
+      employeeNo: emp.empNo,
+      name: emp.name,
+      position: emp.position,
+      phone: emp.phone,
+      entryDate: emp.entryDate ? String(emp.entryDate).slice(0, 10) : '',
+      status: emp.status
+    }))
+}
+
+/** 加载部门树 + 员工人数统计；keepId 用于刷新后保持选中节点 */
+const loadTree = async (keepId) => {
+  try {
+    const [deptRes, empRes] = await Promise.all([
+      getDepartmentTreeApi(),
+      getEmployeeListApi()
+    ])
+    rawEmployees = empRes.data || []
+    const depts = (deptRes.data || []).map(normalizeDept)
+    const countByDept = {}
+    rawEmployees.forEach(emp => {
+      if (emp.deptId != null) {
+        countByDept[emp.deptId] = (countByDept[emp.deptId] || 0) + 1
+      }
+    })
+    depts.forEach(dept => {
+      dept.employeeCount = countByDept[dept.id] || 0
+    })
+    departmentTree.value = buildTree(depts, 0)
+    const target = keepId ? findNode(departmentTree.value, keepId) : null
+    currentDept.value = target || departmentTree.value[0] || null
+    if (currentDept.value) {
+      defaultExpandedKeys.value = [currentDept.value.id]
+      loadDeptEmployees(currentDept.value.id)
+    } else {
+      deptEmployees.value = []
+    }
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
 
 const formData = reactive({
   id: null,
@@ -351,8 +286,7 @@ const formData = reactive({
   phone: '',
   email: '',
   sort: 0,
-  status: 1,
-  description: ''
+  status: 1
 })
 
 const formRules = {
@@ -362,7 +296,6 @@ const formRules = {
 
 const parentDeptName = computed(() => {
   if (!currentDept.value?.parentId) return '无'
-  // 简单查找父部门名称
   const findParent = (nodes, parentId) => {
     for (const node of nodes) {
       if (node.id === parentId) return node.name
@@ -387,6 +320,7 @@ watch(filterText, (val) => {
 
 const handleNodeClick = (data) => {
   currentDept.value = data
+  loadDeptEmployees(data.id)
 }
 
 const handleAddRoot = () => {
@@ -405,7 +339,18 @@ const handleAddChild = (data) => {
 
 const handleEdit = (data) => {
   dialogTitle.value = '编辑部门'
-  Object.assign(formData, data)
+  resetForm()
+  Object.assign(formData, {
+    id: data.id,
+    parentId: data.parentId,
+    name: data.name,
+    code: data.code,
+    leader: data.leader,
+    phone: data.phone,
+    email: data.email,
+    sort: data.sort,
+    status: data.status
+  })
   dialogVisible.value = true
 }
 
@@ -418,25 +363,14 @@ const handleDelete = (data) => {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    // 简单删除逻辑
-    const removeNode = (nodes, id) => {
-      for (let i = 0; i < nodes.length; i++) {
-        if (nodes[i].id === id) {
-          nodes.splice(i, 1)
-          return true
-        }
-        if (nodes[i].children && removeNode(nodes[i].children, id)) {
-          return true
-        }
-      }
-      return false
+  }).then(async () => {
+    try {
+      await deleteDepartmentApi(data.id)
+      ElMessage.success('删除成功')
+      await loadTree()
+    } catch (e) {
+      // 错误提示由 request 拦截器统一处理
     }
-    removeNode(departmentTree.value, data.id)
-    if (currentDept.value?.id === data.id) {
-      currentDept.value = null
-    }
-    ElMessage.success('删除成功')
   }).catch(() => {})
 }
 
@@ -450,76 +384,44 @@ const resetForm = () => {
 
 const handleSubmit = async () => {
   if (!formRef.value) return
-  await formRef.value.validate((valid) => {
-    if (valid) {
-      submitLoading.value = true
-      setTimeout(() => {
-        if (formData.id) {
-          // 编辑 - 更新节点
-          const updateNode = (nodes) => {
-            for (const node of nodes) {
-              if (node.id === formData.id) {
-                Object.assign(node, formData)
-                return true
-              }
-              if (node.children && updateNode(node.children)) {
-                return true
-              }
-            }
-            return false
-          }
-          updateNode(departmentTree.value)
-          if (currentDept.value?.id === formData.id) {
-            Object.assign(currentDept.value, formData)
-          }
-          ElMessage.success('编辑成功')
-        } else {
-          // 新增
-          const newDept = {
-            ...formData,
-            id: Date.now(),
-            employeeCount: 0,
-            createTime: new Date().toISOString().slice(0, 10),
-            children: []
-          }
-          if (formData.parentId) {
-            // 添加为子部门
-            const addToParent = (nodes) => {
-              for (const node of nodes) {
-                if (node.id === formData.parentId) {
-                  if (!node.children) node.children = []
-                  node.children.push(newDept)
-                  return true
-                }
-                if (node.children && addToParent(node.children)) {
-                  return true
-                }
-              }
-              return false
-            }
-            addToParent(departmentTree.value)
-          } else {
-            // 添加为根部门
-            departmentTree.value.push(newDept)
-          }
-          ElMessage.success('新增成功')
-        }
-        dialogVisible.value = false
-        submitLoading.value = false
-      }, 500)
+  await formRef.value.validate(async (valid) => {
+    if (!valid) return
+    submitLoading.value = true
+    try {
+      // 映射回后端字段；parentId 为空表示根部门（后端约定 0）
+      const payload = {
+        id: formData.id,
+        parentId: formData.parentId || 0,
+        deptName: formData.name,
+        deptCode: formData.code,
+        leader: formData.leader,
+        phone: formData.phone,
+        email: formData.email,
+        sort: formData.sort,
+        status: formData.status
+      }
+      if (formData.id) {
+        await updateDepartmentApi(payload)
+        ElMessage.success('编辑成功')
+      } else {
+        delete payload.id
+        await addDepartmentApi(payload)
+        ElMessage.success('新增成功')
+      }
+      dialogVisible.value = false
+      await loadTree(formData.id || currentDept.value?.id)
+    } finally {
+      submitLoading.value = false
     }
   })
 }
 
 const refreshData = () => {
-  ElMessage.success('刷新成功')
+  loadTree(currentDept.value?.id)
 }
 
 onMounted(() => {
-  // 默认选中第一个节点
-  if (departmentTree.value.length > 0) {
-    currentDept.value = departmentTree.value[0]
-  }
+  loadTree()
 })
 </script>
 

@@ -46,6 +46,13 @@ public interface AnalyticsService {
     java.util.List<AiInsight> getAiInsights();
 
     /**
+     * 入职离职趋势（真实统计：按入职日期/离职日期按月聚合，M1-5）
+     *
+     * @param months 统计最近多少个月（3/6/12）
+     */
+    java.util.List<java.util.Map<String, Object>> getTurnoverTrend(int months);
+
+    /**
      * 获取招聘分析
      */
     RecruitmentAnalysis getRecruitmentAnalysis();

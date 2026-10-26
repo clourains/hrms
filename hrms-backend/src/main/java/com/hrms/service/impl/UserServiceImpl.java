@@ -7,6 +7,7 @@ import com.hrms.mapper.UserMapper;
 import com.hrms.service.UserService;
 import com.hrms.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
@@ -18,6 +19,14 @@ import java.util.Map;
  */
 @Service
 public class UserServiceImpl implements UserService {
+
+    /**
+     * BCrypt 加盐编码器（P046，bean 由 SecurityConfig 提供）。默认强度 10，
+     * 每次 encode 自动生成随机盐，同一明文两次编码结果不同，
+     * 验证必须用 matches 而非字符串比对。
+     */
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Autowired
     private UserMapper userMapper;
@@ -40,9 +49,9 @@ public class UserServiceImpl implements UserService {
             throw new RuntimeException("账号已被禁用");
         }
 
-        // 密码验证（MD5加密）
-        String passwordMd5 = DigestUtils.md5DigestAsHex(loginDTO.getPassword().getBytes());
-        if (!passwordMd5.equals(user.getPassword())) {
+        // 密码验证（P046）：BCrypt 优先；存量 MD5 密码兼容回退，
+        // MD5 验证通过后立即透明升级为 BCrypt 存库，全库密码自动完成迁移
+        if (!verifyAndUpgradePassword(user, loginDTO.getPassword())) {
             throw new RuntimeException("用户名或密码错误");
         }
 
@@ -57,6 +66,31 @@ public class UserServiceImpl implements UserService {
         result.put("userInfo", user);
 
         return result;
+    }
+
+    /**
+     * 验证密码：BCrypt matches 优先；未命中时按存量 MD5 比对，
+     * MD5 命中说明该账号尚未迁移，随即重编码为 BCrypt 写回数据库。
+     *
+     * @return 密码是否验证通过
+     */
+    private boolean verifyAndUpgradePassword(User user, String rawPassword) {
+        String stored = user.getPassword();
+        if (passwordEncoder.matches(rawPassword, stored)) {
+            return true;
+        }
+
+        String passwordMd5 = DigestUtils.md5DigestAsHex(rawPassword.getBytes());
+        if (!passwordMd5.equals(stored)) {
+            return false;
+        }
+
+        // 存量 MD5 验证通过，透明升级为 BCrypt（只更新密码字段，不动其他列）
+        User upgrade = new User();
+        upgrade.setId(user.getId());
+        upgrade.setPassword(passwordEncoder.encode(rawPassword));
+        userMapper.updateById(upgrade);
+        return true;
     }
 
     @Override

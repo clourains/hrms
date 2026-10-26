@@ -1,0 +1,70 @@
+# HRMS Pro 一键编排（M2-6）：MySQL 8 + Redis + 后端 + 前端
+# 用法：docker compose up -d --build
+# 首次启动：MySQL 建空库 hrms → 后端 Flyway 执行 V1__baseline.sql 建表 + 种子数据
+# 访问：http://localhost:5175  登录 admin / 123456
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: hrms-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: hrms
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p123456"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: hrms-redis
+    # 密码与后端 application.yml 保持一致
+    command: redis-server --requirepass 123456
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./hrms-backend
+    container_name: hrms-backend
+    environment:
+      TZ: Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/hrms?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&zeroDateTimeBehavior=convertToNull
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 123456
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      SPRING_DATA_REDIS_PASSWORD: 123456
+    ports:
+      - "8081:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build: ./hrms-frontend
+    container_name: hrms-frontend
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "5175:80"
+    depends_on:
+      - backend
+
+volumes:
+  mysql-data:
+  redis-data:

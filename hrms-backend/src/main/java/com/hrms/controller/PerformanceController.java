@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.entity.Performance;
 import com.hrms.service.PerformanceService;
 import com.hrms.util.Result;
@@ -61,6 +62,7 @@ public class PerformanceController {
     /**
      * 绩效评估
      */
+    @RequireRole("admin")
     @PostMapping("/evaluate")
     public Result<Void> evaluate(@RequestBody Performance performance) {
         try {
@@ -91,6 +93,7 @@ public class PerformanceController {
     /**
      * 新增绩效记录
      */
+    @RequireRole("admin")
     @PostMapping
     public Result<Void> save(@RequestBody Performance performance) {
         try {
@@ -108,6 +111,7 @@ public class PerformanceController {
     /**
      * 更新绩效记录
      */
+    @RequireRole("admin")
     @PutMapping
     public Result<Void> update(@RequestBody Performance performance) {
         try {
@@ -125,6 +129,7 @@ public class PerformanceController {
     /**
      * 根据ID删除绩效记录
      */
+    @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> deleteById(@PathVariable Long id) {
         try {

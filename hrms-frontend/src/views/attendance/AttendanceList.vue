@@ -83,9 +83,7 @@
           </el-form-item>
           <el-form-item label="部门">
             <el-select v-model="searchForm.departmentId" placeholder="请选择部门" clearable style="width: 160px">
-              <el-option label="技术部" :value="1" />
-              <el-option label="产品部" :value="2" />
-              <el-option label="市场部" :value="3" />
+              <el-option v-for="dept in departmentOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="考勤日期">
@@ -164,6 +162,8 @@
           :total="pagination.total"
           layout="total, sizes, prev, pager, next, jumper"
           background
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
         />
       </div>
     </el-card>
@@ -230,6 +230,12 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts } from '@element-plus/icons-vue'
+import { getAttendanceListApi, getAttendanceStatsApi, checkInApi, checkOutApi } from '@/api/attendance'
+import { getEmployeeListApi } from '@/api/employee'
+import { getDepartmentListApi } from '@/api/department'
+import { useUserStore } from '@/store/user'
+
+const userStore = useUserStore()
 
 const loading = ref(false)
 const makeupDialogVisible = ref(false)
@@ -251,10 +257,10 @@ const updateTime = () => {
   })
 }
 
-// 打卡状态
-const hasCheckedIn = ref(true)
+// 打卡状态：P042 由当日真实考勤记录驱动
+const hasCheckedIn = ref(false)
 const hasCheckedOut = ref(false)
-const checkInTime = ref('09:02:15')
+const checkInTime = ref('')
 const checkOutTime = ref('')
 const workDuration = ref('')
 
@@ -267,11 +273,12 @@ const todayStatus = computed(() => {
   return { type: 'info', text: '未打卡' }
 })
 
+// P042：月度统计改为真实接口数据（后端统计无请假维度，leaveDays 恒为 0）
 const monthStats = reactive({
-  normalDays: 18,
-  lateDays: 2,
-  earlyDays: 1,
-  leaveDays: 2
+  normalDays: 0,
+  lateDays: 0,
+  earlyDays: 0,
+  leaveDays: 0
 })
 
 const searchForm = reactive({
@@ -284,21 +291,16 @@ const searchForm = reactive({
 const pagination = reactive({
   currentPage: 1,
   pageSize: 10,
-  total: 56
+  total: 0
 })
 
-const tableData = ref([
-  { id: 1, date: '2024-01-15', employeeNo: 'E001', name: '张三', department: '技术部', checkIn: '08:55:30', checkInStatus: 'normal', checkOut: '18:30:00', checkOutStatus: 'normal', workHours: '9.5h', status: 'normal', remark: '' },
-  { id: 2, date: '2024-01-15', employeeNo: 'E002', name: '李四', department: '技术部', checkIn: '09:15:20', checkInStatus: 'late', checkOut: '18:20:00', checkOutStatus: 'normal', workHours: '9.1h', status: 'late', remark: '迟到15分钟' },
-  { id: 3, date: '2024-01-15', employeeNo: 'E003', name: '王五', department: '产品部', checkIn: '08:50:00', checkInStatus: 'normal', checkOut: '17:30:00', checkOutStatus: 'early', workHours: '8.7h', status: 'early', remark: '早退1小时' },
-  { id: 4, date: '2024-01-15', employeeNo: 'E004', name: '赵六', department: '市场部', checkIn: '--', checkInStatus: '', checkOut: '--', checkOutStatus: '', workHours: '--', status: 'absent', remark: '缺勤' },
-  { id: 5, date: '2024-01-15', employeeNo: 'E005', name: '钱七', department: '运营部', checkIn: '09:00:00', checkInStatus: 'normal', checkOut: '18:00:00', checkOutStatus: 'normal', workHours: '9.0h', status: 'leave', remark: '下午请假半天' },
-  { id: 6, date: '2024-01-14', employeeNo: 'E001', name: '张三', department: '技术部', checkIn: '08:58:00', checkInStatus: 'normal', checkOut: '19:00:00', checkOutStatus: 'normal', workHours: '10.0h', status: 'normal', remark: '加班1小时' },
-  { id: 7, date: '2024-01-14', employeeNo: 'E002', name: '李四', department: '技术部', checkIn: '09:05:10', checkInStatus: 'late', checkOut: '18:10:00', checkOutStatus: 'normal', workHours: '9.1h', status: 'late', remark: '迟到5分钟' },
-  { id: 8, date: '2024-01-14', employeeNo: 'E006', name: '孙八', department: '人事部', checkIn: '08:45:00', checkInStatus: 'normal', checkOut: '18:00:00', checkOutStatus: 'normal', workHours: '9.3h', status: 'normal', remark: '' },
-  { id: 9, date: '2024-01-14', employeeNo: 'E007', name: '周九', department: '财务部', checkIn: '09:00:00', checkInStatus: 'normal', checkOut: '18:00:00', checkOutStatus: 'normal', workHours: '9.0h', status: 'normal', remark: '' },
-  { id: 10, date: '2024-01-14', employeeNo: 'E008', name: '吴十', department: '行政部', checkIn: '08:55:00', checkInStatus: 'normal', checkOut: '18:05:00', checkOutStatus: 'normal', workHours: '9.2h', status: 'normal', remark: '' }
-])
+// P042：考勤列表改为真实接口加载（后端仅支持按员工+月份查询，即查看本人的月度考勤）
+const allRows = ref([])
+const tableData = ref([])
+const departmentOptions = ref([])
+let deptNameMap = {}
+// 当前登录人对应的员工信息，用于展示工号/姓名/部门列
+const myEmp = ref({ empNo: '-', name: '-', departmentName: '-' })
 
 const makeupForm = reactive({
   date: '',
@@ -314,6 +316,112 @@ const leaveForm = reactive({
   duration: '',
   reason: ''
 })
+
+const pad = (n) => String(n).padStart(2, '0')
+const fmtMonth = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
+const fmtDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+const timePart = (value) => (value ? String(value).slice(11, 19) : '')
+
+// 后端考勤状态：0正常 1迟到 2早退 3迟到+早退；其余（如休息日）无打卡时间按缺勤展示
+const mapStatus = (att) => {
+  const s = att.status
+  if (s === 1) return 'late'
+  if (s === 2) return 'early'
+  if (s === 3) return 'late'
+  if (s === 0 || s == null) return att.checkInTime ? 'normal' : 'absent'
+  return 'absent'
+}
+
+const normalizeRow = (att) => ({
+  id: att.id,
+  date: String(att.attendDate || '').slice(0, 10),
+  employeeNo: myEmp.value.empNo,
+  name: myEmp.value.name,
+  department: myEmp.value.departmentName,
+  checkIn: timePart(att.checkInTime),
+  checkInStatus: att.status === 1 || att.status === 3 ? 'late' : 'normal',
+  checkOut: timePart(att.checkOutTime),
+  checkOutStatus: att.status === 2 || att.status === 3 ? 'early' : 'normal',
+  workHours: att.workHours != null ? `${att.workHours}h` : '--',
+  status: mapStatus(att),
+  remark: att.remark || ''
+})
+
+const loadBase = async () => {
+  try {
+    const [empRes, deptRes] = await Promise.all([getEmployeeListApi(), getDepartmentListApi()])
+    const depts = deptRes.data || []
+    deptNameMap = {}
+    depts.forEach(d => { deptNameMap[d.id] = d.deptName })
+    departmentOptions.value = depts.map(d => ({ id: d.id, name: d.deptName }))
+    const myEmpId = Number(userStore.userInfo.empId ?? userStore.userInfo.id)
+    const me = (empRes.data || []).find(e => e.id === myEmpId)
+    myEmp.value = me
+      ? { empNo: me.empNo || '-', name: me.name || '-', departmentName: deptNameMap[me.deptId] || '-' }
+      : { empNo: '-', name: userStore.userInfo.nickname || '-', departmentName: '-' }
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+// 查询月份：取日期范围的起始月，未选则当前月
+const queryMonth = () => {
+  const range = searchForm.dateRange
+  if (range && range[0]) return fmtMonth(new Date(range[0]))
+  return fmtMonth(new Date())
+}
+
+const loadData = async () => {
+  loading.value = true
+  try {
+    const empId = userStore.userInfo.empId ?? userStore.userInfo.id
+    const month = queryMonth()
+    const [listRes, statsRes] = await Promise.all([
+      getAttendanceListApi({ empId, month }),
+      getAttendanceStatsApi({ empId, month })
+    ])
+    allRows.value = (listRes.data || []).map(normalizeRow)
+    const stats = statsRes.data || {}
+    monthStats.normalDays = stats.normalCount || 0
+    monthStats.lateDays = stats.lateCount || 0
+    monthStats.earlyDays = stats.earlyLeaveCount || 0
+    syncTodayCard()
+    refreshView()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 用今日打卡记录同步顶部打卡卡片状态 */
+const syncTodayCard = () => {
+  const today = fmtDate(new Date())
+  const row = allRows.value.find(r => r.date === today)
+  if (row) {
+    hasCheckedIn.value = !!row.checkIn
+    checkInTime.value = row.checkIn
+    hasCheckedOut.value = !!row.checkOut
+    checkOutTime.value = row.checkOut
+    workDuration.value = row.workHours !== '--' ? row.workHours.replace('h', '小时') : ''
+  }
+}
+
+/** 前端条件过滤 + 分页切片（后端列表接口仅支持员工+月份条件） */
+const refreshView = () => {
+  let rows = allRows.value
+  const range = searchForm.dateRange || []
+  const start = range[0] ? fmtDate(new Date(range[0])) : ''
+  const end = range[1] ? fmtDate(new Date(range[1])) : ''
+  if (start) rows = rows.filter(r => r.date >= start)
+  if (end) rows = rows.filter(r => r.date <= end)
+  if (searchForm.name) rows = rows.filter(r => r.name.includes(searchForm.name))
+  if (searchForm.departmentId) rows = rows.filter(r => r.department === (deptNameMap[searchForm.departmentId] || ''))
+  if (searchForm.status) rows = rows.filter(r => r.status === searchForm.status)
+  pagination.total = rows.length
+  const startIdx = (pagination.currentPage - 1) * pagination.pageSize
+  tableData.value = rows.slice(startIdx, startIdx + pagination.pageSize)
+}
 
 const getStatusText = (status) => {
   const map = {
@@ -337,35 +445,40 @@ const getStatusTagType = (status) => {
   return map[status] || 'info'
 }
 
-const handleCheckIn = () => {
-  const now = new Date()
-  checkInTime.value = now.toLocaleTimeString('zh-CN', { hour12: false })
-  hasCheckedIn.value = true
-  ElMessage.success('上班打卡成功')
+const handleCheckIn = async () => {
+  try {
+    const res = await checkInApi()
+    ElMessage.success(res.message || '上班打卡成功')
+    await loadData()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
 }
 
-const handleCheckOut = () => {
-  const now = new Date()
-  checkOutTime.value = now.toLocaleTimeString('zh-CN', { hour12: false })
-  hasCheckedOut.value = true
-  // 计算工作时长
-  const inTime = checkInTime.value.split(':').map(Number)
-  const outTime = checkOutTime.value.split(':').map(Number)
-  const hours = outTime[0] - inTime[0] + (outTime[1] - inTime[1]) / 60
-  workDuration.value = hours.toFixed(1) + '小时'
-  ElMessage.success('下班签退成功')
+const handleCheckOut = async () => {
+  try {
+    const res = await checkOutApi()
+    ElMessage.success(res.message || '下班签退成功')
+    await loadData()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
 }
 
 const handleSearch = () => {
-  ElMessage.success('搜索功能演示')
+  pagination.currentPage = 1
+  loadData()
 }
 
 const handleReset = () => {
   Object.keys(searchForm).forEach(key => {
     searchForm[key] = Array.isArray(searchForm[key]) ? [] : ''
   })
+  pagination.currentPage = 1
+  loadData()
 }
 
+// 补卡/请假：后端暂无对应接口，保留演示逻辑
 const handleMakeup = () => {
   makeupDialogVisible.value = true
 }
@@ -400,9 +513,20 @@ const handleApprove = (row) => {
   ElMessage.info(`审批 ${row.name} 的考勤申请`)
 }
 
-onMounted(() => {
+const handleSizeChange = () => {
+  pagination.currentPage = 1
+  refreshView()
+}
+
+const handleCurrentChange = () => {
+  refreshView()
+}
+
+onMounted(async () => {
   updateTime()
   timer = setInterval(updateTime, 1000)
+  await loadBase()
+  loadData()
 })
 
 onUnmounted(() => {

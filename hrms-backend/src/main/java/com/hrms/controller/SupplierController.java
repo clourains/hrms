@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.entity.Supplier;
@@ -12,7 +13,10 @@ import java.util.List;
 
 /**
  * 供应商Controller
+ *
+ * 业务模块整体仅管理员可访问（P045）
  */
+@RequireRole("admin")
 @RestController
 @RequestMapping("/supplier")
 public class SupplierController {

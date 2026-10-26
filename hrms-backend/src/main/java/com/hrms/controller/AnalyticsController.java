@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 智能分析控制器
@@ -75,6 +76,15 @@ public class AnalyticsController {
     @GetMapping("/ai-insights")
     public Result<List<AiInsight>> getAiInsights() {
         return Result.success(analyticsService.getAiInsights());
+    }
+
+    /**
+     * 入职离职趋势（M1-5）：按入职/离职日期真实统计
+     */
+    @GetMapping("/turnover-trend")
+    public Result<List<Map<String, Object>>> getTurnoverTrend(
+            @RequestParam(defaultValue = "12") int months) {
+        return Result.success(analyticsService.getTurnoverTrend(months));
     }
 
     /**

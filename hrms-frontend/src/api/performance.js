@@ -1,8 +1,8 @@
 import { request } from '@/utils/request'
 
-// 获取绩效列表
+// 按考核周期查询绩效列表（后端为 GET /performance/listByPeriod，参数 period：yyyy-MM）
 export const getPerformanceListApi = (params) => {
-  return request.get('/performance/list', params)
+  return request.get('/performance/listByPeriod', params)
 }
 
 // 获取绩效详情
@@ -15,9 +15,9 @@ export const addPerformanceApi = (data) => {
   return request.post('/performance', data)
 }
 
-// 更新绩效
-export const updatePerformanceApi = (id, data) => {
-  return request.put(`/performance/${id}`, data)
+// 更新绩效（后端为 PUT /performance，id 放在请求体里）
+export const updatePerformanceApi = (data) => {
+  return request.put('/performance', data)
 }
 
 // 删除绩效记录
@@ -60,9 +60,14 @@ export const updatePerformanceIndicatorsApi = (data) => {
   return request.put('/performance/indicators', data)
 }
 
-// 获取绩效统计
+// 绩效评估（后端为 POST /performance/evaluate，总分与等级由后端计算）
+export const evaluatePerformanceApi = (data) => {
+  return request.post('/performance/evaluate', data)
+}
+
+// 获取绩效统计（后端为 GET /performance/statistics，参数 period：yyyy-MM）
 export const getPerformanceStatsApi = (params) => {
-  return request.get('/performance/stats', params)
+  return request.get('/performance/statistics', params)
 }
 
 // 导出绩效报表

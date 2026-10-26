@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.entity.Shipment;
@@ -14,7 +15,10 @@ import java.util.Map;
 
 /**
  * 发货物流Controller
+ *
+ * 业务模块整体仅管理员可访问（P045）
  */
+@RequireRole("admin")
 @RestController
 @RequestMapping("/shipment")
 public class ShipmentController {

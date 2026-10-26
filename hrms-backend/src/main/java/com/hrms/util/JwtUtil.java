@@ -75,4 +75,20 @@ public class JwtUtil {
         Claims claims = parseToken(token);
         return claims != null ? Long.valueOf(claims.get("userId").toString()) : null;
     }
+
+    /**
+     * 从token中获取角色（P045 角色权限校验用）
+     */
+    public String getRoleFromToken(String token) {
+        Claims claims = parseToken(token);
+        return claims != null ? (String) claims.get("role") : null;
+    }
+
+    /**
+     * 从token中获取过期时间（P049 登出黑名单用）
+     */
+    public Date getExpirationFromToken(String token) {
+        Claims claims = parseToken(token);
+        return claims != null ? claims.getExpiration() : null;
+    }
 }

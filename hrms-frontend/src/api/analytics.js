@@ -49,6 +49,11 @@ export const getAiInsightsApi = () => {
   return request.get('/analytics/ai-insights')
 }
 
+// 入职离职趋势（真实统计，months=3/6/12）
+export const getTurnoverTrendApi = (months = 12) => {
+  return request.get('/analytics/turnover-trend', { params: { months } })
+}
+
 // ==================== 招聘分析 ====================
 
 // 获取招聘分析

@@ -59,6 +59,11 @@ public class Employee implements Serializable {
 
     private Integer status;
 
+    /**
+     * 离职日期（P045 之前的 M1-5）：办理离职时填写，用于入离职趋势真实统计
+     */
+    private LocalDate leaveDate;
+
     private String country;
 
     private String workLocation;

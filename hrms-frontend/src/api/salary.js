@@ -1,8 +1,8 @@
 import { request } from '@/utils/request'
 
-// 获取薪资列表
+// 获取薪资列表（后端为 GET /salary/listByMonth，参数 salaryMonth：yyyy-MM）
 export const getSalaryListApi = (params) => {
-  return request.get('/salary/list', params)
+  return request.get('/salary/listByMonth', params)
 }
 
 // 获取薪资详情
@@ -15,9 +15,9 @@ export const addSalaryApi = (data) => {
   return request.post('/salary', data)
 }
 
-// 更新薪资
-export const updateSalaryApi = (id, data) => {
-  return request.put(`/salary/${id}`, data)
+// 更新薪资（后端为 PUT /salary，id 放在请求体里）
+export const updateSalaryApi = (data) => {
+  return request.put('/salary', data)
 }
 
 // 删除薪资记录
@@ -40,9 +40,9 @@ export const updateSalaryStructureApi = (data) => {
   return request.put('/salary/structure', data)
 }
 
-// 获取薪资统计
+// 获取薪资统计（后端为 GET /salary/statistics，参数 salaryMonth：yyyy-MM）
 export const getSalaryStatsApi = (params) => {
-  return request.get('/salary/stats', params)
+  return request.get('/salary/statistics', params)
 }
 
 // 生成工资条

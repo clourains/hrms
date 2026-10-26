@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
 import com.hrms.dto.StockChangeDTO;
@@ -17,7 +18,9 @@ import java.util.Map;
  * 库存Controller
  *
  * 异常统一交给 GlobalExceptionHandler 处理，这里不再逐个 catch 后把 SQL 报错原样返回（P024）。
+ * 业务模块整体仅管理员可访问（P045）。
  */
+@RequireRole("admin")
 @RestController
 @RequestMapping("/inventory")
 public class InventoryController {
