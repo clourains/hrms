@@ -5,6 +5,7 @@ import com.hrms.entity.User;
 import com.hrms.service.UserService;
 import com.hrms.util.JwtUtil;
 import com.hrms.util.Result;
+import com.hrms.util.TokenBlacklist;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +24,9 @@ public class AuthController {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @Autowired
+    private TokenBlacklist tokenBlacklist;
 
     /**
      * 登录
@@ -59,10 +63,17 @@ public class AuthController {
     }
 
     /**
-     * 退出登录
+     * 退出登录（P049）：把当前 token 登记进黑名单，拦截器校验时立即失效
      */
     @PostMapping("/logout")
-    public Result<Void> logout() {
+    public Result<Void> logout(HttpServletRequest request) {
+        String token = request.getHeader("Authorization");
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7).trim();
+        }
+        if (token != null && !token.isEmpty()) {
+            tokenBlacklist.revoke(token);
+        }
         return Result.success("退出成功", null);
     }
 }

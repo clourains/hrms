@@ -2,6 +2,7 @@ package com.hrms.config;
 
 import com.hrms.annotation.RequireRole;
 import com.hrms.util.JwtUtil;
+import com.hrms.util.TokenBlacklist;
 import com.hrms.util.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,9 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
     @Autowired
     private JwtUtil jwtUtil;
 
+    @Autowired
+    private TokenBlacklist tokenBlacklist;
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         // 跨域预检请求直接放行
@@ -41,6 +45,17 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
         }
 
         if (token != null && !token.isEmpty() && jwtUtil.validateToken(token)) {
+            // P049：登出过的 token 直接拒绝，退出登录立即失效
+            if (tokenBlacklist.isRevoked(token)) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setCharacterEncoding("UTF-8");
+                response.setContentType("application/json;charset=UTF-8");
+                PrintWriter writer = response.getWriter();
+                writer.write("{\"code\":401,\"message\":\"登录已失效，请重新登录\",\"data\":null}");
+                writer.flush();
+                return false;
+            }
+
             String role = jwtUtil.getRoleFromToken(token);
 
             // P045 角色权限校验
