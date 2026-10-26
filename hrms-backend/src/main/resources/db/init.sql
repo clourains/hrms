@@ -219,6 +219,8 @@ INSERT IGNORE INTO sys_employee (emp_no, name, gender, birthday, id_card, phone,
 ('EMP020', '唐出纳', 0, '1996-02-28', '110101199602280020', '13800000020', 'tang@company.com', '北京市石景山区', 5, '出纳', 'P4', '2019-08-15', 5, '本科', '金融学', 11000.00, 1);
 
 -- 用户数据 密码都是123456 (MD5加密)
+-- 种子账号初始密码均为 123456（MD5 仅作首次引导，P046）：
+-- 登录校验为 BCrypt 优先 + MD5 兼容回退，存量账号首次登录成功后密码自动升级为 BCrypt 加盐哈希
 INSERT IGNORE INTO sys_user (username, password, nickname, role, emp_id, status) VALUES
 ('admin', 'e10adc3949ba59abbe56e057f20f883e', '系统管理员', 'admin', 1, 1),
 ('hr001', 'e10adc3949ba59abbe56e057f20f883e', '赵人事', 'admin', 4, 1),
