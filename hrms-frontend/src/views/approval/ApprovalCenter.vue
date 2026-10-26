@@ -1,12 +1,18 @@
 <template>
-  <div class="approval-container">
-    <el-card shadow="hover">
-      <!-- 操作栏 -->
-      <div class="action-bar">
+  <div class="approval-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="审批中心"
+      description="请假、加班、调薪等申请的多级审批处理与进度跟踪"
+      icon="DocumentChecked"
+    >
+      <template #actions>
         <el-button type="primary" :icon="Plus" @click="openApply">发起申请</el-button>
         <el-button :icon="Refresh" @click="loadActiveTab">刷新</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
+    <el-card shadow="hover">
       <el-tabs v-model="activeTab" @tab-change="loadActiveTab">
         <!-- 待我审批 -->
         <el-tab-pane name="todo">
@@ -193,6 +199,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import ApprovalCard from '@/components/ApprovalCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   applyApprovalApi,
   approveApprovalApi,
@@ -377,13 +384,9 @@ onMounted(loadTodo)
 
 <style scoped lang="scss">
 .approval-container {
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
   .detail-title {
     margin: 0 0 8px;
-    color: #303133;
+    color: var(--el-text-color-primary);
   }
 
   .detail-meta {

@@ -1,5 +1,17 @@
 <template>
-  <div class="department-container">
+  <div class="department-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="部门管理"
+      description="维护组织架构与部门信息，支持多级部门树管理"
+      icon="OfficeBuilding"
+    >
+      <template #actions>
+        <el-button type="primary" :icon="Plus" @click="handleAddRoot">新增根部门</el-button>
+        <el-button :icon="Refresh" @click="refreshData">刷新</el-button>
+      </template>
+    </PageHeader>
+
     <el-row :gutter="20">
       <!-- 左侧部门树 -->
       <el-col :span="8">
@@ -7,7 +19,6 @@
           <template #header>
             <div class="card-header">
               <span>部门结构</span>
-              <el-button type="primary" link :icon="Plus" @click="handleAddRoot">新增根部门</el-button>
             </div>
           </template>
           <el-input
@@ -55,9 +66,6 @@
           <template #header>
             <div class="card-header">
               <span>{{ currentDept?.name || '部门详情' }}</span>
-              <div>
-                <el-button :icon="Refresh" @click="refreshData">刷新</el-button>
-              </div>
             </div>
           </template>
 
@@ -170,6 +178,7 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getDepartmentTreeApi, addDepartmentApi, updateDepartmentApi, deleteDepartmentApi } from '@/api/department'
 import { getEmployeeListApi } from '@/api/employee'
 
@@ -452,7 +461,7 @@ onMounted(() => {
     }
 
     .node-count {
-      color: #909399;
+      color: var(--el-text-color-secondary);
       font-size: 12px;
       margin-right: 10px;
     }
@@ -463,15 +472,15 @@ onMounted(() => {
 
       .el-icon {
         cursor: pointer;
-        color: #909399;
+        color: var(--el-text-color-secondary);
         font-size: 14px;
 
         &:hover {
-          color: #409EFF;
+          color: var(--el-color-primary);
         }
 
         &.delete-icon:hover {
-          color: #F56C6C;
+          color: var(--el-color-danger);
         }
       }
     }
@@ -493,7 +502,7 @@ onMounted(() => {
       margin-bottom: 12px;
       font-size: 16px;
       font-weight: 600;
-      color: #303133;
+      color: var(--el-text-color-primary);
     }
   }
 }

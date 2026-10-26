@@ -1,5 +1,24 @@
 <template>
-  <div class="salary-container">
+  <div class="salary-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="薪资管理"
+      description="月度薪资记录与工资条管理，支持一键计算、批量调薪与工资条推送"
+      icon="Money"
+    >
+      <template #actions>
+        <template v-if="isAdmin">
+          <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
+          <el-button type="success" :icon="MagicStick" :loading="calcLoading" @click="handleCalculate">一键计算薪资</el-button>
+          <el-button type="warning" :icon="Promotion" :loading="notifyLoading" @click="handleCalculateAndNotify">计算并推送工资条</el-button>
+          <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
+          <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
+          <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
+        </template>
+        <span v-else class="self-note">普通员工仅可查看本人薪资记录</span>
+      </template>
+    </PageHeader>
+
     <el-card shadow="hover">
       <!-- 统计概览（仅管理员，普通员工不展示全员统计） -->
       <el-row v-if="isAdmin" :gutter="20" class="stat-row">
@@ -32,9 +51,10 @@
           </div>
         </el-col>
       </el-row>
+    </el-card>
 
-      <!-- 搜索栏 -->
-      <div class="search-bar">
+    <!-- 搜索区 -->
+    <div class="search-card">
         <el-form :inline="true" :model="searchForm">
           <el-form-item label="薪资月份">
             <el-date-picker
@@ -57,27 +77,15 @@
             <span style="margin: 0 8px">-</span>
             <el-input-number v-model="searchForm.maxSalary" :min="0" placeholder="最高" style="width: 120px" />
           </el-form-item>
-          <el-form-item>
+          <el-form-item class="search-submit">
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" @click="handleReset">重置</el-button>
           </el-form-item>
         </el-form>
-      </div>
+    </div>
 
-      <!-- 操作栏 -->
-      <div class="action-bar">
-        <template v-if="isAdmin">
-          <el-button type="primary" :icon="Plus" @click="handleAdd">新增薪资</el-button>
-          <el-button type="success" :icon="MagicStick" :loading="calcLoading" @click="handleCalculate">一键计算薪资</el-button>
-          <el-button type="warning" :icon="Promotion" :loading="notifyLoading" @click="handleCalculateAndNotify">计算并推送工资条</el-button>
-          <el-button type="warning" :icon="TrendCharts" @click="handleBatchAdjust">批量调薪</el-button>
-          <el-button type="primary" :icon="Setting" @click="handleStructure">薪资结构</el-button>
-          <el-button type="success" :icon="Download" @click="handleExport">导出报表</el-button>
-        </template>
-        <span v-else class="self-note">普通员工仅可查看本人薪资记录</span>
-      </div>
-
-      <!-- 表格 -->
+    <!-- 表格 -->
+    <div class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
         <el-table-column prop="employeeNo" label="工号" width="100" align="center" />
         <el-table-column prop="name" label="姓名" width="100" align="center" />
@@ -116,7 +124,7 @@
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination">
+      <div class="pagination page-pagination">
         <el-pagination
           v-model:current-page="pagination.currentPage"
           v-model:page-size="pagination.pageSize"
@@ -128,7 +136,7 @@
           @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 薪资调整弹窗 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="600px" destroy-on-close>
@@ -246,6 +254,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download, Promotion } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, calculateAndNotifyApi, downloadPayslipApi } from '@/api/salary'
 import { useUserStore } from '@/store/user'
 
@@ -634,66 +643,50 @@ onMounted(async () => {
   }
 
   .stat-card {
-    background: #fff;
+    background: var(--el-bg-color);
     border-radius: 8px;
     padding: 20px;
     border-left: 4px solid;
     box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.06);
 
-    &.primary { border-left-color: #409EFF; }
-    &.success { border-left-color: #67C23A; }
-    &.warning { border-left-color: #E6A23C; }
-    &.danger { border-left-color: #F56C6C; }
+    &.primary { border-left-color: var(--el-color-primary); }
+    &.success { border-left-color: var(--el-color-success); }
+    &.warning { border-left-color: var(--el-color-warning); }
+    &.danger { border-left-color: var(--el-color-danger); }
 
     .stat-label {
       font-size: 14px;
-      color: #909399;
+      color: var(--el-text-color-secondary);
       margin-bottom: 8px;
     }
 
     .stat-value {
       font-size: 24px;
       font-weight: 600;
-      color: #303133;
+      color: var(--el-text-color-primary);
       margin-bottom: 8px;
     }
 
     .stat-sub {
       font-size: 12px;
-      color: #909399;
+      color: var(--el-text-color-secondary);
 
-      .up { color: #67C23A; }
-      .down { color: #F56C6C; }
+      .up { color: var(--el-color-success); }
+      .down { color: var(--el-color-danger); }
     }
   }
 
-  .search-bar {
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
-  .pagination {
-    margin-top: 20px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
   .text-danger {
-    color: #F56C6C;
+    color: var(--el-color-danger);
   }
 
   .text-primary {
-    color: #409EFF;
+    color: var(--el-color-primary);
     font-weight: 600;
   }
 
   .net-salary {
-    color: #F56C6C;
+    color: var(--el-color-danger);
     font-weight: 600;
   }
 

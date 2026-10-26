@@ -1,9 +1,24 @@
 <template>
-  <div class="employee-container">
-    <el-card shadow="hover">
-      <!-- 搜索栏 -->
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
+  <div class="employee-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="员工管理"
+      description="维护员工档案与在职状态，支持按部门、职位、状态筛选"
+      icon="User"
+    >
+      <template #actions>
+        <el-button type="primary" :icon="Plus" @click="handleAdd">新增员工</el-button>
+        <el-button type="success" :icon="Upload" @click="handleImport">导入</el-button>
+        <el-button type="warning" :icon="Download" @click="handleExport">导出</el-button>
+        <el-button type="danger" :icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+          批量删除
+        </el-button>
+      </template>
+    </PageHeader>
+
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
           <el-form-item label="姓名">
             <el-input v-model="searchForm.name" placeholder="请输入姓名" clearable style="width: 180px" />
           </el-form-item>
@@ -25,24 +40,15 @@
               <el-option label="试用期" value="2" />
             </el-select>
           </el-form-item>
-          <el-form-item>
+          <el-form-item class="search-submit">
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" @click="handleReset">重置</el-button>
           </el-form-item>
         </el-form>
-      </div>
+    </div>
 
-      <!-- 操作栏 -->
-      <div class="action-bar">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增员工</el-button>
-        <el-button type="success" :icon="Upload" @click="handleImport">导入</el-button>
-        <el-button type="warning" :icon="Download" @click="handleExport">导出</el-button>
-        <el-button type="danger" :icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-          批量删除
-        </el-button>
-      </div>
-
-      <!-- 表格 -->
+    <!-- 表格 -->
+    <div class="table-card">
       <el-table
         :data="tableData"
         v-loading="loading"
@@ -87,7 +93,7 @@
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination">
+      <div class="pagination page-pagination">
         <el-pagination
           v-model:current-page="pagination.currentPage"
           v-model:page-size="pagination.pageSize"
@@ -99,7 +105,7 @@
           @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
@@ -229,6 +235,9 @@
         <el-descriptions-item label="地址" :span="2">{{ formData.address }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ formData.remark }}</el-descriptions-item>
       </el-descriptions>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -237,6 +246,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Delete, View, Edit } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
@@ -518,22 +528,4 @@ onMounted(async () => {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
-.employee-container {
-  .search-bar {
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
-  .pagination {
-    margin-top: 20px;
-    display: flex;
-    justify-content: flex-end;
-  }
-}
 </style>

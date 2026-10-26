@@ -1,5 +1,21 @@
 <template>
-  <div class="attendance-container">
+  <div class="attendance-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="考勤管理"
+      description="每日打卡与考勤记录管理，支持补卡、请假、加班申请与月报导出"
+      icon="Calendar"
+    >
+      <template #actions>
+        <el-button type="warning" :icon="EditPen" @click="handleMakeup">补卡申请</el-button>
+        <el-button type="success" :icon="Calendar" @click="handleLeave">请假申请</el-button>
+        <el-button type="primary" :icon="Sunrise" @click="handleOvertime">加班申请</el-button>
+        <el-button :icon="List" @click="showMyOvertime">我的加班</el-button>
+        <el-button type="primary" :icon="Download" @click="handleExport">导出报表</el-button>
+        <el-button :icon="TrendCharts" @click="handleStats">统计分析</el-button>
+      </template>
+    </PageHeader>
+
     <el-card shadow="hover">
       <!-- 顶部打卡区 -->
       <div class="checkin-section">
@@ -74,9 +90,10 @@
           </el-row>
         </div>
       </div>
+    </el-card>
 
-      <!-- 搜索栏 -->
-      <div class="search-bar">
+    <!-- 搜索区 -->
+    <div class="search-card">
         <el-form :inline="true" :model="searchForm">
           <el-form-item label="员工姓名">
             <el-input v-model="searchForm.name" placeholder="请输入姓名" clearable style="width: 160px" />
@@ -105,24 +122,15 @@
               <el-option label="请假" value="leave" />
             </el-select>
           </el-form-item>
-          <el-form-item>
+          <el-form-item class="search-submit">
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" @click="handleReset">重置</el-button>
           </el-form-item>
         </el-form>
-      </div>
+    </div>
 
-      <!-- 操作栏 -->
-      <div class="action-bar">
-        <el-button type="warning" :icon="EditPen" @click="handleMakeup">补卡申请</el-button>
-        <el-button type="success" :icon="Calendar" @click="handleLeave">请假申请</el-button>
-        <el-button type="primary" :icon="Sunrise" @click="handleOvertime">加班申请</el-button>
-        <el-button :icon="List" @click="showMyOvertime">我的加班</el-button>
-        <el-button type="primary" :icon="Download" @click="handleExport">导出报表</el-button>
-        <el-button :icon="TrendCharts" @click="handleStats">统计分析</el-button>
-      </div>
-
-      <!-- 表格 -->
+    <!-- 表格 -->
+    <div class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
         <el-table-column prop="date" label="日期" width="120" align="center" />
         <el-table-column prop="employeeNo" label="工号" width="100" align="center" />
@@ -156,7 +164,7 @@
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination">
+      <div class="pagination page-pagination">
         <el-pagination
           v-model:current-page="pagination.currentPage"
           v-model:page-size="pagination.pageSize"
@@ -168,7 +176,7 @@
           @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 补卡申请弹窗 -->
     <el-dialog v-model="makeupDialogVisible" title="补卡申请" width="450px">
@@ -306,6 +314,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts, Sunrise, List } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   getAttendanceListApi, getAttendanceStatsApi, checkInApi, checkOutApi,
   applyOvertimeApi, getMyOvertimeApi, getMyLeaveQuotaApi, submitLeaveApplyApi
@@ -874,40 +883,24 @@ onUnmounted(() => {
     }
   }
 
-  .search-bar {
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
   .ot-rate-hint {
     font-size: 12px;
-    color: #909399;
+    color: var(--el-text-color-secondary);
     line-height: 1.5;
   }
 
   .ot-note {
     margin-top: 12px;
     font-size: 12px;
-    color: #909399;
-  }
-
-  .pagination {
-    margin-top: 20px;
-    display: flex;
-    justify-content: flex-end;
+    color: var(--el-text-color-secondary);
   }
 
   .text-warning {
-    color: #E6A23C;
+    color: var(--el-color-warning);
   }
 
   .text-danger {
-    color: #F56C6C;
+    color: var(--el-color-danger);
   }
 }
 </style>
