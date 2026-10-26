@@ -103,8 +103,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
+import { useAppStore } from '@/store/app'
 import { DataAnalysis, Refresh, Money, TrendCharts, Tickets, User, Wallet, Box, Coin, ShoppingCart } from '@element-plus/icons-vue'
 import {
   getBusinessOverviewApi, getMonthlySalesApi, getTopCustomersApi,
@@ -143,6 +144,12 @@ const coreMetrics = ref([
   { title: '库存价值', value: '--', icon: 'Box', color: '#e67e22', footer: '全仓库存货值 (CNY)' },
   { title: '累计收款', value: '--', icon: 'ShoppingCart', color: '#16a085', footer: '客户回款累计 (USD)' }
 ])
+
+const appStore = useAppStore()
+
+// 暗黑模式：图表以 ECharts 内置 dark 主题重建，显式适配文字颜色
+const chartThemeName = () => (appStore.isDark ? 'dark' : undefined)
+const labelText = () => (appStore.isDark ? '#E5EAF3' : '#303133')
 
 const formatNum = (n) => (n == null ? '0.00' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 const formatInt = (n) => (n == null ? '0' : Number(n).toLocaleString('en-US'))
@@ -201,11 +208,13 @@ const initAllCharts = () => {
 
 const initMonthlyChart = () => {
   if (!monthlyChartRef.value) return
-  monthlyChart = echarts.init(monthlyChartRef.value)
+  monthlyChart?.dispose()
+  monthlyChart = echarts.init(monthlyChartRef.value, chartThemeName())
   const { months, sales, orderCounts } = monthlySales.value
   monthlyChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    legend: { data: ['销售额(USD)', '订单量'], top: 0 },
+    legend: { data: ['销售额(USD)', '订单量'], top: 0, textStyle: { color: labelText() } },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
     xAxis: { type: 'category', data: months },
     yAxis: [
@@ -240,6 +249,7 @@ const initMonthlyChart = () => {
 }
 
 const horizontalBarOption = (data, nameKey, valueKey, color) => ({
+  backgroundColor: 'transparent',
   tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (ps) => `${ps[0].name}: $${formatNum(ps[0].value)}` },
   grid: { left: '3%', right: '8%', bottom: '3%', top: '5%', containLabel: true },
   xAxis: { type: 'value', axisLabel: { formatter: (v) => (v >= 10000 ? (v / 10000) + '万' : v), fontSize: 10 } },
@@ -249,34 +259,38 @@ const horizontalBarOption = (data, nameKey, valueKey, color) => ({
     data: data.map(d => d[valueKey]).reverse(),
     barWidth: '55%',
     itemStyle: { color, borderRadius: [0, 4, 4, 0] },
-    label: { show: true, position: 'right', formatter: (p) => '$' + formatNum(p.value), fontSize: 10 }
+    label: { show: true, position: 'right', formatter: (p) => '$' + formatNum(p.value), fontSize: 10, color: labelText() }
   }]
 })
 
 const initCustomerChart = () => {
   if (!customerChartRef.value) return
-  customerChart = echarts.init(customerChartRef.value)
+  customerChart?.dispose()
+  customerChart = echarts.init(customerChartRef.value, chartThemeName())
   customerChart.setOption(horizontalBarOption(topCustomers.value.slice(0, 10), 'customerName', 'totalSales', '#67C23A'))
 }
 
 const initProductChart = () => {
   if (!productChartRef.value) return
-  productChart = echarts.init(productChartRef.value)
+  productChart?.dispose()
+  productChart = echarts.init(productChartRef.value, chartThemeName())
   productChart.setOption(horizontalBarOption(topProducts.value.slice(0, 10), 'productName', 'totalSales', '#409EFF'))
 }
 
 const initCountryChart = () => {
   if (!countryChartRef.value) return
-  countryChart = echarts.init(countryChartRef.value)
+  countryChart?.dispose()
+  countryChart = echarts.init(countryChartRef.value, chartThemeName())
   const data = countryDistribution.value
   countryChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'item', formatter: (p) => `${p.name}: $${formatNum(p.value)} (${p.percent}%)` },
     series: [{
       type: 'pie',
       radius: ['40%', '70%'],
       center: ['50%', '52%'],
-      itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
-      label: { show: true, formatter: '{b}\n{d}%', fontSize: 11 },
+      itemStyle: { borderRadius: 4, borderColor: appStore.isDark ? '#141414' : '#fff', borderWidth: 2 },
+      label: { show: true, formatter: '{b}\n{d}%', fontSize: 11, color: labelText() },
       data: data.map((d, i) => ({
         value: d.totalSales,
         name: d.country || '未知',
@@ -288,9 +302,11 @@ const initCountryChart = () => {
 
 const initInventoryChart = () => {
   if (!inventoryChartRef.value) return
-  inventoryChart = echarts.init(inventoryChartRef.value)
+  inventoryChart?.dispose()
+  inventoryChart = echarts.init(inventoryChartRef.value, chartThemeName())
   const data = inventoryValue.value
   inventoryChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: (ps) => `${ps[0].name}: ¥${formatNum(ps[0].value)}` },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: { type: 'category', data: data.map(d => d.warehouseName), axisLabel: { fontSize: 10, interval: 0, rotate: data.length > 5 ? 25 : 0 } },
@@ -305,10 +321,15 @@ const initInventoryChart = () => {
           borderRadius: [4, 4, 0, 0]
         }
       })),
-      label: { show: true, position: 'top', formatter: (p) => '¥' + formatNum(p.value), fontSize: 10 }
+      label: { show: true, position: 'top', formatter: (p) => '¥' + formatNum(p.value), fontSize: 10, color: labelText() }
     }]
   })
 }
+
+// 暗黑模式切换后重建全部图表
+watch(() => appStore.isDark, () => {
+  nextTick(() => initAllCharts())
+})
 
 const handleResize = () => {
   monthlyChart?.resize()

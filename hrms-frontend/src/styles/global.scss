@@ -11,7 +11,7 @@ html, body {
     'Microsoft YaHei', '微软雅黑', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f7fa;
+  background-color: var(--el-bg-color-page, #f5f7fa);
 }
 
 a {
@@ -74,4 +74,81 @@ a {
 
 .mt-20 {
   margin-top: 20px;
+}
+
+/* ===== 暗黑模式补丁 =====
+   Element Plus 组件由 dark/css-vars.css 自动适配；
+   这里只兜底各页面散落的硬编码浅色背景/文字（全局规则的优先级高于 scoped 样式） */
+html.dark {
+  ::-webkit-scrollbar-track {
+    background: var(--el-fill-color-light);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--el-border-color);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--el-text-color-disabled);
+  }
+
+  /* 分析页容器与卡片（Analytics / BusinessAnalysis） */
+  .analytics-container,
+  .analysis-container {
+    background-color: var(--el-bg-color-page);
+  }
+
+  .metric-card,
+  .chart-panel,
+  .loading-area {
+    background-color: var(--el-bg-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+
+  .panel-header {
+    border-bottom-color: var(--el-border-color-light);
+  }
+
+  .panel-title {
+    color: var(--el-text-color-primary);
+  }
+
+  .metric-card .metric-title {
+    color: var(--el-text-color-regular);
+  }
+
+  .metric-card .metric-footer {
+    color: var(--el-text-color-secondary);
+  }
+
+  .insight-item {
+    border-bottom-color: var(--el-border-color-lighter);
+  }
+
+  .insight-title {
+    color: var(--el-text-color-primary);
+  }
+
+  .insight-desc {
+    color: var(--el-text-color-regular);
+  }
+
+  /* 列表页统计卡、个人中心信息块、审批备注等浅色块 */
+  .stat-card {
+    background-color: var(--el-bg-color);
+  }
+
+  .stat-cell {
+    background-color: var(--el-fill-color-light);
+  }
+
+  .node-comment {
+    background-color: var(--el-fill-color-light);
+    color: var(--el-text-color-regular);
+  }
+
+  /* 登录页右侧面板 */
+  .login-right {
+    background-color: var(--el-bg-color);
+  }
 }

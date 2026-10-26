@@ -145,6 +145,22 @@
               </div>
             </div>
           </el-popover>
+          <el-tooltip content="主题模式" placement="bottom">
+            <el-icon class="header-icon" :size="18" @click="appStore.toggleDark()">
+              <Moon v-if="!appStore.isDark" />
+              <Sunny v-else />
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip content="系统设置" placement="bottom">
+            <el-icon class="header-icon" :size="18" @click="appStore.settingsVisible = true">
+              <Setting />
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip content="锁屏" placement="bottom">
+            <el-icon class="header-icon" :size="18" @click="appStore.lock()">
+              <Lock />
+            </el-icon>
+          </el-tooltip>
           <el-tooltip content="全屏" placement="bottom">
             <el-icon class="header-icon" :size="18" @click="toggleFullscreen">
               <FullScreen />
@@ -176,17 +192,26 @@
         </div>
       </el-header>
 
+      <!-- 多标签页导航 -->
+      <RouteTabs />
+
       <!-- 主内容区 -->
       <el-main class="main-content">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <component :is="Component" v-if="showView" :key="route.path" />
           </transition>
         </router-view>
       </el-main>
     </el-container>
 
     <AiChat />
+
+    <!-- 系统设置抽屉（主题模式/主题色） -->
+    <SettingsDrawer />
+
+    <!-- 锁屏遮罩 -->
+    <LockScreen />
 
     <!-- 全局搜索（P022） -->
     <el-dialog v-model="searchVisible" title="搜索" width="520px" append-to-body>
@@ -240,16 +265,32 @@ import {
   ArrowDown,
   Lock,
   SwitchButton,
-  ChatDotRound
+  ChatDotRound,
+  Setting,
+  Moon,
+  Sunny
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/AiChat.vue'
+import RouteTabs from '@/components/RouteTabs.vue'
+import SettingsDrawer from '@/components/SettingsDrawer.vue'
+import LockScreen from '@/components/LockScreen.vue'
 import logoMark from '@/assets/logo-mark.png'
+import { useAppStore } from '@/store/app'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const appStore = useAppStore()
 
 const isCollapse = ref(false)
+
+// 页签右键"刷新"触发：先卸载再重挂载 router-view，实现不刷新浏览器的页面重载
+const showView = ref(true)
+watch(() => appStore.refreshKey, async () => {
+  showView.value = false
+  await nextTick()
+  showView.value = true
+})
 
 // 企业级菜单规划：首页/仪表盘置顶，人事、业务各归其组，可视化分析统一放到底部
 // adminOnly: true 的菜单仅管理员可见（P045 角色权限）
@@ -584,8 +625,8 @@ const handleCommand = async (command) => {
 }
 
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-light);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -601,11 +642,11 @@ const handleCommand = async (command) => {
 
 .collapse-btn {
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: color 0.3s;
 
   &:hover {
-    color: #409EFF;
+    color: var(--el-color-primary);
   }
 }
 
@@ -617,11 +658,11 @@ const handleCommand = async (command) => {
 
 .header-icon {
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: color 0.3s;
 
   &:hover {
-    color: #409EFF;
+    color: var(--el-color-primary);
   }
 }
 
@@ -637,22 +678,22 @@ const handleCommand = async (command) => {
   height: 60px;
 
   &:hover {
-    background-color: #f5f7fa;
+    background-color: var(--el-fill-color-light);
   }
 }
 
 .user-avatar {
-  background-color: #409EFF;
+  background-color: var(--el-color-primary);
   color: #fff;
 }
 
 .user-name {
   font-size: 14px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .main-content {
-  background-color: #f5f7fa;
+  background-color: var(--el-bg-color-page);
   padding: 20px;
   min-height: 0;
   overflow-y: auto;
@@ -666,7 +707,7 @@ const handleCommand = async (command) => {
   align-items: center;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 8px;
 }
 .notice-item {
@@ -675,26 +716,26 @@ const handleCommand = async (command) => {
   cursor: pointer;
   transition: background-color 0.2s;
 
-  &:hover { background-color: #f5f7fa; }
+  &:hover { background-color: var(--el-fill-color-light); }
 }
-.notice-title { font-size: 13px; color: #303133; font-weight: 500; }
-.notice-sku { color: #909399; font-weight: 400; margin-left: 6px; font-size: 12px; }
-.notice-sub { font-size: 12px; color: #F56C6C; margin-top: 2px; }
-.notice-more { text-align: center; font-size: 12px; color: #409EFF; padding: 8px 0; cursor: pointer; }
+.notice-title { font-size: 13px; color: var(--el-text-color-primary); font-weight: 500; }
+.notice-sku { color: var(--el-text-color-secondary); font-weight: 400; margin-left: 6px; font-size: 12px; }
+.notice-sub { font-size: 12px; color: var(--el-color-danger); margin-top: 2px; }
+.notice-more { text-align: center; font-size: 12px; color: var(--el-color-primary); padding: 8px 0; cursor: pointer; }
 
 /* 站内消息弹层（P2-1） */
-.msg-unread { background-color: #f0f7ff; }
+.msg-unread { background-color: var(--el-color-primary-light-9); }
 .msg-pop-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-pop-content {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   margin-top: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.msg-pop-time { font-size: 12px; color: #c0c4cc; margin-top: 4px; }
+.msg-pop-time { font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 4px; }
 
 /* 全局搜索列表 */
 .search-list { margin-top: 12px; max-height: 360px; overflow-y: auto; }
@@ -706,9 +747,9 @@ const handleCommand = async (command) => {
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 
-  &:hover { background-color: #f5f7fa; color: #409EFF; }
+  &:hover { background-color: var(--el-fill-color-light); color: var(--el-color-primary); }
 }
 
 /* 路由过渡动画 */
