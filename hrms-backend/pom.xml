@@ -32,10 +32,10 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- BCrypt 加盐密码（P046，仅引入 crypto 模块，不含完整 Spring Security） -->
+        <!-- Spring Security 6：JWT 过滤链 + BCrypt 密码（M2-2） -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-crypto</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
         <!-- Spring Boot Validation -->
