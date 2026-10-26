@@ -62,6 +62,55 @@
           <el-tooltip content="搜索" placement="bottom">
             <el-icon class="header-icon" :size="18" @click="openSearch"><Search /></el-icon>
           </el-tooltip>
+          <!-- 站内消息（P2-1） -->
+          <el-popover
+            v-model:visible="msgVisible"
+            placement="bottom-end"
+            :width="380"
+            trigger="click"
+            @show="loadRecentMessages"
+          >
+            <template #reference>
+              <el-badge :value="msgUnread" :max="99" :hidden="msgUnread === 0" class="header-icon">
+                <el-icon :size="18"><ChatDotRound /></el-icon>
+              </el-badge>
+            </template>
+            <div class="notice-panel">
+              <div class="notice-head">
+                <span>站内消息</span>
+                <div>
+                  <el-button link type="primary" @click="msgReadAll">全部已读</el-button>
+                  <el-button link type="primary" @click="goMessageCenter">查看全部</el-button>
+                </div>
+              </div>
+              <el-empty v-if="msgList.length === 0" description="暂无消息" :image-size="56" />
+              <div v-else class="notice-list">
+                <div
+                  v-for="m in msgList"
+                  :key="m.id"
+                  class="notice-item"
+                  :class="{ 'msg-unread': m.isRead === 0 }"
+                  @click="openMessage(m)"
+                >
+                  <div class="notice-title">
+                    <el-tag
+                      :type="m.msgType === '审批' ? 'warning' : (m.msgType === '提醒' ? 'danger' : 'primary')"
+                      size="small"
+                      effect="plain"
+                    >
+                      {{ m.msgType }}
+                    </el-tag>
+                    <span class="msg-pop-title">{{ m.title }}</span>
+                  </div>
+                  <div class="msg-pop-content">{{ m.content }}</div>
+                  <div class="msg-pop-time">{{ formatMsgTime(m.createTime) }}</div>
+                </div>
+                <div v-if="msgUnread > 0" class="notice-more" @click="msgReadAll">
+                  {{ msgUnread }} 条未读，点击全部标为已读
+                </div>
+              </div>
+            </div>
+          </el-popover>
           <el-popover
             v-model:visible="noticeVisible"
             placement="bottom-end"
@@ -171,6 +220,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { getInventoryWarningApi, getInventoryWarningCountApi } from '@/api/trade'
 import {
+  getMessageInboxApi,
+  getUnreadCountApi,
+  markMessageReadApi,
+  readAllMessagesApi
+} from '@/api/message'
+import {
   User,
   OfficeBuilding,
   Calendar,
@@ -184,7 +239,8 @@ import {
   FullScreen,
   ArrowDown,
   Lock,
-  SwitchButton
+  SwitchButton,
+  ChatDotRound
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/AiChat.vue'
 import logoMark from '@/assets/logo-mark.png'
@@ -210,6 +266,7 @@ const menuGroups = [
       { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
       { path: '/salary', title: '薪资管理', icon: 'Money' },
       { path: '/performance', title: '绩效管理', icon: 'TrendCharts' },
+      { path: '/message', title: '消息中心', icon: 'ChatDotRound' },
       { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true },
       { path: '/audit', title: '审计日志', icon: 'Document', adminOnly: true }
     ]
@@ -333,7 +390,68 @@ const refreshWarningCount = async () => {
 onMounted(refreshWarningCount)
 
 // 切换页面时刷新红点，避免库存变动后数字不更新
-watch(() => route.path, () => refreshWarningCount())
+watch(() => route.path, () => {
+  refreshWarningCount()
+  refreshMsgCount()
+})
+
+// ========== 顶部通知：站内消息（P2-1） ==========
+const msgVisible = ref(false)
+const msgUnread = ref(0)
+const msgList = ref([])
+
+const formatMsgTime = (value) => {
+  if (!value) return ''
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+const refreshMsgCount = async () => {
+  try {
+    const res = await getUnreadCountApi()
+    msgUnread.value = Number(res.data || 0)
+  } catch (e) {
+    // 未登录或接口异常时不显示红点即可
+  }
+}
+
+const loadRecentMessages = async () => {
+  try {
+    const res = await getMessageInboxApi({})
+    msgList.value = (res.data || []).slice(0, 8)
+  } catch (e) {
+    msgList.value = []
+  }
+}
+
+const openMessage = async (m) => {
+  if (m.isRead === 0) {
+    try {
+      await markMessageReadApi(m.id)
+      m.isRead = 1
+      await refreshMsgCount()
+    } catch (e) {
+      // 忽略
+    }
+  }
+  msgVisible.value = false
+  router.push('/message')
+}
+
+const msgReadAll = async () => {
+  try {
+    await readAllMessagesApi()
+    ElMessage.success('已全部标记为已读')
+    msgList.value = msgList.value.map(m => ({ ...m, isRead: 1 }))
+    msgUnread.value = 0
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+const goMessageCenter = () => {
+  msgVisible.value = false
+  router.push('/message')
+}
 
 const toggleCollapse = () => {
   isCollapse.value = !isCollapse.value
@@ -562,6 +680,20 @@ const handleCommand = async (command) => {
 .notice-sku { color: #909399; font-weight: 400; margin-left: 6px; font-size: 12px; }
 .notice-sub { font-size: 12px; color: #F56C6C; margin-top: 2px; }
 .notice-more { text-align: center; font-size: 12px; color: #409EFF; padding: 8px 0; cursor: pointer; }
+
+/* 站内消息弹层（P2-1） */
+.msg-unread { background-color: #f0f7ff; }
+.msg-pop-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-pop-content {
+  font-size: 12px;
+  color: #606266;
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msg-pop-time { font-size: 12px; color: #c0c4cc; margin-top: 4px; }
 
 /* 全局搜索列表 */
 .search-list { margin-top: 12px; max-height: 360px; overflow-y: auto; }

@@ -64,6 +64,12 @@ const routes = [
         meta: { title: '绩效管理', icon: 'TrendCharts' }
       },
       {
+        path: 'message',
+        name: 'Message',
+        component: () => import('@/views/message/MessageList.vue'),
+        meta: { title: '消息中心', icon: 'ChatDotRound' }
+      },
+      {
         path: 'reminder',
         name: 'Reminder',
         component: () => import('@/views/reminder/ReminderList.vue'),
