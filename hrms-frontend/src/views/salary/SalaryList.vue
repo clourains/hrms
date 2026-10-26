@@ -106,7 +106,7 @@
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleView(row)">工资条</el-button>
             <el-button type="primary" link size="small" @click="handleEdit(row)">调整</el-button>
-            <el-button type="success" link size="small" @click="handleSend(row)">发送</el-button>
+            <el-button type="success" link size="small" @click="handleDownloadPayslip(row)">PDF</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -242,7 +242,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download } from '@element-plus/icons-vue'
-import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi } from '@/api/salary'
+import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, downloadPayslipApi } from '@/api/salary'
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
@@ -463,8 +463,30 @@ const handleView = (row) => {
   payslipVisible.value = true
 }
 
-const handleSend = (row) => {
-  ElMessage.success(`已向 ${row.name} 发送工资条`)
+// P2-3 下载工资条 PDF（管理员任意员工 / 普通员工仅自己）
+const handleDownloadPayslip = async (row) => {
+  try {
+    const response = await downloadPayslipApi({ empId: row.empId, salaryMonth: row.salaryMonth })
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      const json = JSON.parse(text)
+      ElMessage.error(json.message || '下载失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `工资条_${row.name}_${row.salaryMonth}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('工资条 PDF 已下载')
+  } catch (e) {
+    // 拦截器已提示
+  }
 }
 
 // 新增模式下选择员工后带出姓名/部门展示
