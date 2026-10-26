@@ -1,26 +1,39 @@
 <template>
-  <div class="reminder-container">
-    <el-card shadow="hover">
-      <div class="toolbar">
-        <div class="toolbar-left">
-          <span class="scan-label">提醒范围：</span>
+  <div class="reminder-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="到期提醒"
+      description="扫描合同与签证临期情况，及时安排续签与换证"
+      icon="AlarmClock"
+    >
+      <template #actions>
+        <el-badge :value="contractAlerts.length" type="danger" :hidden="contractAlerts.length === 0">
+          <el-tag type="info">合同临期</el-tag>
+        </el-badge>
+        <el-badge :value="visaAlerts.length" type="danger" :hidden="visaAlerts.length === 0">
+          <el-tag type="info">签证临期</el-tag>
+        </el-badge>
+      </template>
+    </PageHeader>
+
+    <!-- 筛选区 -->
+    <div class="search-card">
+      <el-form :inline="true">
+        <el-form-item label="提醒范围">
           <el-radio-group v-model="days" size="small" @change="loadAlerts">
             <el-radio-button :label="30">30 天内</el-radio-button>
             <el-radio-button :label="60">60 天内</el-radio-button>
             <el-radio-button :label="90">90 天内</el-radio-button>
           </el-radio-group>
-          <el-button :icon="Refresh" circle size="small" style="margin-left: 12px" @click="loadAlerts" />
-        </div>
-        <div class="toolbar-right">
-          <el-badge :value="contractAlerts.length" type="danger" :hidden="contractAlerts.length === 0">
-            <el-tag type="info">合同临期</el-tag>
-          </el-badge>
-          <el-badge :value="visaAlerts.length" type="danger" :hidden="visaAlerts.length === 0" style="margin-left: 16px">
-            <el-tag type="info">签证临期</el-tag>
-          </el-badge>
-        </div>
-      </div>
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button :icon="Refresh" @click="loadAlerts">刷新</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
 
+    <!-- 提醒列表 -->
+    <div class="table-card">
       <el-tabs v-model="activeTab">
         <!-- 合同到期 -->
         <el-tab-pane name="contract">
@@ -83,7 +96,7 @@
           <el-empty v-if="!loading && visaAlerts.length === 0" description="范围内没有临期签证" :image-size="80" />
         </el-tab-pane>
       </el-tabs>
-    </el-card>
+    </div>
 
     <!-- 合同编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px" :close-on-click-modal="false" destroy-on-close>
@@ -127,6 +140,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, Refresh } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getExpiringApi, getContractListApi, addContractApi, updateContractApi, deleteContractApi } from '@/api/contract'
 import { getEmployeeListApi } from '@/api/employee'
 
@@ -248,24 +262,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.toolbar-left {
-  display: flex;
-  align-items: center;
-}
-.scan-label {
-  font-size: 14px;
-  color: #606266;
-}
-.toolbar-right {
-  display: flex;
-  align-items: center;
-}
 .tab-toolbar {
   margin-bottom: 12px;
 }

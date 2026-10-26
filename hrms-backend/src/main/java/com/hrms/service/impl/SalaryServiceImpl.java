@@ -3,13 +3,16 @@ package com.hrms.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hrms.entity.Attendance;
 import com.hrms.entity.Employee;
+import com.hrms.entity.Overtime;
 import com.hrms.entity.Performance;
 import com.hrms.entity.Salary;
 import com.hrms.mapper.AttendanceMapper;
 import com.hrms.mapper.EmployeeMapper;
+import com.hrms.mapper.OvertimeMapper;
 import com.hrms.mapper.PerformanceMapper;
 import com.hrms.mapper.SalaryMapper;
 import com.hrms.service.SalaryService;
+import com.hrms.util.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +25,8 @@ import java.time.YearMonth;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 薪资Service实现类
@@ -41,6 +46,12 @@ public class SalaryServiceImpl implements SalaryService {
     @Autowired
     private PerformanceMapper performanceMapper;
 
+    @Autowired
+    private OvertimeMapper overtimeMapper;
+
+    @Autowired
+    private com.hrms.service.SysConfigService sysConfigService;
+
     @Override
     public Salary getById(Long id) {
         return salaryMapper.selectById(id);
@@ -59,7 +70,15 @@ public class SalaryServiceImpl implements SalaryService {
         LambdaQueryWrapper<Salary> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Salary::getSalaryMonth, salaryMonth)
                 .orderByAsc(Salary::getEmpId);
-        return salaryMapper.selectList(queryWrapper);
+        List<Salary> list = salaryMapper.selectList(queryWrapper);
+        // P4-3 部门数据权限：部门经理仅看本部门员工薪资
+        if (UserContext.isManager() && UserContext.getDeptId() != null) {
+            Set<Long> deptEmpIds = employeeMapper.selectList(new LambdaQueryWrapper<Employee>()
+                            .eq(Employee::getDeptId, UserContext.getDeptId()))
+                    .stream().map(Employee::getId).collect(Collectors.toSet());
+            list = list.stream().filter(s -> deptEmpIds.contains(s.getEmpId())).collect(Collectors.toList());
+        }
+        return list;
     }
 
     @Override
@@ -152,21 +171,30 @@ public class SalaryServiceImpl implements SalaryService {
         return salaryMapper.deleteById(id) > 0;
     }
 
-    /** 迟到/早退单次扣款（元） */
-    private static final BigDecimal LATE_EARLY_FINE = new BigDecimal("50");
-    /** 社保个人缴纳比例（占底薪） */
-    private static final BigDecimal SOCIAL_SECURITY_RATE = new BigDecimal("0.105");
-    /** 公积金个人缴纳比例（占底薪） */
-    private static final BigDecimal HOUSING_FUND_RATE = new BigDecimal("0.07");
-    /** 绩效奖金上限系数：满分绩效可拿底薪的 20% */
-    private static final BigDecimal PERFORMANCE_MAX_RATE = new BigDecimal("0.2");
-    /** 绩效满分（5 个维度 × 100 分） */
-    private static final BigDecimal PERFORMANCE_FULL_SCORE = new BigDecimal("500");
-    /** 个税起征点（月） */
-    private static final BigDecimal TAX_THRESHOLD = new BigDecimal("5000");
+    /** 以下常量仅作兜底默认值，实际取值以 sys_config 参数为准（P5-3 参数可配） */
+    private static final BigDecimal DEFAULT_LATE_EARLY_FINE = new BigDecimal("50");
+    private static final BigDecimal DEFAULT_SOCIAL_SECURITY_RATE = new BigDecimal("0.105");
+    private static final BigDecimal DEFAULT_HOUSING_FUND_RATE = new BigDecimal("0.07");
+    private static final BigDecimal DEFAULT_PERFORMANCE_MAX_RATE = new BigDecimal("0.2");
+    private static final BigDecimal DEFAULT_PERFORMANCE_FULL_SCORE = new BigDecimal("500");
+    private static final BigDecimal DEFAULT_TAX_THRESHOLD = new BigDecimal("5000");
+    private static final BigDecimal DEFAULT_WORK_DAYS_BASE = new BigDecimal("21.75");
+    private static final BigDecimal DEFAULT_OT_WEEKDAY_RATE = new BigDecimal("1.5");
+    private static final BigDecimal DEFAULT_OT_WEEKEND_RATE = new BigDecimal("2.0");
 
     @Override
     public Map<String, Object> calculateMonth(String salaryMonth) {
+        // P5-3：算薪参数从 sys_config 读取（循环外取一次，失败回退默认值）
+        BigDecimal lateEarlyFine = sysConfigService.getDecimal("salary.lateEarlyFine", DEFAULT_LATE_EARLY_FINE);
+        BigDecimal socialSecurityRate = sysConfigService.getDecimal("salary.socialSecurityRate", DEFAULT_SOCIAL_SECURITY_RATE);
+        BigDecimal housingFundRate = sysConfigService.getDecimal("salary.housingFundRate", DEFAULT_HOUSING_FUND_RATE);
+        BigDecimal performanceMaxRate = sysConfigService.getDecimal("salary.performanceMaxRate", DEFAULT_PERFORMANCE_MAX_RATE);
+        BigDecimal performanceFullScore = sysConfigService.getDecimal("salary.performanceFullScore", DEFAULT_PERFORMANCE_FULL_SCORE);
+        BigDecimal taxThreshold = sysConfigService.getDecimal("salary.taxThreshold", DEFAULT_TAX_THRESHOLD);
+        BigDecimal workDaysBase = sysConfigService.getDecimal("salary.workDaysBase", DEFAULT_WORK_DAYS_BASE);
+        BigDecimal otWeekdayRate = sysConfigService.getDecimal("attendance.otWeekdayRate", DEFAULT_OT_WEEKDAY_RATE);
+        BigDecimal otWeekendRate = sysConfigService.getDecimal("attendance.otWeekendRate", DEFAULT_OT_WEEKEND_RATE);
+
         YearMonth yearMonth = YearMonth.parse(salaryMonth);
         LocalDate startDate = yearMonth.atDay(1);
         LocalDate endDate = yearMonth.atEndOfMonth();
@@ -215,10 +243,10 @@ public class SalaryServiceImpl implements SalaryService {
                 }
             }
             long absentDays = Math.max(0, workDays - attendDays);
-            BigDecimal daySalary = base.divide(new BigDecimal("21.75"), 4, RoundingMode.HALF_UP);
+            BigDecimal daySalary = base.divide(workDaysBase, 4, RoundingMode.HALF_UP);
             BigDecimal absentCut = daySalary.multiply(BigDecimal.valueOf(absentDays))
                     .setScale(2, RoundingMode.HALF_UP);
-            BigDecimal lateCut = LATE_EARLY_FINE.multiply(BigDecimal.valueOf(lateCount + earlyCount));
+            BigDecimal lateCut = lateEarlyFine.multiply(BigDecimal.valueOf(lateCount + earlyCount));
             salary.setOtherDeduction(absentCut.add(lateCut));
 
             // 3) 绩效联动：当月评分取最高分（sys_performance.status 语义未统一，这里不做状态过滤）
@@ -230,24 +258,45 @@ public class SalaryServiceImpl implements SalaryService {
             Performance best = perfList.isEmpty() ? null : perfList.get(0);
             BigDecimal bonus = BigDecimal.ZERO;
             if (best != null && best.getTotalScore() != null) {
-                BigDecimal rate = best.getTotalScore().min(PERFORMANCE_FULL_SCORE)
-                        .divide(PERFORMANCE_FULL_SCORE, 4, RoundingMode.HALF_UP);
-                bonus = base.multiply(PERFORMANCE_MAX_RATE).multiply(rate).setScale(2, RoundingMode.HALF_UP);
+                BigDecimal rate = best.getTotalScore().min(performanceFullScore)
+                        .divide(performanceFullScore, 4, RoundingMode.HALF_UP);
+                bonus = base.multiply(performanceMaxRate).multiply(rate).setScale(2, RoundingMode.HALF_UP);
             }
             salary.setPerformanceBonus(bonus);
 
-            // 4) 五险一金按比例估算
-            salary.setSocialSecurity(base.multiply(SOCIAL_SECURITY_RATE).setScale(2, RoundingMode.HALF_UP));
-            salary.setHousingFund(base.multiply(HOUSING_FUND_RATE).setScale(2, RoundingMode.HALF_UP));
-            salary.setOvertimePay(BigDecimal.ZERO);
+            // 4) 加班费联动（P4-1）：当月已通过的加班单，工作日 1.5 倍、周末 2.0 倍时薪
+            BigDecimal overtimePay = BigDecimal.ZERO;
+            BigDecimal totalOtHours = BigDecimal.ZERO;
+            List<Overtime> otList = overtimeMapper.selectList(new LambdaQueryWrapper<Overtime>()
+                    .eq(Overtime::getEmpId, emp.getId())
+                    .eq(Overtime::getStatus, 1)
+                    .between(Overtime::getOvertimeDate, startDate, endDate));
+            if (!otList.isEmpty()) {
+                BigDecimal hourWage = daySalary.divide(new BigDecimal("8"), 4, RoundingMode.HALF_UP);
+                for (Overtime ot : otList) {
+                    if (ot.getHours() == null) {
+                        continue;
+                    }
+                    DayOfWeek w = ot.getOvertimeDate() == null ? DayOfWeek.MONDAY : ot.getOvertimeDate().getDayOfWeek();
+                    BigDecimal rate = (w == DayOfWeek.SATURDAY || w == DayOfWeek.SUNDAY)
+                            ? otWeekendRate : otWeekdayRate;
+                    overtimePay = overtimePay.add(hourWage.multiply(rate).multiply(ot.getHours()));
+                    totalOtHours = totalOtHours.add(ot.getHours());
+                }
+            }
+            salary.setOvertimePay(overtimePay.setScale(2, RoundingMode.HALF_UP));
             salary.setAllowance(BigDecimal.ZERO);
 
-            // 5) 简化月度个税：（应发 − 起征点 − 社保公积金）按月度税率表
-            BigDecimal taxable = base.add(bonus).subtract(TAX_THRESHOLD)
+            // 5) 五险一金按比例估算
+            salary.setSocialSecurity(base.multiply(socialSecurityRate).setScale(2, RoundingMode.HALF_UP));
+            salary.setHousingFund(base.multiply(housingFundRate).setScale(2, RoundingMode.HALF_UP));
+
+            // 6) 简化月度个税：（应发 − 起征点 − 社保公积金）按月度税率表
+            BigDecimal taxable = base.add(bonus).add(overtimePay).subtract(taxThreshold)
                     .subtract(salary.getSocialSecurity()).subtract(salary.getHousingFund());
             salary.setTax(monthlyTax(taxable.max(BigDecimal.ZERO)));
 
-            // 6) 实发 = 应发 − 各项扣除（复用既有逻辑）；保底实发不为负（当月无考勤的新员工避免扣穿）
+            // 7) 实发 = 应发 − 各项扣除（复用既有逻辑）；保底实发不为负（当月无考勤的新员工避免扣穿）
             calculateNetSalary(salary);
             if (salary.getNetSalary().compareTo(BigDecimal.ZERO) < 0) {
                 salary.setOtherDeduction(salary.getOtherDeduction().add(salary.getNetSalary()));
@@ -256,9 +305,12 @@ public class SalaryServiceImpl implements SalaryService {
 
             String perfText = best != null && best.getTotalScore() != null
                     ? best.getTotalScore().stripTrailingZeros().toPlainString() + "分" : "无";
+            String otText = totalOtHours.compareTo(BigDecimal.ZERO) > 0
+                    ? String.format("；加班%.1fh(¥%s)", totalOtHours, overtimePay.setScale(2, RoundingMode.HALF_UP).toPlainString())
+                    : "";
             salary.setRemark(String.format(
-                    "系统计算：出勤%d天/缺勤%d天/迟到早退%d次；绩效%s；缺勤扣%.2f元",
-                    attendDays, absentDays, lateCount + earlyCount, perfText, absentCut));
+                    "系统计算：出勤%d天/缺勤%d天/迟到早退%d次；绩效%s；缺勤扣%.2f元%s",
+                    attendDays, absentDays, lateCount + earlyCount, perfText, absentCut, otText));
             salary.setStatus(1);
             salary.setCreateTime(LocalDateTime.now());
             salary.setUpdateTime(LocalDateTime.now());

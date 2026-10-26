@@ -37,7 +37,8 @@ const routes = [
         path: 'employee',
         name: 'Employee',
         component: () => import('@/views/employee/EmployeeList.vue'),
-        meta: { title: '员工管理', icon: 'User', requiresAdmin: true }
+        // P4-3 部门数据权限：manager 可见本部门员工（数据由后端过滤）
+        meta: { title: '员工管理', icon: 'User', roles: ['admin', 'manager'] }
       },
       {
         path: 'department',
@@ -92,6 +93,30 @@ const routes = [
         name: 'Audit',
         component: () => import('@/views/system/AuditLogList.vue'),
         meta: { title: '审计日志', icon: 'Document', requiresAdmin: true }
+      },
+      {
+        path: 'user',
+        name: 'User',
+        component: () => import('@/views/system/UserList.vue'),
+        meta: { title: '用户管理', icon: 'User', requiresAdmin: true }
+      },
+      {
+        path: 'loginLog',
+        name: 'LoginLog',
+        component: () => import('@/views/system/LoginLogList.vue'),
+        meta: { title: '登录日志', icon: 'Key', requiresAdmin: true }
+      },
+      {
+        path: 'config',
+        name: 'Config',
+        component: () => import('@/views/system/ConfigList.vue'),
+        meta: { title: '参数配置', icon: 'Tools', requiresAdmin: true }
+      },
+      {
+        path: 'notice',
+        name: 'Notice',
+        component: () => import('@/views/system/NoticeList.vue'),
+        meta: { title: '公告管理', icon: 'Notification', requiresAdmin: true }
       },
       {
         path: 'analytics',
@@ -179,6 +204,10 @@ router.beforeEach((to, from, next) => {
     next({ path: '/home' })
   } else if (to.meta.requiresAdmin && userStore.role !== 'admin') {
     // P045 角色权限：非管理员访问管理页面，弹回首页
+    ElMessage.warning('您没有权限访问该页面')
+    next({ path: '/home' })
+  } else if (to.meta.roles && !to.meta.roles.includes(userStore.role)) {
+    // P4-3 角色白名单：manager 等自定义角色按 roles 数组放行
     ElMessage.warning('您没有权限访问该页面')
     next({ path: '/home' })
   } else {

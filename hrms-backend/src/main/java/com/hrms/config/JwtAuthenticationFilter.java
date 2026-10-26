@@ -1,5 +1,10 @@
 package com.hrms.config;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.hrms.entity.Employee;
+import com.hrms.entity.User;
+import com.hrms.mapper.EmployeeMapper;
+import com.hrms.mapper.UserMapper;
 import com.hrms.util.JwtUtil;
 import com.hrms.util.TokenBlacklist;
 import com.hrms.util.UserContext;
@@ -35,6 +40,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private TokenBlacklist tokenBlacklist;
 
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private EmployeeMapper employeeMapper;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
@@ -64,6 +75,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 UserContext.set(username);
                 UserContext.setRole(role);
+                fillDeptId(username, role);
             }
 
             filterChain.doFilter(request, response);
@@ -71,6 +83,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 线程复用，必须清理，否则会串用户
             UserContext.clear();
             SecurityContextHolder.clearContext();
+        }
+    }
+
+    /**
+     * P4-3 部门数据权限：按 token 用户名解析绑定员工的部门ID，
+     * 供 Service 层对 manager 角色做本部门数据过滤；admin 不限流不查询。
+     */
+    private void fillDeptId(String username, String role) {
+        if (username == null || "admin".equals(role)) {
+            return;
+        }
+        try {
+            User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+            if (user != null && user.getEmpId() != null) {
+                Employee emp = employeeMapper.selectById(user.getEmpId());
+                if (emp != null) {
+                    UserContext.setDeptId(emp.getDeptId());
+                }
+            }
+        } catch (Exception ignored) {
+            // 部门解析失败不影响认证主流程
         }
     }
 }

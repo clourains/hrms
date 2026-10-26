@@ -1,8 +1,8 @@
-import { request } from '@/utils/request'
+﻿import { request } from '@/utils/request'
 
 // 合同列表（可按员工过滤）（P1-2）
 export const getContractListApi = (params) => {
-  return request.get('/contract/list', { params })
+  return request.get('/contract/list', params)
 }
 
 // 新增合同

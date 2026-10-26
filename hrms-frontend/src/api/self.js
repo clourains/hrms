@@ -19,3 +19,8 @@ export const getSelfAttendanceApi = (month) => {
 export const getSelfAttendanceTodayApi = () => {
   return request.get('/self/attendance-today')
 }
+
+// 我的本年度假期额度（P4-2，年假）
+export const getSelfLeaveQuotaApi = () => {
+  return request.get('/self/leave-quota')
+}

@@ -20,19 +20,38 @@ export const checkOutApi = (data) => {
   return request.post('/attendance/checkOut', data)
 }
 
-// 补卡申请
-export const applyMakeupApi = (data) => {
-  return request.post('/attendance/makeup', data)
+// 提交请假申请（P4-2）：走通用审批流，年假类型审批通过后自动扣减额度
+export const submitLeaveApplyApi = (data) => {
+  return request.post('/approval/apply', data)
 }
 
-// 请假申请
-export const applyLeaveApi = (data) => {
-  return request.post('/attendance/leave', data)
+// ==================== P4-1 加班申请 ====================
+
+// 提交加班申请：创建加班单并发起审批，通过后计入薪资加班费
+export const applyOvertimeApi = (data) => {
+  return request.post('/attendance/overtime/apply', data)
 }
 
-// 审批考勤
-export const approveAttendanceApi = (id, data) => {
-  return request.put(`/attendance/approve/${id}`, data)
+// 我的加班申请列表
+export const getMyOvertimeApi = () => {
+  return request.get('/attendance/overtime/my')
+}
+
+// 加班申请列表（管理端：admin 全部 / manager 本部门）
+export const getOvertimeListApi = () => {
+  return request.get('/attendance/overtime/list')
+}
+
+// ==================== P4-2 请假额度 ====================
+
+// 我的本年度假期额度（年假）
+export const getMyLeaveQuotaApi = () => {
+  return request.get('/attendance/leave-quota/my')
+}
+
+// 额度列表（管理端：admin 全员 / manager 本部门）
+export const getLeaveQuotaListApi = (year) => {
+  return request.get('/attendance/leave-quota/list', { year })
 }
 
 // 获取考勤统计（后端为 GET /attendance/statistics，参数 empId、month）

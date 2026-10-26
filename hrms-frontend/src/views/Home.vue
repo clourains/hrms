@@ -18,6 +18,30 @@
         <p>欢迎使用星跃出海国际贸易有限公司人力资源与业务一体化管理平台</p>
       </div>
 
+      <!-- 公告栏（P6-1）：有生效公告时展示，重要公告优先置顶 -->
+      <div v-if="notices.length > 0" class="notice-board">
+        <div
+          v-for="n in notices"
+          :key="n.id"
+          class="notice-card"
+          :class="{ 'notice-important': n.level === 'important', 'notice-read': n.isRead === 1 }"
+          @click="openNotice(n)"
+        >
+          <div class="notice-icon">
+            <el-icon :size="18"><component :is="n.level === 'important' ? 'BellFilled' : 'Notification'" /></el-icon>
+          </div>
+          <div class="notice-body">
+            <div class="notice-head">
+              <el-tag v-if="n.level === 'important'" type="danger" size="small" effect="dark">重要</el-tag>
+              <el-tag v-if="n.isRead === 0" type="warning" size="small" effect="plain">未读</el-tag>
+              <span class="notice-title">{{ n.title }}</span>
+            </div>
+            <div class="notice-preview">{{ n.content }}</div>
+            <div class="notice-meta">{{ n.publisher || '系统' }} · {{ formatTime(n.createTime) }}</div>
+          </div>
+        </div>
+      </div>
+
       <div class="quick-grid">
         <div
           v-for="item in quickEntries"
@@ -36,17 +60,56 @@
       </div>
     </div>
   </div>
+
+  <!-- 公告详情弹窗（打开即标记已读） -->
+  <el-dialog v-model="noticeDialogVisible" :title="currentNotice.title" width="520px">
+    <div class="notice-detail-meta">{{ currentNotice.publisher || '系统' }} · {{ formatTime(currentNotice.createTime) }}</div>
+    <div class="notice-detail-content">{{ currentNotice.content }}</div>
+    <template #footer>
+      <el-button type="primary" @click="noticeDialogVisible = false">我知道了</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/store/user'
+import { getActiveNoticesApi, readNoticeApi } from '@/api/notice'
 import FlowBackground from '@/components/FlowBackground.vue'
 import logoMark from '@/assets/logo-mark.png'
 
 const router = useRouter()
 const userStore = useUserStore()
+
+// 公告栏（P6-1）
+const notices = ref([])
+const noticeDialogVisible = ref(false)
+const currentNotice = ref({})
+
+const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '')
+
+const loadNotices = async () => {
+  try {
+    const res = await getActiveNoticesApi()
+    if (res.code === 200) {
+      notices.value = res.data || []
+    }
+  } catch {
+    // 公告加载失败不影响首页
+  }
+}
+
+const openNotice = async (n) => {
+  currentNotice.value = n
+  noticeDialogVisible.value = true
+  if (n.isRead === 0) {
+    n.isRead = 1
+    readNoticeApi(n.id).catch(() => {})
+  }
+}
+
+onMounted(loadNotices)
 
 const displayName = computed(() => userStore.userInfo?.realName || userStore.username || '管理员')
 
@@ -159,6 +222,96 @@ const go = (path) => {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
   max-width: 1120px;
+}
+
+/* 公告栏（P6-1）：深色主题下的毛玻璃卡片 */
+.notice-board {
+  margin-top: 24px;
+  max-width: 1120px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notice-card {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+  }
+
+  &.notice-important {
+    border-color: rgba(245, 108, 108, 0.5);
+    background: rgba(245, 108, 108, 0.08);
+  }
+
+  &.notice-read {
+    opacity: 0.65;
+  }
+}
+
+.notice-icon {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(224, 188, 106, 0.15);
+  color: #e0bc6a;
+}
+
+.notice-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .notice-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+  }
+}
+
+.notice-preview {
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notice-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.notice-detail-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 12px;
+}
+
+.notice-detail-content {
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
 }
 
 .quick-card {

@@ -10,6 +10,7 @@ import com.hrms.mapper.DepartmentMapper;
 import com.hrms.mapper.EmployeeMapper;
 import com.hrms.mapper.UserMapper;
 import com.hrms.service.AttendanceService;
+import com.hrms.service.LeaveQuotaService;
 import com.hrms.service.SalaryService;
 import com.hrms.util.Result;
 import com.hrms.util.UserContext;
@@ -47,6 +48,9 @@ public class SelfController {
 
     @Autowired
     private AttendanceService attendanceService;
+
+    @Autowired
+    private LeaveQuotaService leaveQuotaService;
 
     /**
      * 个人资料：账号信息 + 员工档案 + 部门
@@ -111,6 +115,30 @@ public class SelfController {
             Map<String, Object> data = new HashMap<>();
             data.put("statistics", attendanceService.monthlyStatistics(empId, month));
             data.put("records", attendanceService.listByEmpIdAndMonth(empId, month));
+            return Result.success(data);
+        } catch (RuntimeException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 我的本年度假期额度（P4-2，年假）
+     */
+    @GetMapping("/leave-quota")
+    public Result<Map<String, Object>> myLeaveQuota() {
+        try {
+            Long empId = requireMyEmpId();
+            int year = java.time.LocalDate.now().getYear();
+            com.hrms.entity.LeaveQuota quota = leaveQuotaService.getOrCreate(
+                    empId, year, LeaveQuotaService.TYPE_ANNUAL);
+            Map<String, Object> data = new HashMap<>();
+            data.put("year", year);
+            data.put("quotaType", quota.getQuotaType());
+            data.put("totalDays", quota.getTotalDays());
+            data.put("usedDays", quota.getUsedDays());
+            data.put("remainDays", quota.getTotalDays().subtract(quota.getUsedDays()));
             return Result.success(data);
         } catch (RuntimeException e) {
             return Result.error(e.getMessage());

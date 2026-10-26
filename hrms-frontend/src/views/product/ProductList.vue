@@ -1,25 +1,37 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item label="关键字">
-            <el-input v-model="searchForm.keyword" placeholder="SKU / 名称 / 分类" clearable style="width: 220px" @keyup.enter="handleSearch" />
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 120px">
-              <el-option label="在售" :value="1" />
-              <el-option label="下架" :value="0" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
+  <div class="page-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="产品管理"
+      description="维护产品资料与成本售价，支持按 SKU、分类检索"
+      icon="Goods"
+    >
+      <template #actions>
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增产品</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keyword" placeholder="SKU / 名称 / 分类" clearable style="width: 220px" @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 120px">
+            <el-option label="在售" :value="1" />
+            <el-option label="下架" :value="0" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 产品列表 -->
+    <div class="table-card">
       <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
         <el-table-column prop="sku" label="SKU" width="120" sortable="custom" />
         <el-table-column prop="name" label="产品名称" min-width="150" sortable="custom" />
@@ -45,17 +57,18 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="pagination.pageNum"
-        v-model:page-size="pagination.pageSize"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        class="pagination"
-        @size-change="handleSizeChange"
-        @current-change="loadData"
-      />
-    </el-card>
+      <div class="pagination page-pagination">
+        <el-pagination
+          v-model:current-page="pagination.pageNum"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="loadData"
+        />
+      </div>
+    </div>
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑产品' : '新增产品'" width="600px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
@@ -116,6 +129,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getProductPageApi, addProductApi, updateProductApi, deleteProductApi } from '@/api/trade'
 
 const loading = ref(false)
@@ -204,9 +218,3 @@ const handleDelete = async (row) => {
 
 onMounted(loadData)
 </script>
-
-<style scoped>
-.page-container { width: 100%; }
-.search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-</style>

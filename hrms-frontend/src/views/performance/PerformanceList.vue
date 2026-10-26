@@ -1,5 +1,20 @@
 <template>
-  <div class="performance-container">
+  <div class="performance-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="绩效管理"
+      description="考核周期、自评与上级评分全流程管理，支持绩效等级统计与分析"
+      icon="Trophy"
+    >
+      <template #actions>
+        <el-button type="primary" :icon="Plus" @click="handleAdd">新增绩效</el-button>
+        <el-button type="success" :icon="Upload" @click="handleImport">导入</el-button>
+        <el-button type="warning" :icon="Download" @click="handleExport">导出</el-button>
+        <el-button type="primary" :icon="Setting" @click="handleIndicators">指标配置</el-button>
+        <el-button type="info" :icon="TrendCharts" @click="handleAnalytics">绩效分析</el-button>
+      </template>
+    </PageHeader>
+
     <el-card shadow="hover">
       <!-- 考核周期选择 -->
       <div class="cycle-selector">
@@ -55,9 +70,10 @@
           </div>
         </el-col>
       </el-row>
+    </el-card>
 
-      <!-- 搜索栏 -->
-      <div class="search-bar">
+    <!-- 搜索区 -->
+    <div class="search-card">
         <el-form :inline="true" :model="searchForm">
           <el-form-item label="考核周期">
             <el-select v-model="searchForm.cycleId" placeholder="请选择周期" style="width: 180px">
@@ -89,23 +105,15 @@
               <el-option label="已完成" value="completed" />
             </el-select>
           </el-form-item>
-          <el-form-item>
+          <el-form-item class="search-submit">
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" @click="handleReset">重置</el-button>
           </el-form-item>
         </el-form>
-      </div>
+    </div>
 
-      <!-- 操作栏 -->
-      <div class="action-bar">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增绩效</el-button>
-        <el-button type="success" :icon="Upload" @click="handleImport">导入</el-button>
-        <el-button type="warning" :icon="Download" @click="handleExport">导出</el-button>
-        <el-button type="primary" :icon="Setting" @click="handleIndicators">指标配置</el-button>
-        <el-button type="info" :icon="TrendCharts" @click="handleAnalytics">绩效分析</el-button>
-      </div>
-
-      <!-- 表格 -->
+    <!-- 表格 -->
+    <div class="table-card">
       <el-table :data="tableData" v-loading="loading" border stripe>
         <el-table-column prop="employeeNo" label="工号" width="100" align="center" />
         <el-table-column prop="name" label="姓名" width="100" align="center" />
@@ -161,7 +169,7 @@
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination">
+      <div class="pagination page-pagination">
         <el-pagination
           v-model:current-page="pagination.currentPage"
           v-model:page-size="pagination.pageSize"
@@ -173,7 +181,7 @@
           @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 自评弹窗 -->
     <el-dialog v-model="reviewDialogVisible" title="绩效自评" width="700px" destroy-on-close>
@@ -266,6 +274,7 @@ import {
   Search, Refresh, Plus, Upload, Download, Setting, TrendCharts,
   Trophy, Medal, Star, Warning
 } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getPerformanceListApi, getPerformanceStatsApi, addPerformanceApi } from '@/api/performance'
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
@@ -587,7 +596,7 @@ onMounted(async () => {
     justify-content: space-between;
     align-items: center;
     padding: 16px 20px;
-    background: linear-gradient(135deg, #ecf5ff 0%, #d9ecff 100%);
+    background: var(--el-color-primary-light-9);
     border-radius: 8px;
     margin-bottom: 20px;
 
@@ -598,12 +607,12 @@ onMounted(async () => {
 
       .label {
         font-size: 14px;
-        color: #606266;
+        color: var(--el-text-color-regular);
       }
 
       .cycle-date {
         font-size: 13px;
-        color: #909399;
+        color: var(--el-text-color-secondary);
       }
     }
   }
@@ -616,7 +625,7 @@ onMounted(async () => {
     display: flex;
     align-items: center;
     gap: 16px;
-    background: #fff;
+    background: var(--el-bg-color);
     border-radius: 8px;
     padding: 16px;
     box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.06);
@@ -631,7 +640,7 @@ onMounted(async () => {
       color: #fff;
 
       &.s-grade { background: linear-gradient(135deg, #67C23A, #85ce61); }
-      &.a-grade { background: linear-gradient(135deg, #409EFF, #66b1ff); }
+      &.a-grade { background: linear-gradient(135deg, var(--el-color-primary), #66b1ff); }
       &.b-grade { background: linear-gradient(135deg, #E6A23C, #ebb563); }
       &.c-grade { background: linear-gradient(135deg, #F56C6C, #f78989); }
     }
@@ -640,47 +649,31 @@ onMounted(async () => {
       .stat-num {
         font-size: 22px;
         font-weight: 600;
-        color: #303133;
+        color: var(--el-text-color-primary);
       }
 
       .stat-label {
         font-size: 13px;
-        color: #909399;
+        color: var(--el-text-color-secondary);
         margin-top: 4px;
       }
     }
   }
 
-  .search-bar {
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
   .final-score {
     font-weight: 600;
-    color: #409EFF;
-  }
-
-  .pagination {
-    margin-top: 20px;
-    display: flex;
-    justify-content: flex-end;
+    color: var(--el-color-primary);
   }
 
   .review-header {
     display: flex;
     justify-content: space-around;
     padding: 12px;
-    background: #f5f7fa;
+    background: var(--el-fill-color-light);
     border-radius: 6px;
     margin-bottom: 20px;
     font-size: 14px;
-    color: #606266;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

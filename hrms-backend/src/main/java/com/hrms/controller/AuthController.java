@@ -32,13 +32,26 @@ public class AuthController {
      * 登录
      */
     @PostMapping("/login")
-    public Result<Map<String, Object>> login(@RequestBody LoginDTO loginDTO) {
+    public Result<Map<String, Object>> login(@RequestBody LoginDTO loginDTO, HttpServletRequest request) {
         try {
-            Map<String, Object> result = userService.login(loginDTO);
+            // P5-2：携带客户端 IP/UA，登录日志可追溯来源
+            Map<String, Object> result = userService.login(loginDTO, getClientIp(request),
+                    request.getHeader("User-Agent"));
             return Result.success("登录成功", result);
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
+    }
+
+    /**
+     * 取客户端真实 IP（经反向代理时优先 X-Forwarded-For 首段）
+     */
+    private String getClientIp(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+            return ip.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     /**
