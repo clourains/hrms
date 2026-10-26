@@ -3,6 +3,7 @@ package com.hrms.controller;
 import com.hrms.annotation.AuditLog;
 import com.hrms.annotation.RequireRole;
 import com.hrms.entity.SysConfig;
+import com.hrms.service.MailService;
 import com.hrms.service.SysConfigService;
 import com.hrms.util.Result;
 import com.hrms.util.UserContext;
@@ -22,6 +23,9 @@ public class SysConfigController {
 
     @Autowired
     private SysConfigService sysConfigService;
+
+    @Autowired
+    private MailService mailService;
 
     /**
      * 查询全部参数
@@ -49,6 +53,22 @@ public class SysConfigController {
             }
             sysConfigService.updateValue(key.trim(), value.trim(), UserContext.getOrDefault("unknown"));
             return Result.success("参数已更新", null);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 邮件连通性测试（P6-3）：向指定邮箱发测试邮件
+     */
+    @PostMapping("/testMail")
+    public Result<String> testMail(@RequestBody Map<String, String> body) {
+        try {
+            String to = body.get("to");
+            if (to == null || to.trim().isEmpty()) {
+                return Result.error("请提供收件邮箱");
+            }
+            return mailService.testSend(to.trim());
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }

@@ -9,3 +9,8 @@ export const getConfigListApi = () => {
 export const updateConfigApi = (configKey, configValue) => {
   return request.put('/config/update', { configKey, configValue })
 }
+
+// 邮件连通性测试（P6-3）
+export const testMailApi = (to) => {
+  return request.post('/config/testMail', { to })
+}

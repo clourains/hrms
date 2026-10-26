@@ -9,6 +9,7 @@ import com.hrms.entity.Salary;
 import com.hrms.entity.User;
 import com.hrms.mapper.MessageMapper;
 import com.hrms.mapper.UserMapper;
+import com.hrms.service.MailService;
 import com.hrms.service.SalaryService;
 import com.hrms.service.impl.PayslipService;
 import com.hrms.util.Result;
@@ -49,6 +50,9 @@ public class SalaryController {
 
     @Autowired
     private MessageMapper messageMapper;
+
+    @Autowired
+    private MailService mailService;
 
     /**
      * 下载工资条 PDF（P2-3）：管理员可下载任意员工，普通用户只能下载自己
@@ -223,6 +227,7 @@ public class SalaryController {
             LocalDateTime todayStart = LocalDate.now().atStartOfDay();
             LocalDateTime now = LocalDateTime.now();
             int notified = 0;
+            int emailed = 0;
             for (Salary s : list) {
                 String username = usernameMap.get(s.getEmpId());
                 if (username == null || username.isEmpty()) {
@@ -253,8 +258,15 @@ public class SalaryController {
                 msg.setUpdateTime(now);
                 messageMapper.insert(msg);
                 notified++;
+
+                // P6-3：SMTP 已启用时同步发邮件到员工档案邮箱；未启用/无邮箱自动跳过
+                String email = mailService.resolveEmailByUsername(username);
+                if (email != null && mailService.send(email, title, content)) {
+                    emailed++;
+                }
             }
             calc.put("notified", notified);
+            calc.put("emailed", emailed);
             return Result.success("计算并推送完成", calc);
         } catch (Exception e) {
             return Result.error(e.getMessage());

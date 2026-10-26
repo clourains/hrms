@@ -113,6 +113,12 @@ const routes = [
         meta: { title: '参数配置', icon: 'Tools', requiresAdmin: true }
       },
       {
+        path: 'notice',
+        name: 'Notice',
+        component: () => import('@/views/system/NoticeList.vue'),
+        meta: { title: '公告管理', icon: 'Notification', requiresAdmin: true }
+      },
+      {
         path: 'analytics',
         name: 'Analytics',
         component: () => import('@/views/analytics/Analytics.vue'),

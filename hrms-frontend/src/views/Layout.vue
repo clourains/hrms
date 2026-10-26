@@ -321,6 +321,7 @@ const menuGroups = [
     adminOnly: true,
     children: [
       { path: '/user', title: '用户管理', icon: 'User' },
+      { path: '/notice', title: '公告管理', icon: 'Notification' },
       { path: '/loginLog', title: '登录日志', icon: 'Key' },
       { path: '/config', title: '参数配置', icon: 'Tools' },
       { path: '/audit', title: '审计日志', icon: 'Document' }

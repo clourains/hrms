@@ -3,9 +3,13 @@
     <!-- 页头 -->
     <PageHeader
       title="参数配置"
-      description="系统运行参数在线调整：薪资计算、考勤扣款等规则即时生效，无需改代码重启"
+      description="系统运行参数在线调整：薪资计算、考勤扣款、SMTP 邮件等规则即时生效，无需改代码重启"
       icon="Tools"
-    />
+    >
+      <template #actions>
+        <el-button type="primary" plain :icon="Promotion" @click="handleTestMail">测试发信</el-button>
+      </template>
+    </PageHeader>
 
     <!-- 参数表格 -->
     <div class="table-card">
@@ -65,9 +69,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Promotion } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getConfigListApi, updateConfigApi } from '@/api/config'
+import { getConfigListApi, updateConfigApi, testMailApi } from '@/api/config'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -115,6 +120,26 @@ const handleSubmit = async () => {
 }
 
 const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 19) : '-')
+
+// P6-3 邮件连通性测试：先配好 mail.* 参数再点
+const handleTestMail = async () => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '向指定邮箱发送一封测试邮件（需先配置 mail.enabled=true 及 host/username/password）',
+      '测试发信',
+      { confirmButtonText: '发送', cancelButtonText: '取消', inputPlaceholder: '收件邮箱地址' }
+    )
+    if (!value || !value.trim()) return
+    const res = await testMailApi(value.trim())
+    if (res.code === 200) {
+      ElMessage.success(res.msg || '测试邮件已发送')
+    } else {
+      ElMessage.error(res.msg || '发送失败')
+    }
+  } catch {
+    // 用户取消
+  }
+}
 
 onMounted(loadData)
 </script>
