@@ -18,104 +18,112 @@
         <p>欢迎使用星跃出海国际贸易有限公司人力资源与业务一体化管理平台</p>
       </div>
 
-      <!-- P8-B 仪表盘统计卡片 -->
-      <div v-if="stats" class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-icon stat-icon-blue"><el-icon :size="22"><User /></el-icon></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.totalEmployees || 0 }}</div>
-            <div class="stat-label">员工总数</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon stat-icon-green"><el-icon :size="22"><UserFilled /></el-icon></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.activeEmployees || 0 }}</div>
-            <div class="stat-label">在职员工</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon stat-icon-purple"><el-icon :size="22"><TrendCharts /></el-icon></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.newEmployees || 0 }}</div>
-            <div class="stat-label">本月入职</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon stat-icon-orange"><el-icon :size="22"><ChatDotRound /></el-icon></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.activeUsersToday || 0 }}</div>
-            <div class="stat-label">今日活跃</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon stat-icon-red"><el-icon :size="22"><Notification /></el-icon></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.noticeCount || 0 }}</div>
-            <div class="stat-label">生效公告</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon stat-icon-cyan"><el-icon :size="22"><Calendar /></el-icon></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatRate(stats.attendanceRate) }}</div>
-            <div class="stat-label">出勤率</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 公告栏（P6-1）：有生效公告时展示，重要公告优先置顶 -->
-      <div v-if="notices.length > 0" class="notice-board">
-        <div
-          v-for="n in notices"
-          :key="n.id"
-          class="notice-card"
-          :class="{ 'notice-important': n.level === 'important', 'notice-read': n.isRead === 1 }"
-          @click="openNotice(n)"
-        >
-          <div class="notice-icon">
-            <el-icon :size="18"><component :is="n.level === 'important' ? 'BellFilled' : 'Notification'" /></el-icon>
-          </div>
-          <div class="notice-body">
-            <div class="notice-head">
-              <el-tag v-if="n.level === 'important'" type="danger" size="small" effect="dark">重要</el-tag>
-              <el-tag v-if="n.isRead === 0" type="warning" size="small" effect="plain">未读</el-tag>
-              <span class="notice-title">{{ n.title }}</span>
+      <!-- Tab 切换：概览 / 详细数据（渐进披露，默认概览态保持首页干净） -->
+      <el-tabs v-model="activeTab" class="home-tabs" @tab-change="onTabChange">
+        <el-tab-pane label="概览" name="overview">
+          <!-- 公告栏 -->
+          <div v-if="notices.length > 0" class="notice-board">
+            <div
+              v-for="n in notices"
+              :key="n.id"
+              class="notice-card"
+              :class="{ 'notice-important': n.level === 'important', 'notice-read': n.isRead === 1 }"
+              @click="openNotice(n)"
+            >
+              <div class="notice-icon">
+                <el-icon :size="18"><component :is="n.level === 'important' ? 'BellFilled' : 'Notification'" /></el-icon>
+              </div>
+              <div class="notice-body">
+                <div class="notice-head">
+                  <el-tag v-if="n.level === 'important'" type="danger" size="small" effect="dark">重要</el-tag>
+                  <el-tag v-if="n.isRead === 0" type="warning" size="small" effect="plain">未读</el-tag>
+                  <span class="notice-title">{{ n.title }}</span>
+                </div>
+                <div class="notice-preview">{{ n.content }}</div>
+                <div class="notice-meta">{{ n.publisher || '系统' }} · {{ formatTime(n.createTime) }}</div>
+              </div>
             </div>
-            <div class="notice-preview">{{ n.content }}</div>
-            <div class="notice-meta">{{ n.publisher || '系统' }} · {{ formatTime(n.createTime) }}</div>
           </div>
-        </div>
-      </div>
 
-      <div class="quick-grid">
-        <div
-          v-for="item in quickEntries"
-          :key="item.path"
-          class="quick-card"
-          @click="go(item.path)"
-        >
-          <div class="quick-icon">
-            <el-icon :size="22"><component :is="item.icon" /></el-icon>
+          <!-- 快捷入口 -->
+          <div class="quick-grid">
+            <div
+              v-for="item in quickEntries"
+              :key="item.path"
+              class="quick-card"
+              @click="go(item.path)"
+            >
+              <div class="quick-icon">
+                <el-icon :size="22"><component :is="item.icon" /></el-icon>
+              </div>
+              <div class="quick-text">
+                <span class="quick-title">{{ item.title }}</span>
+                <small class="quick-desc">{{ item.desc }}</small>
+              </div>
+            </div>
           </div>
-          <div class="quick-text">
-            <span class="quick-title">{{ item.title }}</span>
-            <small class="quick-desc">{{ item.desc }}</small>
-          </div>
-        </div>
-      </div>
+        </el-tab-pane>
 
-      <!-- P8-B 可视化图表 -->
-      <div v-if="structure" class="charts-row">
-        <div class="chart-card">
-          <div class="chart-title">部门人数 Top 5</div>
-          <div ref="deptChartRef" class="chart-canvas" />
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">性别分布</div>
-          <div ref="genderChartRef" class="chart-canvas" />
-        </div>
-      </div>
+        <el-tab-pane label="详细数据" name="dashboard">
+          <!-- P8-B 仪表盘统计卡片（详细数据态才展示，避免首页过杂） -->
+          <div v-if="stats" class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon stat-icon-blue"><el-icon :size="22"><User /></el-icon></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stats.totalEmployees || 0 }}</div>
+                <div class="stat-label">员工总数</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon stat-icon-green"><el-icon :size="22"><UserFilled /></el-icon></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stats.activeEmployees || 0 }}</div>
+                <div class="stat-label">在职员工</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon stat-icon-purple"><el-icon :size="22"><TrendCharts /></el-icon></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stats.newEmployees || 0 }}</div>
+                <div class="stat-label">本月入职</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon stat-icon-orange"><el-icon :size="22"><ChatDotRound /></el-icon></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stats.activeUsersToday || 0 }}</div>
+                <div class="stat-label">今日活跃</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon stat-icon-red"><el-icon :size="22"><Notification /></el-icon></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ stats.noticeCount || 0 }}</div>
+                <div class="stat-label">生效公告</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon stat-icon-cyan"><el-icon :size="22"><Calendar /></el-icon></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ formatRate(stats.attendanceRate) }}</div>
+                <div class="stat-label">出勤率</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- P8-B 可视化图表 -->
+          <div v-if="structure" class="charts-row">
+            <div class="chart-card">
+              <div class="chart-title">部门人数 Top 5</div>
+              <div ref="deptChartRef" class="chart-canvas" />
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">性别分布</div>
+              <div ref="genderChartRef" class="chart-canvas" />
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </div>
   </div>
 
@@ -154,6 +162,17 @@ const deptChartRef = ref(null)
 const genderChartRef = ref(null)
 let deptChart = null
 let genderChart = null
+
+// Tab：默认概览态（公告 + 快捷入口），详细数据态才出统计卡和图表
+const activeTab = ref('overview')
+
+const onTabChange = async (tab) => {
+  if (tab === 'dashboard' && structure.value) {
+    // 等 DOM 渲染出两个 chart-canvas ref 再 init
+    await nextTick()
+    renderCharts()
+  }
+}
 
 const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 16) : '')
 const formatRate = (v) => v != null ? `${Number(v).toFixed(1)}%` : '-'
@@ -257,6 +276,7 @@ const openNotice = async (n) => {
 
 onMounted(async () => {
   await Promise.all([loadNotices(), loadDashboard()])
+  // 默认概览态，图表不渲染；切到详细数据时 onTabChange 触发
   window.addEventListener('resize', resizeCharts)
 })
 
@@ -377,6 +397,34 @@ const go = (path) => {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
   max-width: 1120px;
+}
+
+/* 首页 Tab 条：深色主题下轻量不抢眼 */
+.home-tabs {
+  margin-top: 30px;
+  max-width: 1120px;
+
+  :deep(.el-tabs__nav-wrap::after) {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  :deep(.el-tabs__item) {
+    color: rgba(255, 255, 255, 0.55);
+    font-weight: 500;
+    height: 36px;
+    line-height: 36px;
+    font-size: 14px;
+
+    &.is-active {
+      color: #e0bc6a;
+    }
+    &:hover {
+      color: rgba(255, 255, 255, 0.9);
+    }
+  }
+  :deep(.el-tabs__active-bar) {
+    background-color: #e0bc6a;
+    height: 2px;
+  }
 }
 
 /* P8-B 仪表盘统计卡片 */
