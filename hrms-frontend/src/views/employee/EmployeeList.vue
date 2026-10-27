@@ -207,6 +207,37 @@
             </el-form-item>
           </el-col>
         </el-row>
+
+        <el-divider content-position="left">签证信息</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="护照号">
+              <el-input v-model="formData.passportNo" placeholder="请输入护照号码" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="签证类型">
+              <el-select v-model="formData.visaType" placeholder="请选择签证类型" style="width: 100%">
+                <el-option label="工作签证" value="工作签证" />
+                <el-option label="商务签证" value="商务签证" />
+                <el-option label="访问签证" value="访问签证" />
+                <el-option label="学习签证" value="学习签证" />
+                <el-option label="其他" value="其他" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="签证到期">
+              <el-date-picker
+                v-model="formData.visaExpireDate"
+                type="date"
+                placeholder="请选择到期日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -233,7 +264,10 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="地址" :span="2">{{ formData.address }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="2">{{ formData.remark }}</el-descriptions-item>
+        <el-descriptions-item label="护照号">{{ formData.passportNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="签证类型">{{ formData.visaType || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="签证到期">{{ formData.visaExpireDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">{{ formData.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
@@ -339,7 +373,10 @@ const formData = reactive({
   leaveDate: '',
   status: 1,
   address: '',
-  remark: ''
+  remark: '',
+  passportNo: '',
+  visaType: '',
+  visaExpireDate: ''
 })
 
 const formRules = {
@@ -397,7 +434,10 @@ const normalizeEmployee = (emp) => ({
   status: emp.status,
   birthday: fmtDate(emp.birthday) || '',
   address: emp.address || '',
-  remark: ''
+  remark: '',
+  passportNo: emp.passportNo || '',
+  visaType: emp.visaType || '',
+  visaExpireDate: fmtDate(emp.visaExpireDate) || ''
 })
 
 const loadDepartments = async () => {
@@ -525,7 +565,10 @@ const handleSubmit = async () => {
         // 离职日期仅离职状态时上送（M1-5 入离职趋势统计来源）
         leaveDate: formData.status === 0 ? fmtDate(formData.leaveDate) : null,
         status: formData.status,
-        address: formData.address
+        address: formData.address,
+        passportNo: formData.passportNo,
+        visaType: formData.visaType,
+        visaExpireDate: fmtDate(formData.visaExpireDate)
       }
       if (formData.id) {
         payload.id = formData.id
@@ -624,7 +667,16 @@ onMounted(async () => {
     searchForm.name = String(route.query.name)
   }
   await loadDepartments()
-  fetchList()
+  await fetchList()
+
+  // 到期提醒跳转：?id=xxx 自动定位该员工并打开编辑弹窗
+  if (route.query.id) {
+    const targetId = Number(route.query.id)
+    const row = tableData.value.find(r => r.id === targetId)
+    if (row) {
+      handleEdit(row)
+    }
+  }
 })
 </script>
 
