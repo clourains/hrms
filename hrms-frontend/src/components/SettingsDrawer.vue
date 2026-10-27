@@ -35,7 +35,7 @@
     </div>
 
     <div class="settings-block">
-      <el-button size="small" @click="appStore.setPrimary('#409EFF')">恢复默认</el-button>
+      <el-button size="small" @click="appStore.setPrimary('#3B82F6')">恢复默认</el-button>
     </div>
 
     <div class="settings-tip">

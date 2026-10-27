@@ -76,6 +76,27 @@ public class AuthController {
     }
 
     /**
+     * 修改密码：校验原密码后更新为 BCrypt 新密码
+     */
+    @PutMapping("/password")
+    public Result<Void> changePassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        try {
+            String token = request.getHeader("Authorization");
+            if (token != null && token.startsWith("Bearer ")) {
+                token = token.substring(7);
+            }
+            Long userId = jwtUtil.getUserIdFromToken(token);
+            if (userId == null) {
+                return Result.error(401, "未授权");
+            }
+            userService.changePassword(userId, body.get("oldPassword"), body.get("newPassword"));
+            return Result.success("密码修改成功", null);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
      * 退出登录（P049）：把当前 token 登记进黑名单，拦截器校验时立即失效
      */
     @PostMapping("/logout")

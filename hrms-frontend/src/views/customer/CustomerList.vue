@@ -177,23 +177,17 @@ const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0, sortField: nul
 const defaultForm = { id: null, customerCode: '', companyName: '', contactName: '', country: '美国', city: '', address: '', email: '', phone: '', website: '', level: 'C', creditLimitUsd: 0, status: 1, remark: '' }
 const form = reactive({ ...defaultForm })
 
-// 新增时必填：编码、名称、联系人、电话、国家、城市、地址
-// 编辑时只保留编码和名称，避免历史数据里联系人为空的老客户被卡住改不了
-const rules = computed(() => {
-  const base = {
-    customerCode: [{ required: true, message: '请输入客户编码', trigger: 'blur' }],
-    companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }]
-  }
-  if (isEdit.value) return base
-  return {
-    ...base,
-    contactName: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
-    phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
-    country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
-    city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
-    address: [{ required: true, message: '请输入地址', trigger: 'blur' }]
-  }
-})
+// 新增和编辑都必须填满：编码、名称、联系人、电话、国家、城市、地址
+// 早期编辑时放开了后 5 项，结果「新增必填 → 编辑清空」就能绕过校验，这里统一成一套规则
+const rules = {
+  customerCode: [{ required: true, message: '请输入客户编码', trigger: 'blur' }],
+  companyName: [{ required: true, message: '请输入公司名称', trigger: 'blur' }],
+  contactName: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+  phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
+  country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
+  city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+  address: [{ required: true, message: '请输入地址', trigger: 'blur' }]
+}
 
 const formatNum = (n) => (n == null ? '0.00' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 

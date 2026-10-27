@@ -112,7 +112,7 @@ const handleSubmit = async () => {
       dialogVisible.value = false
       loadData()
     } else {
-      ElMessage.error(res.msg || '更新失败')
+      ElMessage.error(res.message || '更新失败')
     }
   } finally {
     submitting.value = false
@@ -132,9 +132,9 @@ const handleTestMail = async () => {
     if (!value || !value.trim()) return
     const res = await testMailApi(value.trim())
     if (res.code === 200) {
-      ElMessage.success(res.msg || '测试邮件已发送')
+      ElMessage.success(res.message || '测试邮件已发送')
     } else {
-      ElMessage.error(res.msg || '发送失败')
+      ElMessage.error(res.message || '发送失败')
     }
   } catch {
     // 用户取消

@@ -37,4 +37,9 @@ public interface BusinessService {
      * 分仓库库存价值
      */
     List<Map<String, Object>> inventoryValue();
+
+    /**
+     * 毛利排行：按客户、按产品各取 TOP10，附毛利率
+     */
+    Map<String, Object> profitRanking();
 }

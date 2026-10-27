@@ -62,7 +62,8 @@ hrms/
 │   │   └── util/                 # 工具类
 │   ├── src/main/resources/
 │   │   ├── mapper/               # MyBatis XML
-│   │   ├── db/init.sql           # 数据库初始化脚本
+│   │   ├── db/init.sql           # [已废弃] 早期遗留脚本，勿用，改由 db/migration 接管
+│   │   ├── db/migration/         # Flyway 迁移脚本（唯一建表途径，V1~V13）
 │   │   └── application.yml       # 应用配置
 │   └── pom.xml                   # Maven配置
 │
@@ -98,9 +99,28 @@ hrms/
 
 ### 数据库初始化
 
+> **请建一个空库，交给 Flyway 自动建表灌数据，不要手动执行 `init.sql`。**
+
 ```bash
-# 1. 创建数据库并执行初始化脚本
-mysql -u root -p < hrms-backend/src/main/resources/db/init.sql
+# 1. 只建一个空库（不要导入任何脚本）
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS hrms DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+```
+
+后端启动时 Flyway 会自动按版本号依次执行
+`hrms-backend/src/main/resources/db/migration/` 下的 `V1__baseline.sql` ~ `V13__seed_demo_data.sql`，
+一次完成建表 + 演示数据。启动日志里看到 `Successfully applied N migrations` 即表示就绪。
+
+**为什么不能用 `init.sql`**：`init.sql` 是早期遗留脚本，只建了 9 张 `sys_*` 表，
+既没有外贸模块的 14 张 `biz_*` 表（订单/产品/库存/客户/供应商/物流/收款等），
+也没有合同、审批、加班、公告、招聘这些后加的表。而 `application.yml` 里
+`flyway.baseline-version: 1` 会在库非空时把 `V1__baseline.sql` 整个跳过，
+先跑 `init.sql` 再启动后端，结果是外贸相关页面全部 `Table doesn't exist`。
+
+如果已经误跑过 `init.sql`，把库删掉重建即可：
+
+```bash
+mysql -u root -p -e "DROP DATABASE IF EXISTS hrms;"
+# 然后重新建空库，见上
 ```
 
 ### 后端启动

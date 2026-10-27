@@ -81,6 +81,30 @@ if not errorlevel 1 (
 )
 echo.
 
+echo       Ensuring EMPTY database 'hrms' exists (Flyway builds the schema) ...
+set "MYSQL_EXE="
+for %%p in ("%MYSQL_HOME%\bin\mysql.exe" "D:\mysql-8.0.46\bin\mysql.exe" "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe") do (
+    if not defined MYSQL_EXE (
+        if exist "%%~p" set "MYSQL_EXE=%%~p"
+    )
+)
+if not defined MYSQL_EXE (
+    for /f "delims=" %%p in ('where mysql 2^>nul') do if not defined MYSQL_EXE set "MYSQL_EXE=%%p"
+)
+if defined MYSQL_EXE (
+    "!MYSQL_EXE!" -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS hrms DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;" >nul 2>&1
+    if errorlevel 1 (
+        echo       [WARN] Could not reach MySQL with root/123456 on 3306.
+        echo       [WARN] Create an EMPTY database named 'hrms' manually before the backend starts.
+    ) else (
+        echo       Database 'hrms' ready (schema comes from Flyway migrations)
+    )
+) else (
+    echo       [WARN] mysql client not found - skipped auto-create.
+    echo       [WARN] Make sure an EMPTY database 'hrms' exists, or the backend will fail on startup.
+)
+echo.
+
 echo [6/7] Checking Redis (port 6379) ...
 call :PORT_OPEN 6379
 if not errorlevel 1 (

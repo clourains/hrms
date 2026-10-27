@@ -25,6 +25,9 @@ public class AnalyticsDTO {
         private Double avgPerformance;       // 平均绩效分
         private Integer deptCount;           // 部门数量
         private Integer positionCount;       // 岗位数量
+        // P8-B 仪表盘新增
+        private Integer noticeCount;         // 生效公告数
+        private Integer activeUsersToday;    // 今日活跃登录用户数（去重）
     }
 
     /**

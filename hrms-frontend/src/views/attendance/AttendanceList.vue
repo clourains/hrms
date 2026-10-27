@@ -120,6 +120,7 @@
               <el-option label="早退" value="early" />
               <el-option label="缺勤" value="absent" />
               <el-option label="请假" value="leave" />
+              <el-option label="出差" value="trip" />
             </el-select>
           </el-form-item>
           <el-form-item class="search-submit">
@@ -158,7 +159,7 @@
         <el-table-column label="操作" width="140" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="handleViewDetail(row)">详情</el-button>
-            <el-button type="warning" link size="small" @click="handleApprove(row)">审批</el-button>
+            <el-button type="warning" link size="small" @click="handleAppeal(row)">申诉</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -178,11 +179,11 @@
       </div>
     </div>
 
-    <!-- 补卡申请弹窗 -->
+    <!-- 补卡申请弹窗（走通用审批流，通过后回写考勤） -->
     <el-dialog v-model="makeupDialogVisible" title="补卡申请" width="450px">
       <el-form :model="makeupForm" label-width="100px">
-        <el-form-item label="补卡日期">
-          <el-date-picker v-model="makeupForm.date" type="date" placeholder="请选择日期" style="width: 100%" />
+        <el-form-item label="补卡日期" required>
+          <el-date-picker v-model="makeupForm.date" type="date" value-format="YYYY-MM-DD" placeholder="请选择日期" style="width: 100%" />
         </el-form-item>
         <el-form-item label="补卡类型">
           <el-radio-group v-model="makeupForm.type">
@@ -190,16 +191,91 @@
             <el-radio label="checkOut">下班卡</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="补卡时间">
-          <el-time-picker v-model="makeupForm.time" placeholder="请选择时间" style="width: 100%" />
+        <el-form-item label="补卡时间" required>
+          <el-time-picker v-model="makeupForm.time" value-format="HH:mm" placeholder="请选择时间" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="申请原因">
+        <el-form-item label="审批人" required>
+          <el-select v-model="makeupForm.approvers" multiple placeholder="按顺序选择审批人" style="width: 100%">
+            <el-option v-for="u in approverOptions" :key="u.username" :label="u.nickname" :value="u.username" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申请原因" required>
           <el-input v-model="makeupForm.reason" type="textarea" :rows="3" placeholder="请输入申请原因" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="makeupDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitMakeup">提交申请</el-button>
+        <el-button type="primary" :loading="makeupSubmitting" @click="submitMakeup">提交审批</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 考勤统计弹窗 -->
+    <el-dialog v-model="statsVisible" title="考勤统计分析" width="620px">
+      <div class="stats-summary">
+        <div class="stats-item">
+          <div class="stats-label">记录天数</div>
+          <div class="stats-value">{{ statsSummary.total }}</div>
+        </div>
+        <div class="stats-item">
+          <div class="stats-label">出勤率</div>
+          <div class="stats-value">{{ statsSummary.rate }}%</div>
+        </div>
+        <div class="stats-item">
+          <div class="stats-label">总工时</div>
+          <div class="stats-value">{{ statsSummary.totalHours }}h</div>
+        </div>
+        <div class="stats-item">
+          <div class="stats-label">日均工时</div>
+          <div class="stats-value">{{ statsSummary.avgHours }}h</div>
+        </div>
+      </div>
+      <div v-for="item in statsRows" :key="item.key" class="stats-row">
+        <span class="stats-name">{{ item.label }}</span>
+        <el-progress
+          :percentage="item.percentage"
+          :stroke-width="10"
+          :color="item.color"
+          class="stats-progress"
+        />
+        <span class="stats-num">{{ item.count }} 天</span>
+      </div>
+      <div class="stats-hint">统计口径：当前查询月份（{{ queryMonth() }}）的全部考勤记录</div>
+    </el-dialog>
+
+    <!-- 考勤详情弹窗 -->
+    <el-dialog v-model="detailVisible" title="考勤详情" width="480px">
+      <div v-loading="detailLoading">
+        <el-descriptions v-if="detailData" :column="2" border>
+          <el-descriptions-item label="考勤日期">{{ detailData.date }}</el-descriptions-item>
+          <el-descriptions-item label="考勤状态">{{ getStatusText(detailData.status) }}</el-descriptions-item>
+          <el-descriptions-item label="上班打卡">{{ detailData.checkIn || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="下班签退">{{ detailData.checkOut || '--' }}</el-descriptions-item>
+          <el-descriptions-item label="工作时长">{{ detailData.workHours }}</el-descriptions-item>
+          <el-descriptions-item label="工号">{{ detailData.employeeNo }}</el-descriptions-item>
+          <el-descriptions-item label="姓名">{{ detailData.name }}</el-descriptions-item>
+          <el-descriptions-item label="部门">{{ detailData.department }}</el-descriptions-item>
+          <el-descriptions-item label="备注" :span="2">{{ detailData.remark || '--' }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-dialog>
+
+    <!-- 考勤异常申诉弹窗 -->
+    <el-dialog v-model="appealVisible" title="考勤异常申诉" width="460px">
+      <el-form :model="appealForm" label-width="100px">
+        <el-form-item label="考勤日期">{{ appealForm.date }}</el-form-item>
+        <el-form-item label="异常状态">{{ appealForm.status }}</el-form-item>
+        <el-form-item label="审批人" required>
+          <el-select v-model="appealForm.approvers" multiple placeholder="按顺序选择审批人" style="width: 100%">
+            <el-option v-for="u in approverOptions" :key="u.username" :label="u.nickname" :value="u.username" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="申诉说明" required>
+          <el-input v-model="appealForm.reason" type="textarea" :rows="3" placeholder="请说明异常原因与实际情况" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="appealVisible = false">取消</el-button>
+        <el-button type="primary" :loading="appealSaving" @click="submitAppeal">提交申诉</el-button>
       </template>
     </el-dialog>
 
@@ -316,8 +392,8 @@ import { ElMessage } from 'element-plus'
 import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts, Sunrise, List } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import {
-  getAttendanceListApi, getAttendanceStatsApi, checkInApi, checkOutApi,
-  applyOvertimeApi, getMyOvertimeApi, getMyLeaveQuotaApi, submitLeaveApplyApi
+  getAttendanceListApi, getAttendanceStatsApi, getAttendanceDetailApi, checkInApi, checkOutApi,
+  applyOvertimeApi, getMyOvertimeApi, getMyLeaveQuotaApi, submitLeaveApplyApi, submitAttendanceAppealApi
 } from '@/api/attendance'
 import { getApproverOptionsApi } from '@/api/approval'
 import { request } from '@/utils/request'
@@ -396,7 +472,8 @@ const makeupForm = reactive({
   date: '',
   type: 'checkIn',
   time: '',
-  reason: ''
+  reason: '',
+  approvers: []
 })
 
 const leaveForm = reactive({
@@ -543,14 +620,17 @@ const fmtMonth = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
 const fmtDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 const timePart = (value) => (value ? String(value).slice(11, 19) : '')
 
-// 后端考勤状态：0正常 1迟到 2早退 3迟到+早退；其余（如休息日）无打卡时间按缺勤展示
+// 后端考勤状态：1正常 2迟到 3早退 4缺勤 5请假 6出差 7迟到+早退（与 AttendanceStatus 常量一致）
 const mapStatus = (att) => {
   const s = att.status
-  if (s === 1) return 'late'
-  if (s === 2) return 'early'
-  if (s === 3) return 'late'
-  if (s === 0 || s == null) return att.checkInTime ? 'normal' : 'absent'
-  return 'absent'
+  if (s === 2 || s === 7) return 'late'
+  if (s === 3) return 'early'
+  if (s === 4) return 'absent'
+  if (s === 5) return 'leave'
+  if (s === 6) return 'trip'
+  if (s === 1) return 'normal'
+  // 无状态或未知取值：有打卡时间按正常，否则按缺勤展示
+  return att.checkInTime ? 'normal' : 'absent'
 }
 
 const normalizeRow = (att) => ({
@@ -560,9 +640,9 @@ const normalizeRow = (att) => ({
   name: myEmp.value.name,
   department: myEmp.value.departmentName,
   checkIn: timePart(att.checkInTime),
-  checkInStatus: att.status === 1 || att.status === 3 ? 'late' : 'normal',
+  checkInStatus: att.status === 2 || att.status === 7 ? 'late' : 'normal',
   checkOut: timePart(att.checkOutTime),
-  checkOutStatus: att.status === 2 || att.status === 3 ? 'early' : 'normal',
+  checkOutStatus: att.status === 3 || att.status === 7 ? 'early' : 'normal',
   workHours: att.workHours != null ? `${att.workHours}h` : '--',
   status: mapStatus(att),
   remark: att.remark || ''
@@ -650,7 +730,8 @@ const getStatusText = (status) => {
     late: '迟到',
     early: '早退',
     absent: '缺勤',
-    leave: '请假'
+    leave: '请假',
+    trip: '出差'
   }
   return map[status] || '未知'
 }
@@ -661,7 +742,8 @@ const getStatusTagType = (status) => {
     late: 'warning',
     early: 'danger',
     absent: 'info',
-    leave: 'primary'
+    leave: 'primary',
+    trip: 'success'
   }
   return map[status] || 'info'
 }
@@ -699,14 +781,44 @@ const handleReset = () => {
   loadData()
 }
 
-// 补卡：后端暂无对应接口，保留演示逻辑
+// ===== 补卡：走通用审批流，通过后后端回写当天打卡时间 =====
+const makeupSubmitting = ref(false)
+
 const handleMakeup = () => {
+  makeupForm.date = fmtDate(new Date())
+  makeupForm.type = 'checkIn'
+  makeupForm.time = ''
+  makeupForm.reason = ''
+  makeupForm.approvers = []
   makeupDialogVisible.value = true
+  loadApproverOptions()
 }
 
-const submitMakeup = () => {
-  ElMessage.success('补卡申请已提交，等待审批')
-  makeupDialogVisible.value = false
+const submitMakeup = async () => {
+  if (!makeupForm.date) { ElMessage.warning('请选择补卡日期'); return }
+  if (!makeupForm.time) { ElMessage.warning('请选择补卡时间'); return }
+  if (!makeupForm.reason.trim()) { ElMessage.warning('请填写申请原因'); return }
+  if (!makeupForm.approvers.length) { ElMessage.warning('请选择审批人'); return }
+  makeupSubmitting.value = true
+  try {
+    await submitAttendanceAppealApi({
+      bizType: '补卡',
+      title: `${myEmp.value.name} 补卡申请 ${makeupForm.date}`,
+      detail: {
+        date: makeupForm.date,
+        type: makeupForm.type === 'checkIn' ? '上班' : '下班',
+        time: makeupForm.time,
+        reason: makeupForm.reason
+      },
+      approvers: makeupForm.approvers
+    })
+    ElMessage.success('补卡申请已提交，等待审批')
+    makeupDialogVisible.value = false
+  } catch (e) {
+    // 拦截器统一提示
+  } finally {
+    makeupSubmitting.value = false
+  }
 }
 
 // 导出月报（P1-3）：弹窗选月份/部门，从后端下载 Excel
@@ -757,16 +869,116 @@ const confirmExport = async () => {
   }
 }
 
+// ===== 考勤统计：基于当前查询月份的真实记录计算 =====
+const statsVisible = ref(false)
+const statsSummary = computed(() => {
+  const rows = allRows.value
+  const count = (s) => rows.filter(r => r.status === s).length
+  const normal = count('normal')
+  const late = count('late')
+  const early = count('early')
+  const absent = count('absent')
+  const leave = count('leave')
+  const trip = count('trip')
+  const total = rows.length
+  const present = normal + late + early + trip
+  const rate = total ? Math.round((present / total) * 1000) / 10 : 0
+  let totalHours = 0
+  let workDays = 0
+  rows.forEach(r => {
+    const h = parseFloat(r.workHours)
+    if (!Number.isNaN(h)) {
+      totalHours += h
+      workDays++
+    }
+  })
+  return {
+    total, present, normal, late, early, absent, leave, trip, rate,
+    totalHours: Math.round(totalHours * 100) / 100,
+    avgHours: workDays ? Math.round((totalHours / workDays) * 100) / 100 : 0
+  }
+})
+
+const statsRows = computed(() => {
+  const total = statsSummary.value.total || 1
+  const pct = (n) => Math.round((n / total) * 100)
+  const s = statsSummary.value
+  return [
+    { key: 'normal', label: '正常', count: s.normal, percentage: pct(s.normal), color: '#67c23a' },
+    { key: 'late', label: '迟到', count: s.late, percentage: pct(s.late), color: '#e6a23c' },
+    { key: 'early', label: '早退', count: s.early, percentage: pct(s.early), color: '#f56c6c' },
+    { key: 'absent', label: '缺勤', count: s.absent, percentage: pct(s.absent), color: '#909399' },
+    { key: 'leave', label: '请假', count: s.leave, percentage: pct(s.leave), color: '#409eff' },
+    { key: 'trip', label: '出差', count: s.trip, percentage: pct(s.trip), color: '#00b4a0' }
+  ]
+})
+
 const handleStats = () => {
-  ElMessage.info('统计分析功能演示')
+  statsVisible.value = true
 }
 
-const handleViewDetail = (row) => {
-  ElMessage.info(`查看 ${row.name} 的考勤详情`)
+// ===== 考勤详情：按记录 id 拉取后端数据 =====
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detailData = ref(null)
+
+const handleViewDetail = async (row) => {
+  detailData.value = row
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    const res = await getAttendanceDetailApi(row.id)
+    if (res.data) {
+      detailData.value = normalizeRow(res.data)
+    }
+  } catch (e) {
+    // 拦截器统一提示，保留列表中已有数据
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-const handleApprove = (row) => {
-  ElMessage.info(`审批 ${row.name} 的考勤申请`)
+// ===== 考勤异常申诉：走通用审批流 =====
+const appealVisible = ref(false)
+const appealSaving = ref(false)
+const appealForm = reactive({
+  date: '',
+  status: '',
+  approvers: [],
+  reason: ''
+})
+
+const handleAppeal = (row) => {
+  appealForm.date = row.date
+  appealForm.status = getStatusText(row.status)
+  appealForm.approvers = []
+  appealForm.reason = ''
+  appealVisible.value = true
+  loadApproverOptions()
+}
+
+const submitAppeal = async () => {
+  if (!appealForm.approvers.length) { ElMessage.warning('请选择审批人'); return }
+  if (!appealForm.reason.trim()) { ElMessage.warning('请填写申诉说明'); return }
+  appealSaving.value = true
+  try {
+    await submitAttendanceAppealApi({
+      bizType: '考勤异常',
+      title: `${myEmp.value.name} 考勤异常申诉 ${appealForm.date}`,
+      detail: {
+        date: appealForm.date,
+        status: appealForm.status,
+        reason: appealForm.reason
+      },
+      approvers: appealForm.approvers
+    })
+    ElMessage.success('申诉已提交，等待审批')
+    appealVisible.value = false
+  } catch (e) {
+    // 拦截器统一提示
+  } finally {
+    appealSaving.value = false
+  }
 }
 
 const handleSizeChange = () => {
@@ -901,6 +1113,62 @@ onUnmounted(() => {
 
   .text-danger {
     color: var(--el-color-danger);
+  }
+
+  .stats-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stats-item {
+    background: var(--el-fill-color-lighter);
+    border-radius: 8px;
+    padding: 14px 16px;
+    text-align: center;
+  }
+
+  .stats-label {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .stats-value {
+    margin-top: 6px;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--el-color-primary);
+  }
+
+  .stats-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .stats-name {
+    width: 48px;
+    font-size: 13px;
+    color: var(--el-text-color-regular);
+  }
+
+  .stats-progress {
+    flex: 1;
+  }
+
+  .stats-num {
+    width: 56px;
+    text-align: right;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .stats-hint {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 }
 </style>

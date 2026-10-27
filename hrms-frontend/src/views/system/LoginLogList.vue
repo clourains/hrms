@@ -5,7 +5,11 @@
       title="登录日志"
       description="记录账号登录成功与失败，可追溯来源 IP 与浏览器，用于安全排查"
       icon="Key"
-    />
+    >
+      <template #actions>
+        <el-button type="primary" :icon="Download" @click="handleExport">导出 Excel</el-button>
+      </template>
+    </PageHeader>
 
     <!-- 搜索区 -->
     <div class="search-card">
@@ -79,7 +83,8 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Search, Refresh, Download } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { getLoginLogListApi } from '@/api/loginLog'
 
@@ -118,6 +123,34 @@ const handleReset = () => {
   searchForm.success = null
   searchForm.range = null
   handleSearch()
+}
+
+// 导出 Excel（P8-A）
+const handleExport = async () => {
+  const base = import.meta.env.VITE_API_BASE || '/api'
+  const token = localStorage.getItem('token') || ''
+  const qs = new URLSearchParams()
+  if (searchForm.username) qs.append('username', searchForm.username)
+  if (searchForm.success !== null && searchForm.success !== '') qs.append('success', searchForm.success)
+  if (searchForm.range && searchForm.range.length === 2) {
+    qs.append('startTime', searchForm.range[0])
+    qs.append('endTime', searchForm.range[1])
+  }
+  try {
+    const r = await fetch(`${base}/loginLog/export?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    const blob = await r.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = '登录日志.xlsx'
+    a.click()
+    URL.revokeObjectURL(a.href)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  }
 }
 
 const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 19) : '-')

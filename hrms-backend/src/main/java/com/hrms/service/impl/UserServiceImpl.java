@@ -214,6 +214,31 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        if (!StringUtils.hasText(oldPassword)) {
+            throw new RuntimeException("请输入原密码");
+        }
+        if (!StringUtils.hasText(newPassword)) {
+            throw new RuntimeException("请输入新密码");
+        }
+        if (newPassword.length() < 6 || newPassword.length() > 32) {
+            throw new RuntimeException("新密码长度需为 6-32 位");
+        }
+        User existing = userMapper.selectById(userId);
+        if (existing == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        if (!verifyAndUpgradePassword(existing, oldPassword)) {
+            throw new RuntimeException("原密码不正确");
+        }
+        User update = new User();
+        update.setId(userId);
+        update.setPassword(passwordEncoder.encode(newPassword));
+        update.setUpdateTime(LocalDateTime.now());
+        userMapper.updateById(update);
+    }
+
+    @Override
     public void resetPassword(Long id, String newPassword) {
         User existing = userMapper.selectById(id);
         if (existing == null) {

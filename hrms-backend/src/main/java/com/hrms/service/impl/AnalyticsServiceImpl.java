@@ -7,9 +7,12 @@ import com.hrms.service.AnalyticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,6 +37,12 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
     @Autowired
     private PerformanceMapper performanceMapper;
+
+    @Autowired
+    private NoticeMapper noticeMapper;
+
+    @Autowired
+    private LoginLogMapper loginLogMapper;
 
     /**
      * 入职离职趋势（M1-5）：按入职日期/离职日期真实按月聚合。
@@ -126,7 +135,21 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         } else {
             stats.setAvgPerformance(0.0);
         }
-        
+
+        // P8-B 仪表盘扩展：生效公告数 + 今日活跃登录用户数
+        stats.setNoticeCount(Math.toIntExact(noticeMapper.selectCount(
+                new LambdaQueryWrapper<Notice>().eq(Notice::getStatus, 1))));
+        LocalDate today = LocalDate.now();
+        LocalDateTime dayStart = today.atStartOfDay();
+        LocalDateTime dayEnd = today.plusDays(1).atStartOfDay().minusSeconds(1);
+        List<LoginLog> todayLogs = loginLogMapper.selectList(
+                new LambdaQueryWrapper<LoginLog>()
+                        .eq(LoginLog::getSuccess, 1)
+                        .ge(LoginLog::getCreateTime, dayStart)
+                        .le(LoginLog::getCreateTime, dayEnd));
+        stats.setActiveUsersToday((int) todayLogs.stream()
+                .map(LoginLog::getUsername).filter(Objects::nonNull).distinct().count());
+
         return stats;
     }
 
@@ -299,7 +322,32 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         SalaryAnalysis analysis = new SalaryAnalysis();
         List<Salary> salaries = salaryMapper.selectList(null);
 
-        // 筛选当月数据
+        // 过滤：排除关联员工已删除/不存在的工资记录
+        // 状态口径：1=在职、2=试用期（两者都发薪）、0=离职；只排除离职，否则试用期员工
+        // 会被漏掉，导致薪资分布人数少于员工总数（口径对不上）。
+        List<Employee> allEmployees = employeeMapper.selectList(null);
+        Set<Long> validEmpIds = allEmployees.stream()
+                .filter(e -> e.getStatus() != null && e.getStatus() != 0)
+                .map(Employee::getId)
+                .collect(Collectors.toSet());
+        salaries = salaries.stream()
+                .filter(s -> validEmpIds.contains(s.getEmpId()))
+                .collect(Collectors.toList());
+
+        // 筛选当月数据：未传 month 时默认取"有有效薪资数据"的最新月份
+        // （跳过本月工资单尚未发放、net_salary 全为 0 的情况）
+        if (month == null || month.isEmpty()) {
+            month = salaries.stream()
+                    .filter(s -> s.getNetSalary() != null && s.getNetSalary().compareTo(BigDecimal.ZERO) > 0)
+                    .map(Salary::getSalaryMonth)
+                    .filter(Objects::nonNull)
+                    .max(String::compareTo)
+                    .orElse(salaries.stream()
+                            .map(Salary::getSalaryMonth)
+                            .filter(Objects::nonNull)
+                            .max(String::compareTo)
+                            .orElse(null));
+        }
         if (month != null && !month.isEmpty()) {
             String finalMonth = month;
             salaries = salaries.stream()

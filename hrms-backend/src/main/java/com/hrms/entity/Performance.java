@@ -46,6 +46,20 @@ public class Performance implements Serializable {
 
     private Integer status;
 
+    private BigDecimal selfScore;
+
+    private BigDecimal managerScore;
+
+    private String selfSummary;
+
+    private String improvementPlan;
+
+    private String interviewNote;
+
+    private LocalDateTime interviewTime;
+
+    private String flowStatus;
+
     @TableLogic
     private Integer deleted;
 

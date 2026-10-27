@@ -54,7 +54,7 @@
             <el-table-column label="剩余天数" width="110" align="center">
               <template #default="{ row }">
                 <el-tag :type="urgencyType(row.daysLeft)" size="small">
-                  {{ row.daysLeft }} 天
+                  {{ row.daysLeft < 0 ? `已过期 ${-row.daysLeft} 天` : `${row.daysLeft} 天` }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -83,7 +83,7 @@
             <el-table-column label="剩余天数" width="110" align="center">
               <template #default="{ row }">
                 <el-tag :type="urgencyType(row.daysLeft)" size="small">
-                  {{ row.daysLeft }} 天
+                  {{ row.daysLeft < 0 ? `已过期 ${-row.daysLeft} 天` : `${row.daysLeft} 天` }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -194,6 +194,7 @@ const loadEmployeeOptions = async () => {
 }
 
 const urgencyType = (daysLeft) => {
+  if (daysLeft < 0) return 'danger'
   if (daysLeft <= 7) return 'danger'
   if (daysLeft <= 30) return 'warning'
   return 'primary'

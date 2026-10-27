@@ -74,3 +74,13 @@ export const getPerformanceStatsApi = (params) => {
 export const exportPerformanceApi = (params) => {
   return request.download('/performance/export', params)
 }
+
+// 下载绩效导入模板
+export const downloadPerformanceTemplateApi = () => {
+  return request.download('/performance/importTemplate')
+}
+
+// 导入绩效 Excel
+export const importPerformanceApi = (formData) => {
+  return request.upload('/performance/import', formData)
+}

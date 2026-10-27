@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hrms.entity.Attendance;
 import com.hrms.mapper.AttendanceMapper;
 import com.hrms.service.AttendanceService;
+import com.hrms.util.AttendanceStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -49,11 +50,11 @@ public class AttendanceServiceImpl implements AttendanceService {
             attendance.setCheckInTime(now);
             attendance.setCreateTime(now);
             attendance.setUpdateTime(now);
-            // 判断是否迟到（假设9:00上班）
+            // 判断是否迟到（假设9:00上班）；口径见 AttendanceStatus
             if (now.getHour() >= 9) {
-                attendance.setStatus(1); // 迟到
+                attendance.setStatus(AttendanceStatus.LATE);
             } else {
-                attendance.setStatus(0); // 正常
+                attendance.setStatus(AttendanceStatus.NORMAL);
             }
             attendanceMapper.insert(attendance);
         } else {
@@ -61,7 +62,7 @@ public class AttendanceServiceImpl implements AttendanceService {
             attendance.setCheckInTime(now);
             attendance.setUpdateTime(now);
             if (now.getHour() >= 9) {
-                attendance.setStatus(1); // 迟到
+                attendance.setStatus(AttendanceStatus.LATE);
             }
             attendanceMapper.updateById(attendance);
         }
@@ -98,12 +99,13 @@ public class AttendanceServiceImpl implements AttendanceService {
             attendance.setWorkHours(BigDecimal.valueOf(hours).setScale(2, BigDecimal.ROUND_HALF_UP));
         }
 
-        // 判断是否早退（假设18:00下班）
+        // 判断是否早退（假设18:00下班）；请假/出差/缺勤不覆盖
         if (now.getHour() < 18) {
-            if (attendance.getStatus() == 0) {
-                attendance.setStatus(2); // 早退
-            } else if (attendance.getStatus() == 1) {
-                attendance.setStatus(3); // 迟到+早退
+            Integer st = attendance.getStatus();
+            if (st == null || st == AttendanceStatus.NORMAL) {
+                attendance.setStatus(AttendanceStatus.EARLY_LEAVE);
+            } else if (st == AttendanceStatus.LATE) {
+                attendance.setStatus(AttendanceStatus.LATE_AND_EARLY);
             }
         }
 
@@ -136,34 +138,49 @@ public class AttendanceServiceImpl implements AttendanceService {
 
         Map<String, Object> result = new HashMap<>();
         int normalCount = 0;     // 正常
-        int lateCount = 0;       // 迟到
-        int earlyLeaveCount = 0; // 早退
+        int lateCount = 0;       // 迟到（含迟到+早退）
+        int earlyLeaveCount = 0; // 早退（含迟到+早退）
         int absentCount = 0;     // 缺勤
+        int leaveCount = 0;      // 请假
+        int tripCount = 0;       // 出差
+        int attendDays = 0;      // 实际出勤天数（请假不算出勤）
         BigDecimal totalWorkHours = BigDecimal.ZERO;
 
         for (Attendance att : list) {
             Integer status = att.getStatus();
-            if (status == null || status == 0) {
+            if (AttendanceStatus.isLate(status)) {
+                lateCount++;
+            }
+            if (AttendanceStatus.isEarlyLeave(status)) {
+                earlyLeaveCount++;
+            }
+            if (status == null || status == AttendanceStatus.NORMAL) {
                 normalCount++;
-            } else if (status == 1) {
-                lateCount++;
-            } else if (status == 2) {
-                earlyLeaveCount++;
-            } else if (status == 3) {
-                lateCount++;
-                earlyLeaveCount++;
+            } else if (status == AttendanceStatus.ABSENT) {
+                absentCount++;
+            } else if (status == AttendanceStatus.LEAVE) {
+                leaveCount++;
+            } else if (status == AttendanceStatus.BUSINESS_TRIP) {
+                tripCount++;
+            }
+            if (AttendanceStatus.isPresent(status)) {
+                attendDays++;
             }
             if (att.getWorkHours() != null) {
                 totalWorkHours = totalWorkHours.add(att.getWorkHours());
             }
         }
 
-        result.put("totalDays", list.size());
+        result.put("totalDays", attendDays);
         result.put("normalCount", normalCount);
         result.put("lateCount", lateCount);
         result.put("earlyLeaveCount", earlyLeaveCount);
         result.put("absentCount", absentCount);
+        result.put("leaveCount", leaveCount);
+        result.put("tripCount", tripCount);
+        // 前端历史上有读 totalHours 的写法，两个键都给，避免再出现恒为 0
         result.put("totalWorkHours", totalWorkHours.setScale(2, BigDecimal.ROUND_HALF_UP));
+        result.put("totalHours", totalWorkHours.setScale(2, BigDecimal.ROUND_HALF_UP));
 
         return result;
     }

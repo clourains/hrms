@@ -241,7 +241,9 @@ const warehouseList = ref([])
 
 const formatNum = (n) => (n == null ? '0.00' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
 
-const validItems = computed(() => form.items.filter(i => i.productId && i.quantity > 0))
+// 仓库必选：不填的话后端既不锁库存也不扣库存，整条链路静默失效
+const validItems = computed(() => form.items.filter(i => i.productId && i.warehouseId && i.quantity > 0))
+const missingWarehouse = computed(() => form.items.some(i => i.productId && i.quantity > 0 && !i.warehouseId))
 const totalQuantity = computed(() => validItems.value.reduce((sum, i) => sum + (i.quantity || 0), 0))
 const totalAmount = computed(() => validItems.value.reduce((sum, i) => sum + (i.quantity || 0) * (i.unitPriceUsd || 0), 0))
 
@@ -304,7 +306,11 @@ const handleProductChange = (row, productId) => {
 const handleSubmit = async () => {
   await formRef.value.validate()
   if (validItems.value.length === 0) {
-    ElMessage.warning('请至少添加一条有效明细（选择产品并填写数量）')
+    ElMessage.warning('请至少添加一条有效明细（选择产品、仓库并填写数量）')
+    return
+  }
+  if (missingWarehouse.value) {
+    ElMessage.warning('每条明细都要选择发货仓库，否则下单不会锁定库存、发货也不会扣减库存')
     return
   }
   submitting.value = true

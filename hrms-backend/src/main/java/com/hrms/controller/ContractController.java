@@ -40,6 +40,7 @@ public class ContractController {
     /**
      * 合同列表（可按员工过滤），附带员工姓名/部门名便于台账展示
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/list")
     public Result<List<Map<String, Object>>> list(@RequestParam(required = false) Long empId) {
         try {
@@ -115,6 +116,7 @@ public class ContractController {
     /**
      * 到期提醒扫描：合同与签证在 days 天内到期的记录（默认 60 天）
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/expiring")
     public Result<Map<String, Object>> expiring(@RequestParam(defaultValue = "60") int days) {
         try {
@@ -132,12 +134,16 @@ public class ContractController {
                     : departmentMapper.selectBatchIds(deptIds).stream()
                             .collect(Collectors.toMap(Department::getId, Department::getDeptName));
 
-            // 1) 有效合同在 [today, deadline] 内到期
+            // 1) 有效合同在 [today - range, deadline] 内到期
+            //    下界往前放宽 range 天是为了把「已经过期」的合同也带出来 ——
+            //    原先只扫 [today, deadline]，合同一过期就从提醒里消失，
+            //    「越过期越看不见」，日常使用中很容易漏掉续签
             List<Map<String, Object>> contractAlerts = new ArrayList<>();
             List<Contract> contracts = contractMapper.selectList(
                     new LambdaQueryWrapper<Contract>()
                             .eq(Contract::getStatus, 1)
-                            .between(Contract::getEndDate, today, deadline)
+                            .ge(Contract::getEndDate, today.minusDays(range))
+                            .le(Contract::getEndDate, deadline)
                             .orderByAsc(Contract::getEndDate));
             for (Contract c : contracts) {
                 Map<String, Object> item = new HashMap<>();
@@ -152,6 +158,10 @@ public class ContractController {
                 item.put("startDate", c.getStartDate());
                 item.put("endDate", c.getEndDate());
                 item.put("daysLeft", ChronoUnit.DAYS.between(today, c.getEndDate()));
+                // 到期提醒页的编辑弹窗用 row.remark / row.status 回填，
+                // 原先这里不带这两个字段，回填成空后一保存就把库里的备注覆盖了
+                item.put("remark", c.getRemark());
+                item.put("status", c.getStatus());
                 contractAlerts.add(item);
             }
 

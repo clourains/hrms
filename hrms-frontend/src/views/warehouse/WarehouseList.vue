@@ -78,7 +78,17 @@
         </el-tab-pane>
 
         <!-- ========== 库存总览 ========== -->
-        <el-tab-pane label="库存总览" name="inventory">
+        <el-tab-pane name="inventory">
+          <template #label>
+            <span class="tab-with-badge">
+              库存总览
+              <!-- 只在有库存不足时出现，正常不显示 -->
+              <template v-if="lowStockCount > 0">
+                <span class="low-badge">{{ lowStockCount }}</span>
+                <span class="low-hint" @click.stop="gotoLowStock">库存不足，点击查看</span>
+              </template>
+            </span>
+          </template>
           <div class="search-card">
             <el-form :inline="true" :model="invSearch">
               <el-form-item label="产品">
@@ -491,7 +501,8 @@ import {
   getInventoryPageApi, getInventoryLogsApi, changeStockApi, getProductListApi,
   updateWarningQuantityApi, transferStockApi,
   getStockCheckPageApi, getStockCheckDetailApi, getStockCheckRowsApi,
-  createStockCheckApi, updateStockCheckApi, confirmStockCheckApi, cancelStockCheckApi
+  createStockCheckApi, updateStockCheckApi, confirmStockCheckApi, cancelStockCheckApi,
+  getInventoryWarningCountApi
 } from '@/api/trade'
 
 const activeTab = ref('warehouse')
@@ -500,6 +511,26 @@ const route = useRoute()
 
 const productLabel = (p) => `${p.name} (${p.sku})${p.status === 0 ? ' · 已下架' : ''}`
 const isLowStock = (row) => (row.availableQuantity ?? 0) <= (row.warningQuantity ?? 0)
+
+// ========== 库存不足提醒 ==========
+// 只在有不足时渲染红字/数字，正常（0 条）完全不显示
+const lowStockCount = ref(0)
+
+const loadLowStockCount = async () => {
+  try {
+    const res = await getInventoryWarningCountApi()
+    lowStockCount.value = Number(res.data || 0)
+  } catch (e) {
+    lowStockCount.value = 0
+  }
+}
+
+// 点红字：切到库存总览并自动勾上"只看低库存"
+const gotoLowStock = () => {
+  activeTab.value = 'inventory'
+  invSearch.lowStock = true
+  handleInvSearch()
+}
 const changeTypeText = (t) => ({ 1: '入库', 2: '出库', 3: '锁定', 4: '解锁' }[t] || '未知')
 const changeTypeTag = (t) => ({ 1: 'success', 2: 'danger', 3: 'warning', 4: 'info' }[t] || 'info')
 const changeColor = (t) => ({ 1: 'var(--el-color-success)', 2: 'var(--el-color-danger)', 3: 'var(--el-color-warning)', 4: 'var(--el-text-color-secondary)' }[t] || 'var(--el-text-color-primary)')
@@ -517,23 +548,17 @@ const whFormRef = ref(null)
 const defaultWhForm = { id: null, warehouseCode: '', warehouseName: '', type: 1, country: '中国', city: '', address: '', manager: '', capacity: 10000, status: 1 }
 const whForm = reactive({ ...defaultWhForm })
 
-// 新增时必填：仓库编码、类型、名称、国家、城市、详细地址、负责人
-// 编辑时只保留编码/类型/名称，历史仓库缺城市、地址、负责人的还能正常改别的字段
-const whRules = computed(() => {
-  const base = {
-    warehouseCode: [{ required: true, message: '请输入仓库编码', trigger: 'blur' }],
-    warehouseName: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }],
-    type: [{ required: true, message: '请选择仓库类型', trigger: 'change' }]
-  }
-  if (isEditWh.value) return base
-  return {
-    ...base,
-    country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
-    city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
-    address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }],
-    manager: [{ required: true, message: '请输入负责人', trigger: 'blur' }]
-  }
-})
+// 新增和编辑都必须填满：仓库编码、类型、名称、国家、城市、详细地址、负责人
+// 早期编辑时只校验前三项，等于留了个「新增必填 → 编辑清空」的后门，这里统一成一套规则
+const whRules = {
+  warehouseCode: [{ required: true, message: '请输入仓库编码', trigger: 'blur' }],
+  warehouseName: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }],
+  type: [{ required: true, message: '请选择仓库类型', trigger: 'change' }],
+  country: [{ required: true, message: '请输入国家', trigger: 'blur' }],
+  city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+  address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }],
+  manager: [{ required: true, message: '请输入负责人', trigger: 'blur' }]
+}
 
 const loadWarehouses = async () => {
   whLoading.value = true
@@ -683,6 +708,7 @@ const handleEditWarning = async (row) => {
     await updateWarningQuantityApi(row.id, Number(value))
     ElMessage.success('预警值已更新')
     loadInventory()
+    loadLowStockCount()
   } catch (e) {
     // 取消或校验失败，忽略
   }
@@ -720,6 +746,7 @@ const handleSubmitStock = async () => {
     stockDialogVisible.value = false
     loadInventory()
     loadLogs()
+    loadLowStockCount()
   } finally {
     submitting.value = false
   }
@@ -1045,6 +1072,7 @@ onMounted(() => {
   loadLogs()
   loadProductOptions()
   loadWarehouseOptions()
+  loadLowStockCount()
   applyTabFromQuery()
 })
 </script>
@@ -1059,4 +1087,27 @@ onMounted(() => {
 .check-tip { color: var(--el-text-color-regular); font-size: 14px; }
 .check-tip strong { margin: 0 4px; }
 .check-toolbar-right { display: flex; align-items: center; gap: 12px; }
+/* 库存不足提醒：只在有不足时出现 */
+.tab-with-badge { display: inline-flex; align-items: center; gap: 6px; }
+.low-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #F56C6C;
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  font-weight: 600;
+}
+.low-hint {
+  color: #F56C6C;
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  border-bottom: 1px dashed #F56C6C;
+  line-height: 1.2;
+}
+.low-hint:hover { color: #c45656; border-bottom-color: #c45656; }
 </style>

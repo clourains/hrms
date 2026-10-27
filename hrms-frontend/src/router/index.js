@@ -171,6 +171,31 @@ const routes = [
         name: 'Payment',
         component: () => import('@/views/payment/PaymentList.vue'),
         meta: { title: '收付款', icon: 'Wallet', requiresAdmin: true }
+      },
+      // ===== 招聘管理（招聘需求 -> 候选人 -> 面试 -> 试用期转正）=====
+      {
+        path: 'recruit/requisition',
+        name: 'RecruitRequisition',
+        component: () => import('@/views/recruit/RequisitionList.vue'),
+        meta: { title: '招聘需求', icon: 'Promotion', requiresAdmin: true }
+      },
+      {
+        path: 'recruit/candidate',
+        name: 'RecruitCandidate',
+        component: () => import('@/views/recruit/CandidateList.vue'),
+        meta: { title: '候选人', icon: 'UserFilled', requiresAdmin: true }
+      },
+      {
+        path: 'recruit/interview',
+        name: 'RecruitInterview',
+        component: () => import('@/views/recruit/InterviewList.vue'),
+        meta: { title: '面试安排', icon: 'Calendar', requiresAdmin: true }
+      },
+      {
+        path: 'recruit/probation',
+        name: 'RecruitProbation',
+        component: () => import('@/views/recruit/ProbationList.vue'),
+        meta: { title: '转正管理', icon: 'CircleCheck', requiresAdmin: true }
       }
     ]
   },

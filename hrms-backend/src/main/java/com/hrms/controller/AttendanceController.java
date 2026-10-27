@@ -289,6 +289,7 @@ public class AttendanceController {
     /**
      * 加班申请列表（管理端）：admin 全部 / manager 本部门
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/overtime/list")
     public Result<List<Map<String, Object>>> overtimeList() {
         try {

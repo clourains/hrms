@@ -3,15 +3,20 @@ package com.hrms.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hrms.annotation.AuditLog;
 import com.hrms.annotation.RequireRole;
+import com.hrms.entity.Department;
 import com.hrms.entity.Employee;
 import com.hrms.entity.Message;
 import com.hrms.entity.Salary;
+import com.hrms.entity.SalaryStructure;
 import com.hrms.entity.User;
+import com.hrms.mapper.DepartmentMapper;
 import com.hrms.mapper.MessageMapper;
+import com.hrms.mapper.SalaryStructureMapper;
 import com.hrms.mapper.UserMapper;
 import com.hrms.service.MailService;
 import com.hrms.service.SalaryService;
 import com.hrms.service.impl.PayslipService;
+import com.hrms.util.ExcelExportUtil;
 import com.hrms.util.Result;
 import com.hrms.util.UserContext;
 import jakarta.servlet.http.HttpServletResponse;
@@ -24,6 +29,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +54,12 @@ public class SalaryController {
 
     @Autowired
     private com.hrms.mapper.EmployeeMapper employeeMapper;
+
+    @Autowired
+    private DepartmentMapper departmentMapper;
+
+    @Autowired
+    private SalaryStructureMapper salaryStructureMapper;
 
     @Autowired
     private MessageMapper messageMapper;
@@ -88,6 +101,140 @@ public class SalaryController {
             response.getOutputStream().write(pdf);
         } catch (Exception e) {
             writeJsonError(response, 500, e.getMessage());
+        }
+    }
+
+    /**
+     * 导出薪资报表（按月份 + 当前筛选条件）
+     */
+    @RequireRole({"admin", "manager"})
+    @GetMapping("/export")
+    public void export(@RequestParam String salaryMonth,
+                       @RequestParam(required = false) String name,
+                       @RequestParam(required = false) Long deptId,
+                       @RequestParam(required = false) BigDecimal minSalary,
+                       @RequestParam(required = false) BigDecimal maxSalary,
+                       HttpServletResponse response) throws Exception {
+        try {
+            List<Salary> list = salaryService.listByMonth(salaryMonth);
+            Map<Long, Employee> empMap = new HashMap<>();
+            for (Employee e : employeeMapper.selectList(null)) {
+                empMap.put(e.getId(), e);
+            }
+            Map<Long, String> deptMap = new HashMap<>();
+            for (Department d : departmentMapper.selectList(null)) {
+                deptMap.put(d.getId(), d.getDeptName());
+            }
+            List<List<Object>> rows = new ArrayList<>();
+            for (Salary s : list) {
+                Employee e = empMap.get(s.getEmpId());
+                if (e == null) continue;
+                if (name != null && !name.isEmpty() && (e.getName() == null || !e.getName().contains(name))) continue;
+                if (deptId != null && !deptId.equals(e.getDeptId())) continue;
+                BigDecimal net = s.getNetSalary() == null ? BigDecimal.ZERO : s.getNetSalary();
+                if (minSalary != null && net.compareTo(minSalary) < 0) continue;
+                if (maxSalary != null && net.compareTo(maxSalary) > 0) continue;
+                rows.add(Arrays.asList(
+                        e.getEmpNo(), e.getName(), deptMap.getOrDefault(e.getDeptId(), ""),
+                        s.getSalaryMonth(),
+                        s.getBaseSalary(), s.getPerformanceBonus(), s.getOvertimePay(), s.getAllowance(),
+                        s.getSocialSecurity(), s.getHousingFund(), s.getTax(), s.getOtherDeduction(),
+                        s.getNetSalary(),
+                        s.getPayTime() == null ? "" : s.getPayTime().toString()
+                ));
+            }
+            ExcelExportUtil.write(response, "薪资报表_" + salaryMonth + ".xlsx",
+                    List.of("工号", "姓名", "部门", "薪资月份", "底薪", "绩效奖金", "加班费", "津贴",
+                            "社保", "公积金", "个税", "其他扣款", "实发工资", "发放时间"),
+                    rows);
+        } catch (Exception ex) {
+            writeJsonError(response, 500, "导出失败");
+        }
+    }
+
+    /**
+     * 薪资结构配置
+     */
+    @RequireRole({"admin", "manager"})
+    @GetMapping("/structure")
+    public Result<List<SalaryStructure>> structure() {
+        try {
+            List<SalaryStructure> list = salaryStructureMapper.selectList(
+                    new LambdaQueryWrapper<SalaryStructure>().orderByAsc(SalaryStructure::getSort));
+            return Result.success(list);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 保存薪资结构配置（整体更新已有项目）
+     */
+    @RequireRole("admin")
+    @AuditLog(module = "薪资管理", action = "薪资结构配置")
+    @PutMapping("/structure")
+    public Result<Void> saveStructure(@RequestBody List<SalaryStructure> items) {
+        try {
+            for (SalaryStructure item : items) {
+                if (item.getId() == null) continue;
+                salaryStructureMapper.updateById(item);
+            }
+            return Result.success("保存成功", null);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 批量调薪：按部门或全体在职员工，按百分比或固定金额调整档案底薪
+     */
+    @RequireRole("admin")
+    @AuditLog(module = "薪资管理", action = "批量调薪")
+    @PostMapping("/batchAdjust")
+    public Result<Map<String, Object>> batchAdjust(@RequestBody Map<String, Object> body) {
+        try {
+            String mode = String.valueOf(body.getOrDefault("mode", "percent"));
+            BigDecimal value = new BigDecimal(String.valueOf(body.getOrDefault("value", "0")));
+            if (value.compareTo(BigDecimal.ZERO) == 0) {
+                return Result.error("调薪幅度不能为 0");
+            }
+            Object deptIdObj = body.get("deptId");
+            LambdaQueryWrapper<Employee> qw = new LambdaQueryWrapper<Employee>()
+                    .ne(Employee::getStatus, 0);
+            if (deptIdObj != null && !String.valueOf(deptIdObj).isEmpty()) {
+                qw.eq(Employee::getDeptId, Long.valueOf(String.valueOf(deptIdObj)));
+            }
+            List<Employee> emps = employeeMapper.selectList(qw);
+            int affected = 0;
+            BigDecimal beforeTotal = BigDecimal.ZERO;
+            BigDecimal afterTotal = BigDecimal.ZERO;
+            for (Employee emp : emps) {
+                BigDecimal base = emp.getSalary() == null ? BigDecimal.ZERO : emp.getSalary();
+                if (base.compareTo(BigDecimal.ZERO) <= 0) continue;
+                BigDecimal next;
+                if ("fixed".equals(mode)) {
+                    next = base.add(value);
+                } else {
+                    BigDecimal rate = BigDecimal.ONE.add(
+                            value.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP));
+                    next = base.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+                }
+                if (next.compareTo(BigDecimal.ZERO) < 0) next = BigDecimal.ZERO;
+                Employee update = new Employee();
+                update.setId(emp.getId());
+                update.setSalary(next);
+                employeeMapper.updateById(update);
+                beforeTotal = beforeTotal.add(base);
+                afterTotal = afterTotal.add(next);
+                affected++;
+            }
+            Map<String, Object> data = new HashMap<>();
+            data.put("affected", affected);
+            data.put("beforeTotal", beforeTotal);
+            data.put("afterTotal", afterTotal);
+            return Result.success("调薪完成", data);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
         }
     }
 

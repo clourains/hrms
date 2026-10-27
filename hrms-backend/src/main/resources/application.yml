@@ -10,8 +10,10 @@ spring:
     type: com.alibaba.druid.pool.DruidDataSource
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/hrms?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&zeroDateTimeBehavior=convertToNull
-    username: root
-    password: 123456
+    # 口令不再写死在文件里：优先读环境变量，未设置时回退到本地开发默认值。
+    # 部署到非本机环境前，请务必设置 HRMS_DB_USERNAME / HRMS_DB_PASSWORD。
+    username: ${HRMS_DB_USERNAME:root}
+    password: ${HRMS_DB_PASSWORD:123456}
     druid:
       initial-size: 5
       min-idle: 5
@@ -25,10 +27,15 @@ spring:
       test-on-return: false
   data:
     redis:
-      host: localhost
-      port: 6379
-      password: 123456
+      host: ${HRMS_REDIS_HOST:localhost}
+      port: ${HRMS_REDIS_PORT:6379}
+      password: ${HRMS_REDIS_PASSWORD:123456}
       timeout: 3000ms
+  # 简历图片/PDF 上传（默认单文件 1MB 不够用，这里放宽到 10MB）
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -40,13 +47,20 @@ spring:
 hrms:
   # 登出 token 黑名单实现：redis（默认，集中式）/ memory（无 Redis 环境兜底）
   token-blacklist: redis
+  # 简历等附件存放目录：相对 hrms-backend 运行目录，可用绝对路径覆盖
+  # 文件不入库、不进 Git，库里只存相对路径
+  upload:
+    dir: ./uploads
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.hrms.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 不要开 StdOutImpl：它会把每条 SQL 连同完整结果集打到控制台/日志，
+    # sys_employee 的身份证、薪资、护照号会原样落进日志文件，等于绕过所有应用层脱敏。
+    # 需要排查 SQL 时临时改为 org.apache.ibatis.logging.stdout.StdOutImpl 即可。
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   global-config:
     db-config:
       id-type: auto
@@ -55,17 +69,23 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 # JWT配置
+# secret 必须外置：JwtAuthenticationFilter 直接信任 token 里的 role claim，
+# 一旦密钥泄露，任何人都能自签一个 role=admin 的 token 拿到全部管理员权限。
+# 这里读环境变量 JWT_SECRET；未设置时回退到本地开发用的默认值（仅便于本机跑起来）。
 jwt:
-  secret: hrms-secret-key-2024-smart-hr-system
+  secret: ${JWT_SECRET:hrms-dev-only-change-me-before-deploy}
   expiration: 86400000
   header: Authorization
   prefix: Bearer
 
 # AI模型配置 - 支持任何OpenAI兼容的API
+# api-key 走环境变量 AI_API_KEY，避免密钥进代码仓库
 ai:
   enabled: true
-  api-key: sk-e635803bbed5433ba753d729c3b6f641
-  base-url: https://api.deepseek.com/v1
-  model: deepseek-chat
+  # 注意：下面这个默认值是仓库里已经泄露过的旧 key，仅保证本机 AI 功能不停摆。
+  # 正式使用前请去控制台吊销它，并把新 key 配到环境变量 AI_API_KEY。
+  api-key: ${AI_API_KEY:sk-e635803bbed5433ba753d729c3b6f641}
+  base-url: ${AI_BASE_URL:https://api.deepseek.com/v1}
+  model: ${AI_MODEL:deepseek-chat}
   max-tokens: 2000
   temperature: 0.7

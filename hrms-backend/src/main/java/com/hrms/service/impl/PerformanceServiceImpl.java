@@ -133,40 +133,36 @@ public class PerformanceServiceImpl implements PerformanceService {
     }
 
     /**
-     * 计算总分
+     * 计算总分：五个维度按 25/25/20/15/15 加权，结果保持 0-100 口径。
+     * 与历史演示数据（V13）及等级阈值保持一致。
      */
     private void calculateTotalScore(Performance performance) {
         BigDecimal total = BigDecimal.ZERO;
-        if (performance.getWorkQuality() != null) {
-            total = total.add(performance.getWorkQuality());
-        }
-        if (performance.getWorkEfficiency() != null) {
-            total = total.add(performance.getWorkEfficiency());
-        }
-        if (performance.getWorkAttitude() != null) {
-            total = total.add(performance.getWorkAttitude());
-        }
-        if (performance.getTeamwork() != null) {
-            total = total.add(performance.getTeamwork());
-        }
-        if (performance.getInnovation() != null) {
-            total = total.add(performance.getInnovation());
-        }
-        performance.setTotalScore(total);
+        total = total.add(weighted(performance.getWorkQuality(), "0.25"));
+        total = total.add(weighted(performance.getWorkEfficiency(), "0.25"));
+        total = total.add(weighted(performance.getWorkAttitude(), "0.20"));
+        total = total.add(weighted(performance.getTeamwork(), "0.15"));
+        total = total.add(weighted(performance.getInnovation(), "0.15"));
+        performance.setTotalScore(total.setScale(2, java.math.RoundingMode.HALF_UP));
+    }
+
+    private BigDecimal weighted(BigDecimal score, String weight) {
+        return score == null ? BigDecimal.ZERO : score.multiply(new BigDecimal(weight));
     }
 
     /**
-     * 评定等级
+     * 评定等级：S≥90 / A≥80 / B≥70 / C≥60 / D<60
      */
     private void determineGrade(Performance performance) {
         BigDecimal totalScore = performance.getTotalScore();
         if (totalScore == null) {
             return;
         }
-        // 假设满分100分，五个维度各20分
         if (totalScore.compareTo(BigDecimal.valueOf(90)) >= 0) {
-            performance.setGrade("A");
+            performance.setGrade("S");
         } else if (totalScore.compareTo(BigDecimal.valueOf(80)) >= 0) {
+            performance.setGrade("A");
+        } else if (totalScore.compareTo(BigDecimal.valueOf(70)) >= 0) {
             performance.setGrade("B");
         } else if (totalScore.compareTo(BigDecimal.valueOf(60)) >= 0) {
             performance.setGrade("C");

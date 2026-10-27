@@ -136,7 +136,7 @@
             <el-form-item label="性别" prop="gender">
               <el-radio-group v-model="formData.gender">
                 <el-radio :label="1">男</el-radio>
-                <el-radio :label="2">女</el-radio>
+                <el-radio :label="0">女</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -207,6 +207,37 @@
             </el-form-item>
           </el-col>
         </el-row>
+
+        <el-divider content-position="left">签证信息</el-divider>
+
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="护照号">
+              <el-input v-model="formData.passportNo" placeholder="请输入护照号码" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="签证类型">
+              <el-select v-model="formData.visaType" placeholder="请选择签证类型" style="width: 100%">
+                <el-option label="工作签证" value="工作签证" />
+                <el-option label="商务签证" value="商务签证" />
+                <el-option label="访问签证" value="访问签证" />
+                <el-option label="学习签证" value="学习签证" />
+                <el-option label="其他" value="其他" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="签证到期">
+              <el-date-picker
+                v-model="formData.visaExpireDate"
+                type="date"
+                placeholder="请选择到期日期"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -233,7 +264,10 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="地址" :span="2">{{ formData.address }}</el-descriptions-item>
-        <el-descriptions-item label="备注" :span="2">{{ formData.remark }}</el-descriptions-item>
+        <el-descriptions-item label="护照号">{{ formData.passportNo || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="签证类型">{{ formData.visaType || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="签证到期">{{ formData.visaExpireDate || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">{{ formData.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
@@ -293,7 +327,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Delete, View, Edit } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi, importEmployeeApi } from '@/api/employee'
+import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi, importEmployeeApi, exportEmployeeApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
@@ -339,7 +373,10 @@ const formData = reactive({
   leaveDate: '',
   status: 1,
   address: '',
-  remark: ''
+  remark: '',
+  passportNo: '',
+  visaType: '',
+  visaExpireDate: ''
 })
 
 const formRules = {
@@ -397,7 +434,10 @@ const normalizeEmployee = (emp) => ({
   status: emp.status,
   birthday: fmtDate(emp.birthday) || '',
   address: emp.address || '',
-  remark: ''
+  remark: '',
+  passportNo: emp.passportNo || '',
+  visaType: emp.visaType || '',
+  visaExpireDate: fmtDate(emp.visaExpireDate) || ''
 })
 
 const loadDepartments = async () => {
@@ -415,12 +455,14 @@ const loadDepartments = async () => {
 const fetchList = async () => {
   loading.value = true
   try {
-    // 后端 EmployeeQueryDTO 仅支持 name/deptId/position/status 条件
+    // 后端 EmployeeQueryDTO 支持 name/empNo/deptId/position/status 条件
     const payload = {
       pageNum: pagination.currentPage,
       pageSize: pagination.pageSize
     }
     if (searchForm.name) payload.name = searchForm.name
+    // 工号框此前只绑了 UI、没进请求体，后端 DTO 也没有该字段，导致筛选完全无效
+    if (searchForm.employeeNo) payload.empNo = searchForm.employeeNo
     if (searchForm.departmentId) payload.deptId = searchForm.departmentId
     if (searchForm.position) payload.position = searchForm.position
     if (searchForm.status !== '') payload.status = Number(searchForm.status)
@@ -525,7 +567,10 @@ const handleSubmit = async () => {
         // 离职日期仅离职状态时上送（M1-5 入离职趋势统计来源）
         leaveDate: formData.status === 0 ? fmtDate(formData.leaveDate) : null,
         status: formData.status,
-        address: formData.address
+        address: formData.address,
+        passportNo: formData.passportNo,
+        visaType: formData.visaType,
+        visaExpireDate: fmtDate(formData.visaExpireDate)
       }
       if (formData.id) {
         payload.id = formData.id
@@ -595,15 +640,42 @@ const submitImport = async () => {
       }
       fetchList()
     } else {
-      ElMessage.error(res.msg || '导入失败')
+      ElMessage.error(res.message || '导入失败')
     }
   } finally {
     importLoading.value = false
   }
 }
 
-const handleExport = () => {
-  ElMessage.info('导出功能演示')
+const handleExport = async () => {
+  try {
+    // 与列表同一套筛选口径，导出当前查询结果
+    const params = {}
+    if (searchForm.name) params.name = searchForm.name
+    if (searchForm.employeeNo) params.empNo = searchForm.employeeNo
+    if (searchForm.departmentId) params.deptId = searchForm.departmentId
+    if (searchForm.position) params.position = searchForm.position
+    if (searchForm.status !== '') params.status = Number(searchForm.status)
+    const response = await exportEmployeeApi(params)
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      ElMessage.error(JSON.parse(text).message || '导出失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: contentType })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `员工信息_${new Date().toISOString().slice(0, 10)}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
 }
 
 const handleSizeChange = (size) => {
@@ -624,7 +696,16 @@ onMounted(async () => {
     searchForm.name = String(route.query.name)
   }
   await loadDepartments()
-  fetchList()
+  await fetchList()
+
+  // 到期提醒跳转：?id=xxx 自动定位该员工并打开编辑弹窗
+  if (route.query.id) {
+    const targetId = Number(route.query.id)
+    const row = tableData.value.find(r => r.id === targetId)
+    if (row) {
+      handleEdit(row)
+    }
+  }
 })
 </script>
 
