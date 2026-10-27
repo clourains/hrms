@@ -247,6 +247,62 @@
         <span class="total-amount">¥{{ formatMoney(computedNetSalary) }}</span>
       </div>
     </el-dialog>
+
+    <!-- 批量调薪 -->
+    <el-dialog v-model="batchVisible" title="批量调薪" width="520px">
+      <el-form :model="batchForm" label-width="90px">
+        <el-form-item label="调薪范围">
+          <el-radio-group v-model="batchForm.scope">
+            <el-radio label="all">全部在职员工</el-radio>
+            <el-radio label="dept">指定部门</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="batchForm.scope === 'dept'" label="选择部门">
+          <el-select v-model="batchForm.deptId" placeholder="请选择部门" style="width: 100%">
+            <el-option v-for="dept in departmentOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调薪方式">
+          <el-radio-group v-model="batchForm.mode">
+            <el-radio label="percent">按比例(%)</el-radio>
+            <el-radio label="fixed">固定金额(元)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="batchForm.mode === 'percent' ? '调整比例' : '调整金额'">
+          <el-input-number v-model="batchForm.value" :step="batchForm.mode === 'percent' ? 5 : 500" style="width: 100%" />
+          <span class="batch-hint">
+            {{ batchForm.mode === 'percent' ? '正数上调，负数下调（百分比）' : '正数上调，负数下调（元）' }}
+          </span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchSaving" @click="submitBatchAdjust">执行调薪</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 薪资结构 -->
+    <el-dialog v-model="structureVisible" title="薪资结构配置" width="680px">
+      <el-table :data="structureList" size="small">
+        <el-table-column prop="itemName" label="项目名称" width="150" />
+        <el-table-column label="类型" width="100">
+          <template #default="{ row }">{{ structureTypeMap[row.itemType] || row.itemType }}</template>
+        </el-table-column>
+        <el-table-column label="计算方式" width="130">
+          <template #default="{ row }">{{ structureCalcMap[row.calcType] || row.calcType }}</template>
+        </el-table-column>
+        <el-table-column label="数值" min-width="150">
+          <template #default="{ row }">
+            <el-input-number v-model="row.itemValue" :min="0" :precision="2" size="small" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <div class="structure-hint">比例为占基本工资的百分比；固定金额直接计入薪资计算</div>
+      <template #footer>
+        <el-button @click="structureVisible = false">取消</el-button>
+        <el-button type="primary" :loading="structureSaving" @click="saveStructure">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -255,7 +311,11 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, MagicStick, TrendCharts, Setting, Download, Promotion } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi, calculateAndNotifyApi, downloadPayslipApi } from '@/api/salary'
+import {
+  getSalaryListApi, getSalaryStatsApi, addSalaryApi, updateSalaryApi, calculateSalaryApi,
+  calculateAndNotifyApi, downloadPayslipApi, exportSalaryApi,
+  batchAdjustSalaryApi, getSalaryStructureApi, updateSalaryStructureApi
+} from '@/api/salary'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -608,16 +668,112 @@ const handleCalculateAndNotify = async () => {
   }
 }
 
+// 批量调薪：按部门或全体在职员工调整档案底薪
+const batchVisible = ref(false)
+const batchSaving = ref(false)
+const batchForm = reactive({ scope: 'all', deptId: null, mode: 'percent', value: 10 })
+
 const handleBatchAdjust = () => {
-  ElMessage.info('批量调薪功能演示')
+  batchForm.scope = 'all'
+  batchForm.deptId = null
+  batchForm.mode = 'percent'
+  batchForm.value = 10
+  batchVisible.value = true
 }
 
-const handleStructure = () => {
-  ElMessage.info('薪资结构配置功能演示')
+const submitBatchAdjust = async () => {
+  if (!batchForm.value || Number(batchForm.value) === 0) {
+    ElMessage.warning('请输入调薪幅度')
+    return
+  }
+  const deptName = departmentOptions.value.find(d => d.id === batchForm.deptId)
+  const scopeText = batchForm.scope === 'dept' ? (deptName ? deptName.name : '指定部门') : '全部在职员工'
+  const modeText = batchForm.mode === 'percent' ? `按 ${batchForm.value}% 调整` : `每人 ${batchForm.value} 元`
+  try {
+    await ElMessageBox.confirm(`将对${scopeText}${modeText}，确认执行？`, '批量调薪确认', { type: 'warning' })
+  } catch (e) {
+    return
+  }
+  batchSaving.value = true
+  try {
+    const payload = { mode: batchForm.mode, value: batchForm.value }
+    if (batchForm.scope === 'dept' && batchForm.deptId) {
+      payload.deptId = batchForm.deptId
+    }
+    const res = await batchAdjustSalaryApi(payload)
+    const d = (res && res.data) || {}
+    ElMessage.success(`调薪完成：影响 ${d.affected || 0} 人，月薪总额 ${d.beforeTotal || 0} → ${d.afterTotal || 0}`)
+    batchVisible.value = false
+    loadData()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    batchSaving.value = false
+  }
 }
 
-const handleExport = () => {
-  ElMessage.info('导出功能演示')
+// 薪资结构配置
+const structureVisible = ref(false)
+const structureSaving = ref(false)
+const structureList = ref([])
+const structureTypeMap = { base: '底薪', bonus: '奖金', deduction: '扣款' }
+const structureCalcMap = { percent: '按比例(%)', fixed: '固定金额' }
+
+const handleStructure = async () => {
+  structureVisible.value = true
+  try {
+    const res = await getSalaryStructureApi()
+    structureList.value = (res && res.data) || []
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+const saveStructure = async () => {
+  structureSaving.value = true
+  try {
+    await updateSalaryStructureApi(structureList.value)
+    ElMessage.success('保存成功')
+    structureVisible.value = false
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    structureSaving.value = false
+  }
+}
+
+const handleExport = async () => {
+  const params = { salaryMonth: currentMonth() }
+  if (searchForm.name) params.name = searchForm.name
+  if (searchForm.departmentId) params.deptId = searchForm.departmentId
+  if (searchForm.minSalary !== null && searchForm.minSalary !== undefined && searchForm.minSalary !== '') {
+    params.minSalary = searchForm.minSalary
+  }
+  if (searchForm.maxSalary !== null && searchForm.maxSalary !== undefined && searchForm.maxSalary !== '') {
+    params.maxSalary = searchForm.maxSalary
+  }
+  try {
+    const response = await exportSalaryApi(params)
+    // 后端出错时返回 JSON，需要先识别再下载
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      ElMessage.error(JSON.parse(text).message || '导出失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: contentType })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `薪资报表_${params.salaryMonth}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
 }
 
 const handleSizeChange = () => {
@@ -722,5 +878,17 @@ onMounted(async () => {
       color: #F56C6C;
     }
   }
+}
+.batch-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.structure-hint {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

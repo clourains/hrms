@@ -226,7 +226,7 @@ const handleSubmit = async () => {
       dialogVisible.value = false
       loadData()
     } else {
-      ElMessage.error(res.msg || '操作失败')
+      ElMessage.error(res.message || '操作失败')
     }
   } finally {
     submitting.value = false
@@ -240,7 +240,7 @@ const handleToggleStatus = async (row) => {
     ElMessage.success(target === 1 ? '已上线' : '已下线')
     loadData()
   } else {
-    ElMessage.error(res.msg || '操作失败')
+    ElMessage.error(res.message || '操作失败')
   }
 }
 
@@ -273,7 +273,7 @@ const handleDelete = async (row) => {
       ElMessage.success('已删除')
       loadData()
     } else {
-      ElMessage.error(res.msg || '删除失败')
+      ElMessage.error(res.message || '删除失败')
     }
   } catch {
     // 用户取消

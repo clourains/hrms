@@ -5,25 +5,36 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.hrms.entity.ApprovalInstance;
 import com.hrms.entity.ApprovalRecord;
+import com.hrms.entity.Attendance;
+import com.hrms.entity.Employee;
 import com.hrms.entity.Message;
 import com.hrms.entity.Overtime;
 import com.hrms.entity.User;
 import com.hrms.mapper.ApprovalInstanceMapper;
 import com.hrms.mapper.ApprovalRecordMapper;
+import com.hrms.mapper.AttendanceMapper;
+import com.hrms.mapper.EmployeeMapper;
 import com.hrms.mapper.LeaveQuotaMapper;
 import com.hrms.mapper.MessageMapper;
 import com.hrms.mapper.OvertimeMapper;
 import com.hrms.mapper.UserMapper;
 import com.hrms.service.ApprovalService;
 import com.hrms.service.LeaveQuotaService;
+import com.hrms.util.AttendanceStatus;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,8 +54,16 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     private static final int MAX_NODES = 3;
 
+    private static final Logger log = LoggerFactory.getLogger(ApprovalServiceImpl.class);
+
     @Autowired
     private ApprovalInstanceMapper instanceMapper;
+
+    @Autowired
+    private AttendanceMapper attendanceMapper;
+
+    @Autowired
+    private EmployeeMapper employeeMapper;
 
     @Autowired
     private ApprovalRecordMapper recordMapper;
@@ -412,11 +431,133 @@ public class ApprovalServiceImpl implements ApprovalService {
             if ("加班".equals(inst.getBizType())) {
                 syncOvertimeStatus(inst.getId(), 1);
             } else if ("请假".equals(inst.getBizType())) {
-                deductLeaveQuota(inst);
+                handleLeaveApproved(inst);
+            } else if ("调薪".equals(inst.getBizType())) {
+                applySalaryAdjustment(inst);
+            } else if ("补卡".equals(inst.getBizType())) {
+                handleMakeupApproved(inst);
             }
-        } catch (Exception ignored) {
-            // 业务联动失败不阻断审批主流程，可在日志中排查
+        } catch (Exception e) {
+            // 业务联动失败不阻断审批主流程，但不能再静默吞掉：
+            // 否则会出现「审批显示已通过、实际什么都没发生」且无人知晓的情况
+            log.error("审批通过后的业务联动失败，instanceId={}, bizType={}",
+                    inst.getId(), inst.getBizType(), e);
+            notifyLinkageFailure(inst, e.getMessage());
         }
+    }
+
+    /**
+     * 调薪审批通过 → 回写 sys_employee.salary。
+     *
+     * 原先这一步完全缺失：调薪单走完所有审批节点、界面显示「已通过」、站内信也发了，
+     * 但员工薪资纹丝不动，下个月一键核算还是按老底薪算，用户会认为系统在骗人。
+     */
+    private void applySalaryAdjustment(ApprovalInstance inst) {
+        JsonNode detail = parseJson(inst.getDetail());
+        if (detail == null) {
+            throw new RuntimeException("调薪单缺少明细（需包含员工与调整后月薪）");
+        }
+        BigDecimal newSalary = detail.path("newSalary").decimalValue();
+        if (newSalary == null || newSalary.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("调薪单未填写有效的调整后月薪");
+        }
+        long empId = detail.path("empId").asLong(0L);
+        if (empId <= 0) {
+            // 没指定员工时按申请人本人处理
+            empId = resolveEmpId(inst.getApplicant());
+        }
+        Employee emp = employeeMapper.selectById(empId);
+        if (emp == null) {
+            throw new RuntimeException("调薪员工不存在，id=" + empId);
+        }
+        BigDecimal oldSalary = emp.getSalary();
+        emp.setSalary(newSalary);
+        emp.setUpdateTime(LocalDateTime.now());
+        employeeMapper.updateById(emp);
+
+        sendMsg(inst.getApplicant(), "调薪已生效",
+                "调薪审批已通过：" + emp.getName() + " 的月薪由 "
+                        + (oldSalary == null ? "未设置" : oldSalary + " 元") + " 调整为 "
+                        + newSalary + " 元，后续薪资核算按新基数执行。",
+                inst.getTitle());
+    }
+
+    /**
+     * 补卡审批通过 → 回写当天上下班时间并按打卡时间重算状态。
+     * 只补申领的那一侧（上班/下班），另一侧沿用原记录。
+     */
+    private void handleMakeupApproved(ApprovalInstance inst) {
+        JsonNode detail = parseJson(inst.getDetail());
+        if (detail == null) {
+            throw new RuntimeException("补卡单缺少明细（需包含补卡日期与时间）");
+        }
+        LocalDate date = parseDate(detail.path("date").asText(""));
+        if (date == null) {
+            throw new RuntimeException("补卡单缺少补卡日期");
+        }
+        String type = detail.path("type").asText("上班");
+        LocalTime time = parseTime(detail.path("time").asText(""));
+        if (time == null) {
+            throw new RuntimeException("补卡单缺少有效的补卡时间");
+        }
+        String reason = detail.path("reason").asText("");
+        Long empId = resolveEmpId(inst.getApplicant());
+
+        Attendance existing = attendanceMapper.selectOne(new LambdaQueryWrapper<Attendance>()
+                .eq(Attendance::getEmpId, empId)
+                .eq(Attendance::getAttendDate, date)
+                .last("LIMIT 1"));
+        LocalDateTime checkIn = existing == null ? null : existing.getCheckInTime();
+        LocalDateTime checkOut = existing == null ? null : existing.getCheckOutTime();
+        if ("下班".equals(type)) {
+            checkOut = LocalDateTime.of(date, time);
+        } else {
+            checkIn = LocalDateTime.of(date, time);
+        }
+
+        BigDecimal workHours = null;
+        if (checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+            long minutes = Duration.between(checkIn, checkOut).toMinutes();
+            workHours = BigDecimal.valueOf(minutes)
+                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+        }
+
+        boolean late = checkIn != null && checkIn.toLocalTime().isAfter(LocalTime.of(9, 0));
+        boolean early = checkOut != null && checkOut.toLocalTime().isBefore(LocalTime.of(18, 0));
+        int status = AttendanceStatus.NORMAL;
+        if (late && early) {
+            status = AttendanceStatus.LATE_AND_EARLY;
+        } else if (late) {
+            status = AttendanceStatus.LATE;
+        } else if (early) {
+            status = AttendanceStatus.EARLY_LEAVE;
+        }
+        String remark = "补卡：" + type + (reason.isEmpty() ? "" : "，原因：" + reason);
+        attendanceMapper.upsertMakeup(empId, date, checkIn, checkOut, workHours, status, remark);
+
+        sendMsg(inst.getApplicant(), "补卡已生效",
+                date + " 的" + type + "打卡已补录为 " + time + "，当天考勤状态已重新计算。",
+                inst.getTitle());
+    }
+
+    private LocalTime parseTime(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        String value = text.trim();
+        try {
+            return LocalTime.parse(value.length() == 5 ? value + ":00" : value);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 业务联动失败时给申请人发站内信，让失败可见 */
+    private void notifyLinkageFailure(ApprovalInstance inst, String reason) {
+        sendMsg(inst.getApplicant(), "审批业务联动失败",
+                "审批单已通过，但后续数据处理失败：" + (reason == null ? "未知原因" : reason)
+                        + "。请联系管理员手工处理，否则本次审批不会体现在考勤/薪资中。",
+                inst.getTitle());
     }
 
     /**
@@ -434,34 +575,98 @@ public class ApprovalServiceImpl implements ApprovalService {
     }
 
     /**
-     * 请假审批通过 → 按申请人绑定员工扣减年假额度（仅年假类型扣池，事假/病假不占年假）
+     * 请假审批通过后的业务联动：
+     * 1) 按起止日期逐日写考勤记录（status=5 请假）—— 这一步原先缺失，
+     *    导致请假期间没有考勤记录，薪资计算把它当成缺勤再扣一次工资；
+     * 2) 年假类型额外扣减年假额度（事假/病假等不占年假池）。
+     *
+     * 这里失败会抛异常，由 onApproved 统一捕获并留痕，不再静默返回。
      */
-    private void deductLeaveQuota(ApprovalInstance inst) {
+    private void handleLeaveApproved(ApprovalInstance inst) {
         JsonNode detail = parseJson(inst.getDetail());
-        String leaveType = detail == null ? "年假" : Objects.toString(detail.path("leaveType").asText(""), "年假");
+        String leaveType = detail == null ? "年假" : detail.path("leaveType").asText("年假");
         if (leaveType.isEmpty()) {
             leaveType = "年假";
         }
-        if (!"年假".equals(leaveType)) {
-            return;
+        String reason = detail == null ? "" : detail.path("reason").asText("");
+        LocalDate start = parseDate(detail == null ? "" : detail.path("startDate").asText(""));
+        LocalDate end = parseDate(detail == null ? "" : detail.path("endDate").asText(""));
+
+        Long empId = resolveEmpId(inst.getApplicant());
+        if (start == null && end == null) {
+            throw new RuntimeException("请假单缺少起止日期，无法写入考勤");
         }
-        BigDecimal days = detail == null ? null : detail.path("days").decimalValue();
-        if (days == null || days.compareTo(BigDecimal.ZERO) <= 0) {
-            return;
+        if (start == null) {
+            start = end;
         }
-        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, inst.getApplicant()));
+        if (end == null) {
+            end = start;
+        }
+        if (end.isBefore(start)) {
+            LocalDate tmp = start;
+            start = end;
+            end = tmp;
+        }
+
+        // 1) 写考勤：只写工作日，与薪资的 countWorkDays 口径一致
+        writeLeaveAttendance(empId, start, end, leaveType, reason);
+
+        // 2) 年假扣池（带余额校验，不足直接失败，避免超额扣减无人知晓）
+        if (LeaveQuotaService.TYPE_ANNUAL.equals(leaveType)) {
+            BigDecimal days = detail == null ? null : detail.path("days").decimalValue();
+            if (days == null || days.compareTo(BigDecimal.ZERO) <= 0) {
+                days = BigDecimal.valueOf(countWorkDays(start, end));
+            }
+            int year = start.getYear();
+            BigDecimal remain = leaveQuotaService.remainDays(empId, year, LeaveQuotaService.TYPE_ANNUAL);
+            if (remain != null && days.compareTo(remain) > 0) {
+                throw new RuntimeException("年假余额不足：剩余 " + remain + " 天，本次申请 " + days + " 天");
+            }
+            leaveQuotaService.deduct(empId, year, LeaveQuotaService.TYPE_ANNUAL, days);
+        }
+    }
+
+    /** 按申请人账号反查员工ID；找不到直接抛异常，避免「审批通过但额度/考勤都没动」 */
+    private Long resolveEmpId(String username) {
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
         if (user == null || user.getEmpId() == null) {
-            return;
+            throw new RuntimeException("账号 " + username + " 未绑定员工档案，无法完成业务联动");
         }
-        int year = LocalDate.now().getYear();
-        if (detail != null && detail.path("startDate").asText("").length() >= 4) {
-            try {
-                year = Integer.parseInt(detail.path("startDate").asText().substring(0, 4));
-            } catch (NumberFormatException ignored) {
-                // 取当前年度
+        return user.getEmpId();
+    }
+
+    /** 逐日写入请假考勤记录（跳过周末） */
+    private void writeLeaveAttendance(Long empId, LocalDate start, LocalDate end, String leaveType, String reason) {
+        String remark = leaveType + (reason == null || reason.isEmpty() ? "" : "：" + reason);
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            DayOfWeek w = d.getDayOfWeek();
+            if (w == DayOfWeek.SATURDAY || w == DayOfWeek.SUNDAY) {
+                continue;
+            }
+            attendanceMapper.upsertNonCheckIn(empId, d, AttendanceStatus.LEAVE, remark);
+        }
+    }
+
+    private long countWorkDays(LocalDate start, LocalDate end) {
+        long count = 0;
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            DayOfWeek w = d.getDayOfWeek();
+            if (w != DayOfWeek.SATURDAY && w != DayOfWeek.SUNDAY) {
+                count++;
             }
         }
-        leaveQuotaService.deduct(user.getEmpId(), year, "年假", days);
+        return count;
+    }
+
+    private LocalDate parseDate(String text) {
+        if (text == null || text.length() < 10) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text.substring(0, 10));
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private JsonNode parseJson(String text) {

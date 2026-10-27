@@ -18,6 +18,13 @@ public class EmployeeQueryDTO implements Serializable {
     private String name;
 
     /**
+     * 工号（支持模糊匹配）
+     * 补这个字段的原因：员工列表页一直有「工号」搜索框，但前端没往请求里带、
+     * 后端也没有这个字段，输入工号点搜索会原样返回全量，看起来像筛选成功其实是没筛。
+     */
+    private String empNo;
+
+    /**
      * 部门ID
      */
     private Long deptId;

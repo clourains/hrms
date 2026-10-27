@@ -323,9 +323,11 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<Salary> salaries = salaryMapper.selectList(null);
 
         // 过滤：排除关联员工已删除/不存在的工资记录
+        // 状态口径：1=在职、2=试用期（两者都发薪）、0=离职；只排除离职，否则试用期员工
+        // 会被漏掉，导致薪资分布人数少于员工总数（口径对不上）。
         List<Employee> allEmployees = employeeMapper.selectList(null);
         Set<Long> validEmpIds = allEmployees.stream()
-                .filter(e -> e.getStatus() != null && e.getStatus() == 1)
+                .filter(e -> e.getStatus() != null && e.getStatus() != 0)
                 .map(Employee::getId)
                 .collect(Collectors.toSet());
         salaries = salaries.stream()

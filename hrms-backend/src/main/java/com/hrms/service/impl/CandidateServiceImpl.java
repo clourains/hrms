@@ -11,17 +11,20 @@ import com.hrms.entity.Department;
 import com.hrms.entity.Employee;
 import com.hrms.entity.JobRequisition;
 import com.hrms.entity.Probation;
+import com.hrms.entity.User;
 import com.hrms.mapper.CandidateInterviewMapper;
 import com.hrms.mapper.CandidateMapper;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.mapper.EmployeeMapper;
 import com.hrms.mapper.JobRequisitionMapper;
 import com.hrms.mapper.ProbationMapper;
+import com.hrms.mapper.UserMapper;
 import com.hrms.service.CandidateService;
 import com.hrms.util.CodeReleaser;
 import com.hrms.util.SortUtil;
 import com.hrms.util.Validators;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -54,6 +57,9 @@ public class CandidateServiceImpl implements CandidateService {
     /** 阶段名称，统计漏斗和淘汰提示共用 */
     private static final String[] STAGE_NAMES = {"待筛选", "初试", "复试", "待录用", "已录用", "已淘汰"};
 
+    /** 录用时自动开通的账号初始密码（与 UserServiceImpl 默认值一致） */
+    private static final String DEFAULT_PASSWORD = "123456";
+
     static {
         CANDIDATE_SORT.put("candidateNo", SortUtil.OrderCol.natural("candidate_no"));
         CANDIDATE_SORT.put("name", SortUtil.OrderCol.natural("name"));
@@ -80,6 +86,12 @@ public class CandidateServiceImpl implements CandidateService {
 
     @Autowired
     private DepartmentMapper departmentMapper;
+
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @Override
     public PageResult<Candidate> pageQuery(RecruitQueryDTO queryDTO) {
@@ -338,6 +350,21 @@ public class CandidateServiceImpl implements CandidateService {
         employee.setUpdateTime(LocalDateTime.now());
         employeeMapper.insert(employee);
 
+        // 1.1 同步开通登录账号
+        // 原先这一步缺失：录用后员工能出现在花名册里，但没有 sys_user，
+        // 导致新人登不进系统，打卡接口还会报「当前账号未绑定员工档案」
+        String username = generateUsername(employee.getEmpNo());
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
+        user.setNickname(candidate.getName());
+        user.setRole("user");
+        user.setEmpId(employee.getId());
+        user.setStatus(1);
+        user.setCreateTime(LocalDateTime.now());
+        user.setUpdateTime(LocalDateTime.now());
+        userMapper.insert(user);
+
         // 2. 建试用期记录，默认 3 个月
         int months = dto.getProbationMonths() == null ? 3 : dto.getProbationMonths();
         if (months <= 0 || months > 12) {
@@ -428,5 +455,20 @@ public class CandidateServiceImpl implements CandidateService {
         Integer max = employeeMapper.maxEmpNoSeqIncludeDeleted();
         int next = (max == null ? 0 : max) + 1;
         return String.format("EMP%03d", next);
+    }
+
+    /**
+     * 录用时给新人生成登录账号：以工号为用户名，重名自动追加序号。
+     * 初始密码与 UserServiceImpl 的默认密码保持一致（123456），首次登录后建议修改。
+     */
+    private String generateUsername(String empNo) {
+        String base = StringUtils.hasText(empNo) ? empNo : "emp";
+        String candidate = base;
+        int suffix = 1;
+        while (userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getUsername, candidate)) > 0) {
+            candidate = base + suffix;
+            suffix++;
+        }
+        return candidate;
     }
 }

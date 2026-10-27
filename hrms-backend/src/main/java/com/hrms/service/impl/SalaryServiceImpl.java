@@ -12,6 +12,7 @@ import com.hrms.mapper.OvertimeMapper;
 import com.hrms.mapper.PerformanceMapper;
 import com.hrms.mapper.SalaryMapper;
 import com.hrms.service.SalaryService;
+import com.hrms.util.AttendanceStatus;
 import com.hrms.util.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -230,19 +231,26 @@ public class SalaryServiceImpl implements SalaryService {
                     new LambdaQueryWrapper<Attendance>()
                             .eq(Attendance::getEmpId, emp.getId())
                             .between(Attendance::getAttendDate, startDate, endDate));
-            long attendDays = attList.size();
+            long attendDays = 0;
+            long leaveDays = 0;
             int lateCount = 0;
             int earlyCount = 0;
             for (Attendance att : attList) {
                 Integer st = att.getStatus();
-                if (st != null && (st == 1 || st == 3)) {
+                if (AttendanceStatus.isLate(st)) {
                     lateCount++;
                 }
-                if (st != null && (st == 2 || st == 3)) {
+                if (AttendanceStatus.isEarlyLeave(st)) {
                     earlyCount++;
                 }
+                if (AttendanceStatus.isLeave(st)) {
+                    leaveDays++;
+                } else {
+                    attendDays++;
+                }
             }
-            long absentDays = Math.max(0, workDays - attendDays);
+            // 请假已审批通过的天数不算缺勤，否则会出现「扣年假额度 + 扣工资」双重惩罚
+            long absentDays = Math.max(0, workDays - attendDays - leaveDays);
             BigDecimal daySalary = base.divide(workDaysBase, 4, RoundingMode.HALF_UP);
             BigDecimal absentCut = daySalary.multiply(BigDecimal.valueOf(absentDays))
                     .setScale(2, RoundingMode.HALF_UP);

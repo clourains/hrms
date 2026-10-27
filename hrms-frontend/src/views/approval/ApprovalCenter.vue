@@ -139,6 +139,9 @@
             <el-radio-button value="调薪">调薪</el-radio-button>
             <el-radio-button value="通用">通用</el-radio-button>
           </el-radio-group>
+          <div v-if="applyForm.bizType === '通用'" class="approver-hint">
+            通用类型只做审批留痕，通过后不会自动改动任何业务数据，需要人工处理
+          </div>
         </el-form-item>
         <el-form-item label="标题" required>
           <el-input v-model="applyForm.title" placeholder="如：十月年假申请" maxlength="100" show-word-limit />
@@ -154,6 +157,29 @@
           </el-form-item>
           <el-form-item label="请假天数">
             <el-input-number v-model="applyForm.days" :min="0.5" :step="0.5" :max="365" />
+          </el-form-item>
+        </template>
+
+        <!-- 调薪明细：审批通过后会把新月薪写回员工档案 -->
+        <template v-if="applyForm.bizType === '调薪'">
+          <el-form-item label="调薪员工" required>
+            <el-select v-model="applyForm.empId" filterable placeholder="选择要调薪的员工" style="width: 100%">
+              <el-option
+                v-for="e in employeeOptions"
+                :key="e.id"
+                :label="`${e.name}（${e.empNo}）${e.deptName ? ' · ' + e.deptName : ''}`"
+                :value="e.id"
+              />
+            </el-select>
+            <div v-if="selectedEmp" class="approver-hint">
+              当前月薪：{{ selectedEmp.salary != null ? selectedEmp.salary + ' 元' : '未设置' }}
+            </div>
+          </el-form-item>
+          <el-form-item label="调整后月薪(元)" required>
+            <el-input-number v-model="applyForm.newSalary" :min="0" :step="500" :precision="2" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="生效月份">
+            <el-input v-model="applyForm.effectiveMonth" placeholder="如 2026-11，留空表示立即生效" maxlength="7" style="width: 100%" />
           </el-form-item>
         </template>
 
@@ -195,7 +221,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -212,6 +238,7 @@ import {
   getApprovalDetailApi,
   getApproverOptionsApi
 } from '@/api/approval'
+import { getEmployeeListApi } from '@/api/employee'
 
 // 支持消息快速通道深链：/approval?tab=todo|mine|done
 const route = useRoute()
@@ -243,8 +270,31 @@ const applyForm = reactive({
   endDate: '',
   days: 1,
   reason: '',
+  // 调薪专用
+  empId: '',
+  newSalary: null,
+  effectiveMonth: '',
   approvers: []
 })
+
+// 调薪需要选人：拉一份在职员工列表供下拉选择
+const employeeOptions = ref([])
+const loadEmployeeOptions = async () => {
+  try {
+    const res = await getEmployeeListApi({ status: 1 })
+    employeeOptions.value = (res.data || []).map(e => ({
+      id: e.id,
+      name: e.name,
+      empNo: e.empNo,
+      deptName: e.departmentName || e.deptName || '',
+      salary: e.salary
+    }))
+  } catch (e) { employeeOptions.value = [] }
+}
+watch(() => applyForm.bizType, (t) => {
+  if (t === '调薪' && employeeOptions.value.length === 0) loadEmployeeOptions()
+})
+const selectedEmp = computed(() => employeeOptions.value.find(e => e.id === applyForm.empId) || null)
 
 const leaveInfo = computed(() => {
   if (!detail.value || detail.value.bizType !== '请假' || !detail.value.detail) return null
@@ -358,7 +408,10 @@ const handleCancel = async () => {
 }
 
 const openApply = async () => {
-  Object.assign(applyForm, { bizType: '请假', title: '', startDate: '', endDate: '', days: 1, reason: '', approvers: [] })
+  Object.assign(applyForm, {
+    bizType: '请假', title: '', startDate: '', endDate: '', days: 1, reason: '',
+    empId: '', newSalary: null, effectiveMonth: '', approvers: []
+  })
   applyVisible.value = true
   try {
     const res = await getApproverOptionsApi()
@@ -372,13 +425,29 @@ const handleApply = async () => {
   if (f.bizType === '请假' && (!f.startDate || !f.endDate)) {
     ElMessage.warning('请选择请假起止日期'); return
   }
+  if (f.bizType === '调薪') {
+    if (!f.empId) { ElMessage.warning('请选择要调薪的员工'); return }
+    if (f.newSalary == null || f.newSalary <= 0) { ElMessage.warning('请填写调整后的月薪'); return }
+  }
   if (!f.reason.trim()) { ElMessage.warning('请填写事由/内容'); return }
   if (f.approvers.length === 0) { ElMessage.warning('请选择审批人'); return }
   applyLoading.value = true
   try {
-    const detailPayload = f.bizType === '请假'
-      ? { startDate: f.startDate, endDate: f.endDate, days: f.days, reason: f.reason }
-      : f.reason
+    let detailPayload
+    if (f.bizType === '请假') {
+      detailPayload = { startDate: f.startDate, endDate: f.endDate, days: f.days, reason: f.reason }
+    } else if (f.bizType === '调薪') {
+      const emp = employeeOptions.value.find(e => e.id === f.empId)
+      detailPayload = {
+        empId: f.empId,
+        empName: emp ? emp.name : '',
+        newSalary: f.newSalary,
+        effectiveMonth: f.effectiveMonth || '',
+        reason: f.reason
+      }
+    } else {
+      detailPayload = f.reason
+    }
     await applyApprovalApi({ bizType: f.bizType, title: f.title, detail: detailPayload, approvers: f.approvers })
     ElMessage.success('申请已提交，已通知第一级审批人')
     applyVisible.value = false

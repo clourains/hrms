@@ -218,7 +218,7 @@
       </el-form>
       <template #footer>
         <el-button @click="reviewDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitSelfReview">提交自评</el-button>
+        <el-button type="primary" :loading="reviewSubmitting" @click="submitSelfReview">提交自评</el-button>
       </template>
     </el-dialog>
 
@@ -264,6 +264,223 @@
         <el-button type="primary" :loading="submitLoading" @click="submitAdd">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 绩效分析 -->
+    <el-dialog v-model="analyticsVisible" title="绩效分析" width="640px">
+      <div v-loading="analyticsLoading">
+        <el-row :gutter="16" class="analytics-summary">
+          <el-col :span="8">
+            <div class="summary-card">
+              <div class="summary-label">考核周期</div>
+              <div class="summary-value">{{ analyticsPeriod }}</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="summary-card">
+              <div class="summary-label">参评人数</div>
+              <div class="summary-value">{{ analytics.totalCount }} 人</div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="summary-card">
+              <div class="summary-label">平均分</div>
+              <div class="summary-value">{{ analytics.avgScore }}</div>
+            </div>
+          </el-col>
+        </el-row>
+        <div class="analytics-title">等级分布</div>
+        <div v-for="g in gradeBars" :key="g.label" class="grade-row">
+          <span class="grade-name">{{ g.label }}</span>
+          <el-progress
+            :percentage="g.percent"
+            :color="g.color"
+            :stroke-width="14"
+            :show-text="false"
+            class="grade-progress"
+          />
+          <span class="grade-num">{{ g.count }} 人 / {{ g.percent }}%</span>
+        </div>
+        <el-empty v-if="!analyticsLoading && !analytics.totalCount" description="当前周期暂无绩效数据" />
+      </div>
+      <template #footer>
+        <el-button @click="analyticsVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 指标配置 -->
+    <el-dialog v-model="indicatorVisible" title="绩效指标配置" width="680px">
+      <el-table :data="indicatorList" size="small">
+        <el-table-column prop="name" label="指标名称" width="140" />
+        <el-table-column label="权重(%)" width="150">
+          <template #default="{ row }">
+            <el-input-number v-model="row.weight" :min="0" :max="100" :step="5" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="说明" min-width="200" />
+      </el-table>
+      <div class="weight-total">
+        权重合计：
+        <span :class="{ 'weight-error': indicatorWeightTotal !== 100 }">{{ indicatorWeightTotal }}%</span>
+        <span class="weight-hint">（建议等于 100%）</span>
+      </div>
+      <template #footer>
+        <el-button @click="indicatorVisible = false">取消</el-button>
+        <el-button type="primary" :loading="indicatorSaving" @click="saveIndicators">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 创建考核周期 -->
+    <el-dialog v-model="cycleVisible" title="创建考核周期" width="520px">
+      <el-form :model="cycleForm" label-width="90px">
+        <el-form-item label="周期名称">
+          <el-input v-model="cycleForm.cycleName" placeholder="如：2026年11月考核" />
+        </el-form-item>
+        <el-form-item label="考核月份">
+          <el-date-picker v-model="cycleForm.period" type="month" value-format="YYYY-MM" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="开始日期">
+          <el-date-picker v-model="cycleForm.startDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="结束日期">
+          <el-date-picker v-model="cycleForm.endDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="cycleVisible = false">取消</el-button>
+        <el-button type="primary" :loading="cycleSaving" @click="saveCycle">创建</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 绩效详情 -->
+    <el-dialog v-model="detailVisible" title="绩效详情" width="680px">
+      <div v-loading="detailLoading">
+        <el-descriptions v-if="detailData" :column="2" border>
+          <el-descriptions-item label="姓名">{{ detailData.name }}</el-descriptions-item>
+          <el-descriptions-item label="部门">{{ detailData.department }}</el-descriptions-item>
+          <el-descriptions-item label="考核周期">{{ detailData.period }}</el-descriptions-item>
+          <el-descriptions-item label="流程状态">{{ getStatusText(detailData.flowStatus || 'completed') }}</el-descriptions-item>
+          <el-descriptions-item label="工作质量">{{ detailData.workQuality ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="工作效率">{{ detailData.workEfficiency ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="工作态度">{{ detailData.workAttitude ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="团队协作">{{ detailData.teamwork ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="创新改进">{{ detailData.innovation ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="自评总分">{{ detailData.selfScore ?? '未提交' }}</el-descriptions-item>
+          <el-descriptions-item label="上级评分">{{ detailData.managerScore ?? '未评分' }}</el-descriptions-item>
+          <el-descriptions-item label="最终得分">{{ detailData.totalScore ?? '-' }}</el-descriptions-item>
+          <el-descriptions-item label="绩效等级">{{ detailData.grade || '待定' }}</el-descriptions-item>
+          <el-descriptions-item label="考核人">{{ detailData.evaluator || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <div v-if="detailData" class="detail-section">
+          <div class="detail-label">评语</div>
+          <div class="detail-text">{{ detailData.comment || '--' }}</div>
+        </div>
+        <div v-if="detailData" class="detail-section">
+          <div class="detail-label">自我总结</div>
+          <div class="detail-text">{{ detailData.selfSummary || '--' }}</div>
+        </div>
+        <div v-if="detailData" class="detail-section">
+          <div class="detail-label">改进计划</div>
+          <div class="detail-text">{{ detailData.improvementPlan || '--' }}</div>
+        </div>
+        <div v-if="detailData && detailData.interviewNote" class="detail-section">
+          <div class="detail-label">面谈记录（{{ detailData.interviewTime || '' }}）</div>
+          <div class="detail-text">{{ detailData.interviewNote }}</div>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- 上级评分 -->
+    <el-dialog v-model="managerVisible" title="上级评分" width="560px">
+      <el-form :model="managerForm" label-width="100px">
+        <el-form-item label="工作质量">
+          <el-input-number v-model="managerForm.workQuality" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="工作效率">
+          <el-input-number v-model="managerForm.workEfficiency" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="工作态度">
+          <el-input-number v-model="managerForm.workAttitude" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="团队协作">
+          <el-input-number v-model="managerForm.teamwork" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="创新改进">
+          <el-input-number v-model="managerForm.innovation" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="评语">
+          <el-input v-model="managerForm.comment" type="textarea" :rows="3" placeholder="请输入评语" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="managerVisible = false">取消</el-button>
+        <el-button type="primary" :loading="managerSaving" @click="submitManagerReview">提交评分</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 绩效面谈 -->
+    <el-dialog v-model="interviewVisible" title="绩效面谈" width="560px">
+      <el-form :model="interviewForm" label-width="100px">
+        <el-form-item label="面谈时间">
+          <el-date-picker
+            v-model="interviewForm.interviewTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            placeholder="请选择面谈时间"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="面谈记录" required>
+          <el-input v-model="interviewForm.interviewNote" type="textarea" :rows="5" placeholder="请记录面谈内容、改进共识与后续计划" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="interviewVisible = false">取消</el-button>
+        <el-button type="primary" :loading="interviewSaving" @click="submitInterview">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 导入绩效 -->
+    <el-dialog v-model="importVisible" title="导入绩效" width="600px">
+      <el-alert
+        title="请先下载模板并按表头填写：工号/姓名至少填一项，考核周期格式为 yyyy-MM，五个维度分数 0-100"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 12px"
+      />
+      <el-upload
+        drag
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :on-change="onImportFileChange"
+        :on-remove="() => (importFile = null)"
+      >
+        <el-icon class="el-icon--upload"><Upload /></el-icon>
+        <div class="el-upload__text">将 Excel 拖到此处，或<em>点击选择</em></div>
+      </el-upload>
+      <div v-if="importResult" class="import-result">
+        <div class="import-summary">
+          成功 {{ importResult.success }} 条，失败 {{ importResult.failed }} 条
+        </div>
+        <el-table
+          v-if="importResult.errors && importResult.errors.length"
+          :data="importResult.errors"
+          size="small"
+          border
+          max-height="220"
+        >
+          <el-table-column prop="row" label="行号" width="70" />
+          <el-table-column prop="empNo" label="工号" width="100" />
+          <el-table-column prop="name" label="姓名" width="100" />
+          <el-table-column prop="reason" label="失败原因" min-width="180" show-overflow-tooltip />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="downloadTemplate">下载模板</el-button>
+        <el-button @click="importVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importLoading" @click="submitImport">开始导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -275,7 +492,12 @@ import {
   Trophy, Medal, Star, Warning
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { getPerformanceListApi, getPerformanceStatsApi, addPerformanceApi } from '@/api/performance'
+import {
+  getPerformanceListApi, getPerformanceStatsApi, addPerformanceApi, exportPerformanceApi,
+  getPerformanceIndicatorsApi, updatePerformanceIndicatorsApi, createReviewCycleApi,
+  getPerformanceDetailApi, submitSelfReviewApi, submitManagerReviewApi, performanceInterviewApi,
+  downloadPerformanceTemplateApi, importPerformanceApi
+} from '@/api/performance'
 import { getEmployeeListApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
@@ -354,14 +576,6 @@ const reviewForm = reactive({
   improvementPlan: ''
 })
 
-// 指标为纯前端展示数据（后端暂无指标配置接口），不参与提交逻辑
-const indicatorList = ref([
-  { id: 1, name: '工作业绩', weight: 40, description: '工作目标完成情况、工作质量和效率', selfScore: 0 },
-  { id: 2, name: '工作能力', weight: 25, description: '专业技能、学习能力、问题解决能力', selfScore: 0 },
-  { id: 3, name: '工作态度', weight: 20, description: '责任心、积极性、团队协作', selfScore: 0 },
-  { id: 4, name: '创新改进', weight: 15, description: '创新意识、流程优化、知识分享', selfScore: 0 }
-])
-
 const addForm = reactive({
   empId: null,
   period: periodOptions.value[0].value,
@@ -411,13 +625,13 @@ const normalizeRow = (item) => {
     name: emp.name || '-',
     department: emp.departmentName || '-',
     position: emp.position || '-',
-    // 后端无自评/上级评分字段，两列只能显示未提交
-    selfScore: null,
-    managerScore: null,
+    // 自评/上级评分/流程状态来自绩效流程字段
+    selfScore: item.selfScore != null ? Number(item.selfScore) : null,
+    managerScore: item.managerScore != null ? Number(item.managerScore) : null,
     finalScore: item.totalScore != null ? Number(item.totalScore) : null,
     grade: item.grade || null,
-    // 后端无流程状态字段，已有成绩的记录统一按已完成展示
-    status: 'completed'
+    status: item.flowStatus || 'completed',
+    flowStatus: item.flowStatus || 'completed'
   }
 }
 
@@ -527,51 +741,408 @@ const submitAdd = async () => {
   })
 }
 
+// ===== 导入绩效：模板下载 + Excel 上传 =====
+const importVisible = ref(false)
+const importLoading = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+
 const handleImport = () => {
-  ElMessage.info('导入功能演示')
+  importFile.value = null
+  importResult.value = null
+  importVisible.value = true
 }
 
-const handleExport = () => {
-  ElMessage.info('导出功能演示')
+const onImportFileChange = (file) => {
+  importFile.value = file.raw
 }
 
-const handleIndicators = () => {
-  ElMessage.info('指标配置功能演示')
+const downloadTemplate = async () => {
+  try {
+    const response = await downloadPerformanceTemplateApi()
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      ElMessage.error(JSON.parse(text).message || '模板下载失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: contentType })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '绩效导入模板.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
 }
 
-const handleAnalytics = () => {
-  ElMessage.info('绩效分析功能演示')
+const submitImport = async () => {
+  if (!importFile.value) {
+    ElMessage.warning('请选择要导入的 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', importFile.value)
+    const res = await importPerformanceApi(formData)
+    importResult.value = res.data || { success: 0, failed: 0, errors: [] }
+    ElMessage.success(`导入完成：成功 ${importResult.value.success} 条，失败 ${importResult.value.failed} 条`)
+    if (importResult.value.success > 0) {
+      loadData()
+    }
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    importLoading.value = false
+  }
 }
 
-// 后端暂无考核周期管理接口，保留演示逻辑
+const handleExport = async () => {
+  const period = searchForm.cycleId || periodOptions.value[0].value
+  try {
+    const response = await exportPerformanceApi({ period })
+    // 后端出错时返回 JSON，需要先识别再下载
+    const contentType = response.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      ElMessage.error(JSON.parse(text).message || '导出失败')
+      return
+    }
+    const blob = new Blob([response.data], { type: contentType })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `绩效报表_${period}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+// 指标配置：从后端加载指标，可编辑权重后整体保存
+const indicatorVisible = ref(false)
+const indicatorSaving = ref(false)
+const indicatorList = ref([
+  { id: null, name: '工作业绩', weight: 40, description: '工作目标完成情况' },
+  { id: null, name: '工作能力', weight: 25, description: '专业技能与学习能力' },
+  { id: null, name: '工作态度', weight: 20, description: '责任心与积极性' },
+  { id: null, name: '创新改进', weight: 15, description: '创新意识与流程优化' }
+])
+const indicatorWeightTotal = computed(() =>
+  indicatorList.value.reduce((acc, cur) => acc + Number(cur.weight || 0), 0)
+)
+
+const handleIndicators = async () => {
+  indicatorVisible.value = true
+  try {
+    const res = await getPerformanceIndicatorsApi()
+    const list = (res && res.data) || []
+    if (list.length) {
+      indicatorList.value = list.map(it => ({
+        id: it.id,
+        name: it.indicatorName,
+        weight: it.weight,
+        description: it.description,
+        sort: it.sort
+      }))
+    }
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+}
+
+const saveIndicators = async () => {
+  if (indicatorWeightTotal.value !== 100) {
+    ElMessage.warning('权重合计建议为 100%，当前为 ' + indicatorWeightTotal.value + '%')
+  }
+  indicatorSaving.value = true
+  try {
+    await updatePerformanceIndicatorsApi(indicatorList.value.map(it => ({
+      id: it.id,
+      indicatorName: it.name,
+      weight: it.weight,
+      description: it.description,
+      sort: it.sort
+    })))
+    ElMessage.success('保存成功')
+    indicatorVisible.value = false
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    indicatorSaving.value = false
+  }
+}
+
+// 创建考核周期
+const cycleVisible = ref(false)
+const cycleSaving = ref(false)
+const cycleForm = reactive({ cycleName: '', period: '', startDate: '', endDate: '' })
+
 const handleCreateCycle = () => {
-  ElMessage.info('创建考核周期功能演示')
+  const period = searchForm.cycleId || periodOptions.value[0].value
+  const [year, month] = period.split('-').map(Number)
+  const lastDay = new Date(year, month, 0).getDate()
+  Object.assign(cycleForm, {
+    cycleName: `${year}年${month}月考核`,
+    period,
+    startDate: `${period}-01`,
+    endDate: `${period}-${String(lastDay).padStart(2, '0')}`
+  })
+  cycleVisible.value = true
 }
 
-const handleView = (row) => {
-  ElMessage.info(`查看 ${row.name} 的绩效详情`)
+const saveCycle = async () => {
+  if (!cycleForm.cycleName || !cycleForm.period) {
+    ElMessage.warning('请填写周期名称和考核月份')
+    return
+  }
+  cycleSaving.value = true
+  try {
+    await createReviewCycleApi({ ...cycleForm, status: 1 })
+    ElMessage.success('创建成功')
+    cycleVisible.value = false
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    cycleSaving.value = false
+  }
 }
 
-const handleSelfReview = (row) => {
+// 绩效分析：基于 /performance/statistics 展示等级分布
+const analyticsVisible = ref(false)
+const analyticsLoading = ref(false)
+const analyticsPeriod = ref('')
+const analytics = reactive({
+  totalCount: 0,
+  avgScore: 0,
+  gradeACount: 0,
+  gradeBCount: 0,
+  gradeCCount: 0,
+  gradeDCount: 0
+})
+
+const gradeBars = computed(() => {
+  const items = [
+    { label: 'A 级（优秀）', count: analytics.gradeACount || 0, color: '#67c23a' },
+    { label: 'B 级（良好）', count: analytics.gradeBCount || 0, color: '#409eff' },
+    { label: 'C 级（合格）', count: analytics.gradeCCount || 0, color: '#e6a23c' },
+    { label: 'D 级（待改进）', count: analytics.gradeDCount || 0, color: '#f56c6c' }
+  ]
+  const sum = items.reduce((acc, cur) => acc + cur.count, 0)
+  return items.map(it => ({ ...it, percent: sum ? Math.round(it.count / sum * 100) : 0 }))
+})
+
+const handleAnalytics = async () => {
+  const period = searchForm.cycleId || periodOptions.value[0].value
+  analyticsPeriod.value = period
+  analyticsVisible.value = true
+  analyticsLoading.value = true
+  try {
+    const res = await getPerformanceStatsApi({ period })
+    const d = (res && res.data) || {}
+    analytics.totalCount = d.totalCount || 0
+    analytics.avgScore = d.avgScore != null ? d.avgScore : 0
+    analytics.gradeACount = d.gradeACount || 0
+    analytics.gradeBCount = d.gradeBCount || 0
+    analytics.gradeCCount = d.gradeCCount || 0
+    analytics.gradeDCount = d.gradeDCount || 0
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    analyticsLoading.value = false
+  }
+}
+
+// ===== 绩效详情 =====
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detailData = ref(null)
+
+const handleView = async (row) => {
+  detailData.value = { ...row }
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    const res = await getPerformanceDetailApi(row.id)
+    if (res.data) {
+      detailData.value = { ...row, ...res.data }
+    }
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+// ===== 员工自评 =====
+const reviewTargetId = ref(null)
+const reviewSubmitting = ref(false)
+
+const handleSelfReview = async (row) => {
+  reviewTargetId.value = row.id
   currentReview.name = row.name
   currentReview.department = row.department
-  indicatorList.value.forEach(item => { item.selfScore = 0 })
   reviewForm.selfSummary = ''
   reviewForm.improvementPlan = ''
+  try {
+    const res = await getPerformanceIndicatorsApi()
+    const list = (res && res.data) || []
+    if (list.length) {
+      indicatorList.value = list.map(it => ({
+        id: it.id,
+        name: it.indicatorName,
+        weight: it.weight,
+        description: it.description,
+        sort: it.sort,
+        selfScore: 0
+      }))
+    } else {
+      indicatorList.value.forEach(item => { item.selfScore = 0 })
+    }
+  } catch (e) {
+    indicatorList.value.forEach(item => { item.selfScore = 0 })
+  }
   reviewDialogVisible.value = true
 }
 
-const handleManagerReview = (row) => {
-  ElMessage.info(`为 ${row.name} 进行上级评分`)
+const submitSelfReview = async () => {
+  if (!reviewTargetId.value) return
+  const totalWeight = indicatorList.value.reduce((acc, cur) => acc + Number(cur.weight || 0), 0) || 100
+  const weighted = indicatorList.value.reduce(
+    (acc, cur) => acc + Number(cur.selfScore || 0) * Number(cur.weight || 0), 0
+  )
+  const selfScore = Math.round((weighted / totalWeight) * 100) / 100
+  reviewSubmitting.value = true
+  try {
+    await submitSelfReviewApi(reviewTargetId.value, {
+      selfScore,
+      selfSummary: reviewForm.selfSummary,
+      improvementPlan: reviewForm.improvementPlan
+    })
+    ElMessage.success('自评已提交，进入上级评分环节')
+    reviewDialogVisible.value = false
+    await loadData()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    reviewSubmitting.value = false
+  }
 }
 
-const handleInterview = (row) => {
-  ElMessage.info(`与 ${row.name} 进行绩效面谈`)
+// ===== 上级评分 =====
+const managerVisible = ref(false)
+const managerSaving = ref(false)
+const managerTargetId = ref(null)
+const managerForm = reactive({
+  workQuality: 0,
+  workEfficiency: 0,
+  workAttitude: 0,
+  teamwork: 0,
+  innovation: 0,
+  comment: ''
+})
+
+const handleManagerReview = async (row) => {
+  managerTargetId.value = row.id
+  try {
+    const res = await getPerformanceDetailApi(row.id)
+    const d = (res && res.data) || {}
+    Object.assign(managerForm, {
+      workQuality: Number(d.workQuality || 0),
+      workEfficiency: Number(d.workEfficiency || 0),
+      workAttitude: Number(d.workAttitude || 0),
+      teamwork: Number(d.teamwork || 0),
+      innovation: Number(d.innovation || 0),
+      comment: d.comment || ''
+    })
+  } catch (e) {
+    Object.assign(managerForm, {
+      workQuality: 0,
+      workEfficiency: 0,
+      workAttitude: 0,
+      teamwork: 0,
+      innovation: 0,
+      comment: ''
+    })
+  }
+  managerVisible.value = true
 }
 
-const submitSelfReview = () => {
-  ElMessage.success('自评提交成功')
-  reviewDialogVisible.value = false
+const submitManagerReview = async () => {
+  if (!managerTargetId.value) return
+  managerSaving.value = true
+  try {
+    await submitManagerReviewApi(managerTargetId.value, { ...managerForm })
+    ElMessage.success('评分已提交，进入绩效面谈环节')
+    managerVisible.value = false
+    await loadData()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    managerSaving.value = false
+  }
+}
+
+// ===== 绩效面谈 =====
+const interviewVisible = ref(false)
+const interviewSaving = ref(false)
+const interviewTargetId = ref(null)
+const interviewForm = reactive({
+  interviewTime: '',
+  interviewNote: ''
+})
+
+const nowStamp = () => {
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+const handleInterview = async (row) => {
+  interviewTargetId.value = row.id
+  interviewForm.interviewTime = nowStamp()
+  interviewForm.interviewNote = ''
+  try {
+    const res = await getPerformanceDetailApi(row.id)
+    const d = (res && res.data) || {}
+    if (d.interviewNote) {
+      interviewForm.interviewNote = d.interviewNote
+    }
+    if (d.interviewTime) {
+      interviewForm.interviewTime = String(d.interviewTime).replace('T', ' ').slice(0, 19)
+    }
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  }
+  interviewVisible.value = true
+}
+
+const submitInterview = async () => {
+  if (!interviewTargetId.value) return
+  if (!interviewForm.interviewNote.trim()) {
+    ElMessage.warning('请填写面谈记录')
+    return
+  }
+  interviewSaving.value = true
+  try {
+    await performanceInterviewApi(interviewTargetId.value, { ...interviewForm })
+    ElMessage.success('面谈记录已保存')
+    interviewVisible.value = false
+    await loadData()
+  } catch (e) {
+    // 错误提示由 request 拦截器统一处理
+  } finally {
+    interviewSaving.value = false
+  }
 }
 
 const handleSizeChange = () => {
@@ -675,5 +1246,106 @@ onMounted(async () => {
     font-size: 14px;
     color: var(--el-text-color-regular);
   }
+}
+.analytics-summary {
+  margin-bottom: 18px;
+}
+
+.summary-card {
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+
+.summary-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.analytics-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 6px 0 14px;
+  color: var(--el-text-color-primary);
+}
+
+.grade-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.grade-name {
+  width: 96px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.grade-progress {
+  flex: 1;
+}
+
+.grade-num {
+  width: 110px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.weight-total {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.weight-error {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+.weight-hint {
+  color: var(--el-text-color-secondary);
+}
+
+.detail-section {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+
+.detail-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  margin-bottom: 6px;
+}
+
+.detail-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+}
+
+.import-result {
+  margin-top: 16px;
+}
+
+.import-summary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+  margin-bottom: 10px;
 }
 </style>

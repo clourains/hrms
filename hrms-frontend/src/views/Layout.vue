@@ -281,6 +281,25 @@
         />
       </div>
     </el-dialog>
+
+    <!-- 修改密码 -->
+    <el-dialog v-model="pwdVisible" title="修改密码" width="440px" destroy-on-close>
+      <el-form ref="pwdFormRef" :model="pwdForm" :rules="pwdRules" label-width="90px">
+        <el-form-item label="原密码" prop="oldPassword">
+          <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="请输入原密码" />
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="6-32 位" />
+        </el-form-item>
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input v-model="pwdForm.confirmPassword" type="password" show-password placeholder="请再次输入新密码" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pwdVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pwdSaving" @click="submitPassword">确定</el-button>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 
@@ -301,6 +320,7 @@ import {
   readAllMessagesApi
 } from '@/api/message'
 import { getEmployeeListApi } from '@/api/employee'
+import { changePasswordApi } from '@/api/auth'
 import {
   User,
   OfficeBuilding,
@@ -735,13 +755,55 @@ const toggleFullscreen = () => {
   }
 }
 
+// 修改密码
+const pwdVisible = ref(false)
+const pwdSaving = ref(false)
+const pwdFormRef = ref(null)
+const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const pwdRules = {
+  oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, max: 32, message: '长度需为 6-32 位', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (rule, value, cb) =>
+        value === pwdForm.newPassword ? cb() : cb(new Error('两次输入的新密码不一致')),
+      trigger: 'blur'
+    }
+  ]
+}
+
+const submitPassword = async () => {
+  if (!pwdFormRef.value) return
+  await pwdFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    pwdSaving.value = true
+    try {
+      await changePasswordApi({ oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword })
+      ElMessage.success('密码修改成功')
+      pwdVisible.value = false
+      pwdForm.oldPassword = ''
+      pwdForm.newPassword = ''
+      pwdForm.confirmPassword = ''
+    } finally {
+      pwdSaving.value = false
+    }
+  })
+}
+
 const handleCommand = async (command) => {
   switch (command) {
     case 'profile':
       router.push('/profile')
       break
     case 'password':
-      ElMessage.info('修改密码功能开发中')
+      pwdForm.oldPassword = ''
+      pwdForm.newPassword = ''
+      pwdForm.confirmPassword = ''
+      pwdVisible.value = true
       break
     case 'logout':
       try {

@@ -57,4 +57,9 @@ public interface UserService {
      * 重置密码为指定值（BCrypt 编码）
      */
     void resetPassword(Long id, String newPassword);
+
+    /**
+     * 当前登录人修改密码：校验原密码后写入 BCrypt 新密码
+     */
+    void changePassword(Long userId, String oldPassword, String newPassword);
 }
