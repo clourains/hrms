@@ -50,9 +50,26 @@
           <el-form-item>
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+            <el-button :icon="Filter" @click="openAdvFilter">
+              高级筛选<span v-if="advCount" class="adv-count">{{ advCount }}</span>
+            </el-button>
           </el-form-item>
         </el-form>
         <el-button type="primary" :icon="Plus" @click="handleAdd">登记候选人</el-button>
+      </div>
+
+      <!-- 已生效的高级筛选条件，可单个移除 -->
+      <div v-if="advTags.length" class="adv-tags">
+        <span class="adv-tags-label">已筛选</span>
+        <el-tag
+          v-for="t in advTags"
+          :key="t.key"
+          closable
+          size="small"
+          type="info"
+          @close="removeAdvTag(t.key)"
+        >{{ t.text }}</el-tag>
+        <el-button link type="primary" size="small" @click="resetAdvFilter">清空全部</el-button>
       </div>
 
       <el-table v-loading="loading" :data="tableData" border stripe>
@@ -83,17 +100,30 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="225" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-button type="primary" link @click="openStage(row)">调整阶段</el-button>
+            <el-button type="primary" link @click="openDetail(row)">详情</el-button>
             <el-button
-              v-if="row.stage !== 5 && row.stage !== 6"
-              type="success"
               link
-              @click="openHire(row)"
-            >录用</el-button>
-            <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+              :type="row.resumeUrl ? 'success' : 'info'"
+              @click="openResume(row)"
+            >{{ row.resumeUrl ? '简历' : '无简历' }}</el-button>
+            <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
+            <el-dropdown trigger="click" @command="(cmd) => handleRowCommand(cmd, row)">
+              <el-button type="primary" link class="more-btn">
+                更多<el-icon class="more-icon"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="stage">调整阶段</el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="row.stage !== 5 && row.stage !== 6"
+                    command="hire"
+                  >录用入职</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -220,6 +250,32 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="简历附件">
+          <div class="resume-field">
+            <div class="resume-field-row">
+              <el-upload
+                :show-file-list="false"
+                :before-upload="beforeResumeUpload"
+                :http-request="doResumeUpload"
+                accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf"
+              >
+                <el-button :icon="Upload" :loading="resumeUploading">
+                  {{ form.resumeUrl ? '重新上传' : '上传简历' }}
+                </el-button>
+              </el-upload>
+              <template v-if="form.resumeUrl">
+                <el-icon class="resume-field-icon"><Document /></el-icon>
+                <span class="resume-field-name">{{ form.resumeName }}</span>
+                <span class="resume-field-size">{{ formatFileSize(form.resumeSize) }}</span>
+                <el-button link type="primary" @click="previewResumeFile(form)">预览</el-button>
+                <el-button link type="danger" @click="clearResume">移除</el-button>
+              </template>
+            </div>
+            <div v-if="!form.resumeUrl" class="resume-field-tip">
+              支持 jpg / png / gif / webp / bmp 图片或 pdf，单个文件不超过 10MB
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
@@ -354,6 +410,16 @@
           <el-descriptions-item label="当前职位">{{ currentRow.currentPosition || '-' }}</el-descriptions-item>
           <el-descriptions-item label="来源">{{ currentRow.source || '-' }}</el-descriptions-item>
           <el-descriptions-item label="淘汰原因">{{ currentRow.rejectReason || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="简历">
+            <el-button
+              v-if="currentRow.resumeUrl"
+              link
+              type="primary"
+              @click="openResume(currentRow)"
+            >查看简历（{{ currentRow.resumeType === 'pdf' ? 'PDF' : '图片' }}）</el-button>
+            <span v-else class="text-muted">未上传</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="备注">{{ currentRow.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
         <div class="drawer-section">
@@ -393,6 +459,107 @@
             </el-timeline-item>
           </el-timeline>
         </div>
+      </template>
+    </el-drawer>
+
+    <!-- 简历详情：独立抽屉，图片可缩放查看、PDF 内嵌预览、支持下载 -->
+    <el-drawer
+      v-model="resumeVisible"
+      :title="`简历详情 · ${resumeRow?.name || ''}`"
+      size="760px"
+      destroy-on-close
+    >
+      <div v-if="resumeRow" class="resume-detail">
+        <div class="resume-detail-bar">
+          <div class="resume-detail-meta">
+            <el-icon class="resume-detail-icon"><Document /></el-icon>
+            <div>
+              <div class="resume-detail-name">{{ resumeRow.resumeName || '简历' }}</div>
+              <div class="resume-detail-sub">
+                {{ resumeRow.requisitionPosition || '-' }}
+                · {{ formatFileSize(resumeRow.resumeSize) }}
+                · {{ resumeRow.resumeType === 'pdf' ? 'PDF' : '图片' }}
+              </div>
+            </div>
+          </div>
+          <div class="resume-detail-actions">
+            <el-button :icon="Download" :loading="resumeDownloading" @click="downloadResume(resumeRow)">
+              下载
+            </el-button>
+            <el-button :icon="Refresh" @click="loadResumePreview(resumeRow)">重新加载</el-button>
+          </div>
+        </div>
+
+        <div v-loading="resumeLoading" class="resume-detail-body">
+          <template v-if="resumeBlobUrl">
+            <el-image
+              v-if="resumeRow.resumeType !== 'pdf'"
+              :src="resumeBlobUrl"
+              :preview-src-list="[resumeBlobUrl]"
+              :initial-index="0"
+              fit="contain"
+              class="resume-image"
+            />
+            <iframe v-else :src="resumeBlobUrl" class="resume-pdf"></iframe>
+          </template>
+          <el-empty
+            v-else-if="!resumeLoading"
+            description="简历文件加载失败或已被移除"
+            :image-size="80"
+          />
+        </div>
+
+        <div class="resume-detail-foot">
+          <el-button link type="primary" @click="openDetail(resumeRow)">查看候选人档案</el-button>
+          <el-button link type="primary" @click="handleEdit(resumeRow)">编辑并重新上传</el-button>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- 高级筛选 -->
+    <el-drawer v-model="advVisible" title="高级筛选" size="440px">
+      <el-form label-width="96px">
+        <el-form-item label="学历">
+          <el-select v-model="advForm.education" placeholder="不限" clearable style="width: 100%">
+            <el-option v-for="e in educationOptions" :key="e" :label="e" :value="e" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工作年限">
+          <div class="range-row">
+            <el-input-number v-model="advForm.workYearsMin" :min="0" :max="50" :controls="false" placeholder="下限" />
+            <span class="range-sep">—</span>
+            <el-input-number v-model="advForm.workYearsMax" :min="0" :max="50" :controls="false" placeholder="上限" />
+          </div>
+        </el-form-item>
+        <el-form-item label="期望薪资">
+          <div class="range-row">
+            <el-input-number v-model="advForm.salaryMin" :min="0" :max="999" :controls="false" placeholder="下限" />
+            <span class="range-sep">—</span>
+            <el-input-number v-model="advForm.salaryMax" :min="0" :max="999" :controls="false" placeholder="上限" />
+          </div>
+          <div class="adv-hint">单位：K / 月</div>
+        </el-form-item>
+        <el-form-item label="录入时间">
+          <el-date-picker
+            v-model="advForm.dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="面试情况">
+          <el-radio-group v-model="advForm.hasInterview">
+            <el-radio :value="null">不限</el-radio>
+            <el-radio :value="1">已安排面试</el-radio>
+            <el-radio :value="0">从未安排</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="resetAdvForm">重置条件</el-button>
+        <el-button type="primary" @click="applyAdvFilter">应用筛选</el-button>
       </template>
     </el-drawer>
 
@@ -441,10 +608,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import {
+  Search, Refresh, Plus, Edit, Delete,
+  Upload, Document, Download, Filter, ArrowDown
+} from '@element-plus/icons-vue'
+import { uploadFileApi, createFileBlobUrlApi, downloadFileApi } from '@/api/file'
 import {
   getCandidatePageApi,
   getCandidateFunnelApi,
@@ -474,13 +645,47 @@ const stageVisible = ref(false)
 const hireVisible = ref(false)
 const detailVisible = ref(false)
 const interviewVisible = ref(false)
+// 简历详情 + 高级筛选
+const resumeVisible = ref(false)
+const resumeRow = ref(null)
+const resumeBlobUrl = ref('')
+const resumeLoading = ref(false)
+const resumeDownloading = ref(false)
+const resumeUploading = ref(false)
+const advVisible = ref(false)
 const isEdit = ref(false)
 const currentRow = ref(null)
 const formRef = ref(null)
 const hireFormRef = ref(null)
 const interviewFormRef = ref(null)
 
-const searchForm = reactive({ keyword: '', requisitionId: null, source: null, stage: null })
+const searchForm = reactive({
+  keyword: '',
+  requisitionId: null,
+  source: null,
+  stage: null,
+  // 高级筛选条件，和后端 RecruitQueryDTO 一一对应
+  education: null,
+  workYearsMin: null,
+  workYearsMax: null,
+  salaryMin: null,
+  salaryMax: null,
+  createTimeStart: null,
+  createTimeEnd: null,
+  hasInterview: null
+})
+
+const defaultAdvForm = {
+  education: null,
+  workYearsMin: null,
+  workYearsMax: null,
+  salaryMin: null,
+  salaryMax: null,
+  dateRange: [],
+  hasInterview: null
+}
+const advForm = reactive({ ...defaultAdvForm })
+
 const pagination = reactive({ pageNum: 1, pageSize: 10, total: 0 })
 
 const stageMap = {
@@ -520,7 +725,12 @@ const defaultForm = {
   expectSalary: null,
   birthday: '',
   email: '',
-  remark: ''
+  remark: '',
+  // 简历附件（由上传接口返回，随表单一起提交）
+  resumeUrl: null,
+  resumeName: null,
+  resumeSize: null,
+  resumeType: null
 }
 const form = reactive({ ...defaultForm })
 
@@ -593,6 +803,8 @@ const handleReset = () => {
   searchForm.requisitionId = null
   searchForm.source = null
   searchForm.stage = null
+  clearAdvConditions()
+  Object.assign(advForm, { ...defaultAdvForm })
   handleSearch()
 }
 const handleSizeChange = () => { pagination.pageNum = 1; loadData() }
@@ -640,6 +852,232 @@ const handleDelete = async (row) => {
   loadData()
   loadFunnel()
 }
+
+/** 操作列「更多」下拉 */
+const handleRowCommand = (cmd, row) => {
+  if (cmd === 'stage') openStage(row)
+  else if (cmd === 'hire') openHire(row)
+  else if (cmd === 'delete') handleDelete(row)
+}
+
+// ========== 简历附件 ==========
+const formatFileSize = (size) => {
+  const n = Number(size || 0)
+  if (!n) return '-'
+  if (n < 1024) return n + ' B'
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
+  return (n / 1024 / 1024).toFixed(1) + ' MB'
+}
+
+/** 上传前置校验：类型与大小，与后端保持一致 */
+const beforeResumeUpload = (file) => {
+  if (!/\.(jpe?g|png|gif|webp|bmp|pdf)$/i.test(file.name)) {
+    ElMessage.warning('只支持 jpg / png / gif / webp / bmp 图片或 pdf')
+    return false
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('文件不能超过 10MB')
+    return false
+  }
+  return true
+}
+
+const doResumeUpload = async ({ file }) => {
+  resumeUploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await uploadFileApi(fd)
+    form.resumeUrl = res.data.path
+    form.resumeName = res.data.name
+    form.resumeSize = res.data.size
+    form.resumeType = res.data.type
+    ElMessage.success('简历已上传，点「确定」后保存')
+  } catch (e) {
+    ElMessage.error('简历上传失败')
+  } finally {
+    resumeUploading.value = false
+  }
+}
+
+const clearResume = () => {
+  form.resumeUrl = null
+  form.resumeName = null
+  form.resumeSize = null
+  form.resumeType = null
+}
+
+const releaseResumeUrl = () => {
+  if (resumeBlobUrl.value) {
+    URL.revokeObjectURL(resumeBlobUrl.value)
+    resumeBlobUrl.value = ''
+  }
+}
+
+/** 打开简历详情抽屉 */
+const openResume = (row) => {
+  if (!row || !row.resumeUrl) {
+    ElMessage.warning('该候选人还没有上传简历')
+    if (row) handleEdit(row)
+    return
+  }
+  resumeRow.value = row
+  resumeVisible.value = true
+  loadResumePreview(row)
+}
+
+/** 简历以 blob 方式读取：接口需要 token，不能直接当 img src 用 */
+const loadResumePreview = async (row) => {
+  const target = row || resumeRow.value
+  if (!target || !target.resumeUrl) return
+  resumeLoading.value = true
+  releaseResumeUrl()
+  try {
+    resumeBlobUrl.value = await createFileBlobUrlApi(target.resumeUrl)
+  } catch (e) {
+    ElMessage.error('简历加载失败，请确认文件是否还在')
+  } finally {
+    resumeLoading.value = false
+  }
+}
+
+const downloadResume = async (row) => {
+  const target = row || resumeRow.value
+  if (!target || !target.resumeUrl) return
+  resumeDownloading.value = true
+  try {
+    await downloadFileApi(target.resumeUrl, target.resumeName)
+  } catch (e) {
+    ElMessage.error('下载失败')
+  } finally {
+    resumeDownloading.value = false
+  }
+}
+
+/** 表单里刚上传、还没保存时也能先预览 */
+const previewResumeFile = (target) => {
+  if (!target || !target.resumeUrl) return
+  resumeRow.value = target
+  resumeVisible.value = true
+  loadResumePreview(target)
+}
+
+// ========== 高级筛选 ==========
+// 标签只反映「已生效」的条件（searchForm），抽屉里的草稿不算
+const advTags = computed(() => {
+  const tags = []
+  if (searchForm.education) {
+    tags.push({ key: 'education', text: '学历：' + searchForm.education })
+  }
+  if (searchForm.workYearsMin != null || searchForm.workYearsMax != null) {
+    const min = searchForm.workYearsMin
+    const max = searchForm.workYearsMax
+    let text
+    if (max != null) {
+      text = '年限：' + (min != null ? min : 0) + '~' + max + ' 年'
+    } else {
+      text = '年限：' + (min != null ? min : 0) + ' 年以上'
+    }
+    tags.push({ key: 'workYears', text })
+  }
+  if (searchForm.salaryMin != null || searchForm.salaryMax != null) {
+    const min = searchForm.salaryMin
+    const max = searchForm.salaryMax
+    tags.push({
+      key: 'salary',
+      text: '期望薪资：' + (min != null ? min : 0) + '~' + (max != null ? max : '不限') + ' K'
+    })
+  }
+  if (searchForm.createTimeStart && searchForm.createTimeEnd) {
+    tags.push({
+      key: 'createTime',
+      text: '录入：' + searchForm.createTimeStart + ' 至 ' + searchForm.createTimeEnd
+    })
+  }
+  if (searchForm.hasInterview === 1) tags.push({ key: 'hasInterview', text: '已安排面试' })
+  if (searchForm.hasInterview === 0) tags.push({ key: 'hasInterview', text: '从未安排面试' })
+  return tags
+})
+const advCount = computed(() => advTags.value.length)
+
+const openAdvFilter = () => {
+  // 回填已生效条件，便于微调而不是从零填
+  advForm.education = searchForm.education
+  advForm.workYearsMin = searchForm.workYearsMin
+  advForm.workYearsMax = searchForm.workYearsMax
+  advForm.salaryMin = searchForm.salaryMin
+  advForm.salaryMax = searchForm.salaryMax
+  advForm.hasInterview = searchForm.hasInterview
+  advForm.dateRange = (searchForm.createTimeStart && searchForm.createTimeEnd)
+    ? [searchForm.createTimeStart, searchForm.createTimeEnd]
+    : []
+  advVisible.value = true
+}
+
+const applyAdvFilter = () => {
+  if (advForm.workYearsMin != null && advForm.workYearsMax != null
+      && advForm.workYearsMin > advForm.workYearsMax) {
+    ElMessage.warning('工作年限的下限不能大于上限')
+    return
+  }
+  if (advForm.salaryMin != null && advForm.salaryMax != null
+      && advForm.salaryMin > advForm.salaryMax) {
+    ElMessage.warning('期望薪资的下限不能大于上限')
+    return
+  }
+  searchForm.education = advForm.education || null
+  searchForm.workYearsMin = advForm.workYearsMin
+  searchForm.workYearsMax = advForm.workYearsMax
+  searchForm.salaryMin = advForm.salaryMin
+  searchForm.salaryMax = advForm.salaryMax
+  searchForm.hasInterview = advForm.hasInterview
+  const range = advForm.dateRange || []
+  searchForm.createTimeStart = range[0] || null
+  searchForm.createTimeEnd = range[1] || null
+  advVisible.value = false
+  handleSearch()
+}
+
+const resetAdvForm = () => {
+  Object.assign(advForm, { ...defaultAdvForm, dateRange: [] })
+}
+
+const clearAdvConditions = () => {
+  searchForm.education = null
+  searchForm.workYearsMin = null
+  searchForm.workYearsMax = null
+  searchForm.salaryMin = null
+  searchForm.salaryMax = null
+  searchForm.createTimeStart = null
+  searchForm.createTimeEnd = null
+  searchForm.hasInterview = null
+}
+
+const resetAdvFilter = () => {
+  clearAdvConditions()
+  Object.assign(advForm, { ...defaultAdvForm, dateRange: [] })
+  handleSearch()
+}
+
+const removeAdvTag = (key) => {
+  if (key === 'education') searchForm.education = null
+  if (key === 'workYears') {
+    searchForm.workYearsMin = null
+    searchForm.workYearsMax = null
+  }
+  if (key === 'salary') {
+    searchForm.salaryMin = null
+    searchForm.salaryMax = null
+  }
+  if (key === 'createTime') {
+    searchForm.createTimeStart = null
+    searchForm.createTimeEnd = null
+  }
+  if (key === 'hasInterview') searchForm.hasInterview = null
+  handleSearch()
+}
+
+onUnmounted(releaseResumeUrl)
 
 const openStage = (row) => {
   currentRow.value = row
@@ -807,4 +1245,51 @@ onMounted(async () => {
 .interview-item { font-size: 13px; }
 .interview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .interview-sub { color: #606266; line-height: 1.7; }
+
+/* ===== 简历上传 ===== */
+.resume-field-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.resume-field-icon { color: #909399; }
+.resume-field-name {
+  font-size: 13px; color: #303133; max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-field-size { font-size: 12px; color: #909399; }
+.resume-field-tip { font-size: 12px; color: #909399; line-height: 1.6; margin-top: 4px; }
+
+/* ===== 高级筛选 ===== */
+.adv-count {
+  display: inline-block; min-width: 16px; height: 16px; padding: 0 4px;
+  margin-left: 4px; border-radius: 8px; background: #f56c6c; color: #fff;
+  font-size: 11px; line-height: 16px; text-align: center;
+}
+.adv-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.adv-tags-label { font-size: 12px; color: #909399; }
+.range-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.range-row :deep(.el-input-number) { flex: 1; width: auto; }
+.range-sep { color: #c0c4cc; }
+.adv-hint { font-size: 12px; color: #909399; line-height: 1.6; }
+
+/* ===== 简历详情 ===== */
+.resume-detail { display: flex; flex-direction: column; height: 100%; }
+.resume-detail-bar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 14px; background: #f5f7fa; border-radius: 6px; margin-bottom: 12px;
+}
+.resume-detail-meta { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.resume-detail-icon { font-size: 26px; color: #409eff; }
+.resume-detail-name {
+  font-size: 14px; font-weight: 600; color: #303133; max-width: 300px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.resume-detail-sub { font-size: 12px; color: #909399; margin-top: 2px; }
+.resume-detail-actions { display: flex; gap: 8px; flex: none; }
+.resume-detail-body {
+  flex: 1; min-height: 420px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid #ebeef5; border-radius: 6px; background: #fafafa; overflow: auto;
+}
+.resume-image { max-width: 100%; max-height: 620px; }
+.resume-pdf { width: 100%; height: 640px; border: none; }
+.resume-detail-foot { display: flex; gap: 16px; margin-top: 12px; justify-content: flex-end; }
+.text-muted { color: #c0c4cc; }
+.more-icon { margin-left: 2px; }
 </style>

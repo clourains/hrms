@@ -82,6 +82,18 @@ public class Candidate implements Serializable {
 
     private String remark;
 
+    /** 简历文件相对路径（相对 hrms.upload.dir，如 resume/2026/10/xxx.jpg） */
+    private String resumeUrl;
+
+    /** 简历原始文件名，下载时还原 */
+    private String resumeName;
+
+    /** 简历文件大小（字节） */
+    private Long resumeSize;
+
+    /** 简历归类：image / pdf */
+    private String resumeType;
+
     @TableLogic
     private Integer deleted;
 

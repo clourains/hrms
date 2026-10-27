@@ -29,6 +29,11 @@ spring:
       port: 6379
       password: 123456
       timeout: 3000ms
+  # 简历图片/PDF 上传（默认单文件 1MB 不够用，这里放宽到 10MB）
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -40,6 +45,10 @@ spring:
 hrms:
   # 登出 token 黑名单实现：redis（默认，集中式）/ memory（无 Redis 环境兜底）
   token-blacklist: redis
+  # 简历等附件存放目录：相对 hrms-backend 运行目录，可用绝对路径覆盖
+  # 文件不入库、不进 Git，库里只存相对路径
+  upload:
+    dir: ./uploads
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml

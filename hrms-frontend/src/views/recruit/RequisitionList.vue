@@ -48,16 +48,26 @@
         <el-table-column prop="reqNo" label="需求编号" width="150" />
         <el-table-column prop="position" label="招聘岗位" min-width="140" show-overflow-tooltip />
         <el-table-column prop="deptName" label="需求部门" width="120" show-overflow-tooltip />
-        <el-table-column label="招聘进度" width="180">
+        <el-table-column label="招聘进度" width="215">
           <template #default="{ row }">
-            <div class="progress-cell">
-              <span class="progress-text">{{ row.hiredCount || 0 }} / {{ row.headcount }} 人</span>
+            <div class="progress-cell" @click="goCandidates(row)">
+              <div class="progress-head">
+                <span class="progress-text">已录用 <b>{{ row.hiredCount || 0 }}</b> / {{ row.headcount }} 人</span>
+                <span class="progress-pct" :style="{ color: progressColor(row) }">{{ progressOf(row) }}%</span>
+              </div>
               <el-progress
                 :percentage="progressOf(row)"
                 :stroke-width="8"
                 :color="progressColor(row)"
                 :show-text="false"
               />
+              <div class="funnel-mini">
+                <span class="mini-item">投递 {{ row.candidateCount || 0 }}</span>
+                <span class="mini-sep">·</span>
+                <span class="mini-item mini-active">在用 {{ row.activeCount || 0 }}</span>
+                <span class="mini-sep">·</span>
+                <span class="mini-item mini-rejected">淘汰 {{ row.rejectedCount || 0 }}</span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -70,11 +80,6 @@
         </el-table-column>
         <el-table-column prop="workLocation" label="工作地点" width="130" show-overflow-tooltip />
         <el-table-column prop="deadline" label="期望到岗" width="115" />
-        <el-table-column prop="candidateCount" label="候选人" width="90" align="center">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="goCandidates(row)">{{ row.candidateCount || 0 }} 人</el-button>
-          </template>
-        </el-table-column>
         <el-table-column prop="status" label="状态" width="95" align="center">
           <template #default="{ row }">
             <el-tag :type="statusMap[row.status]?.type || 'info'" size="small">
@@ -425,6 +430,14 @@ onMounted(async () => {
 .stat-sub { font-size: 12px; color: #b1b3b8; }
 .search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
-.progress-cell { line-height: 1.4; }
+.progress-cell { line-height: 1.4; cursor: pointer; }
+.progress-cell:hover .progress-text { color: #409eff; }
+.progress-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
 .progress-text { font-size: 12px; color: #606266; }
+.progress-text b { color: #303133; font-size: 13px; }
+.progress-pct { font-size: 12px; font-weight: 600; }
+.funnel-mini { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 11px; color: #909399; }
+.funnel-mini .mini-active { color: #409eff; }
+.funnel-mini .mini-rejected { color: #f56c6c; }
+.funnel-mini .mini-sep { color: #dcdfe6; }
 </style>

@@ -30,3 +30,15 @@ export const PROBATION_EXTEND_MAX_DAYS = 30
  * 《劳动合同法》第十九条：三年以上固定期限和无固定期限的劳动合同，试用期不得超过六个月。
  */
 export const PROBATION_TOTAL_MAX_MONTHS = 6
+
+/**
+ * 合同 / 签证临期提醒天数
+ *
+ * 修改这里即可同时生效于：
+ *   1. 侧边栏「人事管理 → 到期提醒」角标数量
+ *   2. 到期提醒页默认查询范围
+ *
+ * 后端接口 /contract/expiring 通过 days 参数接收，未传参时默认 60，
+ * 两边保持一致即可。
+ */
+export const CONTRACT_EXPIRE_DAYS = 60

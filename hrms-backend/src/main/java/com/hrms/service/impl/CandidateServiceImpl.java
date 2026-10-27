@@ -100,6 +100,37 @@ public class CandidateServiceImpl implements CandidateService {
         if (StringUtils.hasText(queryDTO.getSource())) {
             wrapper.eq(Candidate::getSource, queryDTO.getSource());
         }
+        // 高级筛选：学历 / 年限区间 / 期望薪资区间 / 录入时间 / 是否已安排面试
+        if (StringUtils.hasText(queryDTO.getEducation())) {
+            wrapper.eq(Candidate::getEducation, queryDTO.getEducation());
+        }
+        if (queryDTO.getWorkYearsMin() != null) {
+            wrapper.ge(Candidate::getWorkYears, queryDTO.getWorkYearsMin());
+        }
+        if (queryDTO.getWorkYearsMax() != null) {
+            wrapper.le(Candidate::getWorkYears, queryDTO.getWorkYearsMax());
+        }
+        if (queryDTO.getSalaryMin() != null) {
+            wrapper.ge(Candidate::getExpectSalary, queryDTO.getSalaryMin());
+        }
+        if (queryDTO.getSalaryMax() != null) {
+            wrapper.le(Candidate::getExpectSalary, queryDTO.getSalaryMax());
+        }
+        if (queryDTO.getCreateTimeStart() != null) {
+            wrapper.ge(Candidate::getCreateTime, queryDTO.getCreateTimeStart().atStartOfDay());
+        }
+        if (queryDTO.getCreateTimeEnd() != null) {
+            wrapper.le(Candidate::getCreateTime, queryDTO.getCreateTimeEnd().atTime(23, 59, 59));
+        }
+        // 面试情况用子查询过滤：分页后再在内存筛会导致 total 与列表不一致
+        if (queryDTO.getHasInterview() != null) {
+            String interviewedSql = "SELECT DISTINCT candidate_id FROM hr_recruit_interview WHERE deleted = 0";
+            if (queryDTO.getHasInterview() == 1) {
+                wrapper.inSql(Candidate::getId, interviewedSql);
+            } else {
+                wrapper.notInSql(Candidate::getId, interviewedSql);
+            }
+        }
 
         String orderBy = SortUtil.build(queryDTO.getSortField(), queryDTO.getSortOrder(), CANDIDATE_SORT);
         if (orderBy != null) {

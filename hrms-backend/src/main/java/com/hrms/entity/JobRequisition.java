@@ -92,4 +92,12 @@ public class JobRequisition implements Serializable {
     /** 候选人总数（列表展示用，非表字段） */
     @TableField(exist = false)
     private Integer candidateCount;
+
+    /** 在筛选流程中的候选人数：待筛选/初试/复试/待录用（阶段 1~4），非表字段 */
+    @TableField(exist = false)
+    private Integer activeCount;
+
+    /** 已淘汰候选人数（阶段 6），非表字段 */
+    @TableField(exist = false)
+    private Integer rejectedCount;
 }

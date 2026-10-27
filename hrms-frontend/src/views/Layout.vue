@@ -189,7 +189,12 @@
       <!-- 主内容区 -->
       <el-main class="main-content">
         <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in">
+          <!--
+            :duration 是必须的兜底：out-in 模式要等旧页离场动画的 transitionend 回调
+            才插入新页，浏览器切到后台标签页会把动画节流、回调丢失，导致新页面永远不渲染
+            （表现为外壳/标题都在、内容区空白）。给定 300ms 后 Vue 会强制结束过渡。
+          -->
+          <transition name="fade" mode="out-in" :duration="300">
             <component :is="Component" v-if="showView" :key="route.path" />
           </transition>
         </router-view>
@@ -268,7 +273,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { getInventoryWarningCountApi } from '@/api/trade'
 import { getProbationPageApi } from '@/api/recruit'
-import { PROBATION_EXPIRE_DAYS } from '@/utils/constants'
+import { getApprovalTodoApi } from '@/api/approval'
+import { getExpiringApi } from '@/api/contract'
+import { PROBATION_EXPIRE_DAYS, CONTRACT_EXPIRE_DAYS } from '@/utils/constants'
 import {
   getMessageInboxApi,
   getUnreadCountApi,
@@ -505,11 +512,14 @@ const goMenu = (path) => {
   router.push(path)
 }
 
-// ========== 侧边栏菜单角标（库存不足 / 转正到期）==========
+// ========== 侧边栏菜单角标（库存不足 / 转正到期 / 审批待办 / 未读消息 / 到期提醒）==========
 // 数字沿菜单树向上汇总：组收起时挂在组名（折叠态挂在图标）上，组展开后只在对应子项显示
 const menuBadges = reactive({
   '/warehouse': 0,           // 库存不足条数
-  '/recruit/probation': 0    // 临近到期 + 已逾期的试用期人数
+  '/recruit/probation': 0,   // 临近到期 + 已逾期的试用期人数
+  '/approval': 0,            // 待我审批的条数
+  '/message': 0,             // 站内消息未读数
+  '/reminder': 0             // 临期合同 + 临期签证条数
 })
 
 // Ctrl+K / Cmd+K 唤起全局搜索
@@ -546,24 +556,50 @@ const refreshMenuBadges = async (force = false) => {
   }
   badgeFetchedAt = now
 
-  // 库存不足：低于预警值的库存条数
-  try {
-    const res = await getInventoryWarningCountApi()
-    menuBadges['/warehouse'] = Number(res.data || 0)
-  } catch (e) {
-    menuBadges['/warehouse'] = 0
-  }
-
-  // 转正到期：试用中且临近结束日期（含已逾期），天数与转正管理页共用同一常量
-  try {
-    const res = await getProbationPageApi({
-      pageNum: 1, pageSize: 1, status: 1, expireDays: PROBATION_EXPIRE_DAYS
-    })
-    menuBadges['/recruit/probation'] = Number(res.data?.total || 0)
-  } catch (e) {
-    // 非管理员访问会被拒，静默不显示
-    menuBadges['/recruit/probation'] = 0
-  }
+  // 各来源并行拉取，任一失败只影响自己那一项，不拖累其他角标
+  await Promise.all([
+    // 库存不足：低于预警值的库存条数
+    (async () => {
+      try {
+        const res = await getInventoryWarningCountApi()
+        menuBadges['/warehouse'] = Number(res.data || 0)
+      } catch (e) {
+        menuBadges['/warehouse'] = 0
+      }
+    })(),
+    // 转正到期：试用中且临近结束日期（含已逾期），天数与转正管理页共用同一常量
+    (async () => {
+      try {
+        const res = await getProbationPageApi({
+          pageNum: 1, pageSize: 1, status: 1, expireDays: PROBATION_EXPIRE_DAYS
+        })
+        menuBadges['/recruit/probation'] = Number(res.data?.total || 0)
+      } catch (e) {
+        // 非管理员访问会被拒，静默不显示
+        menuBadges['/recruit/probation'] = 0
+      }
+    })(),
+    // 审批待办：待我审批的条数
+    (async () => {
+      try {
+        const res = await getApprovalTodoApi()
+        menuBadges['/approval'] = (res.data || []).length
+      } catch (e) {
+        menuBadges['/approval'] = 0
+      }
+    })(),
+    // 到期提醒：临期合同 + 临期签证，天数与到期提醒页默认值保持一致
+    (async () => {
+      try {
+        const res = await getExpiringApi(CONTRACT_EXPIRE_DAYS)
+        menuBadges['/reminder'] =
+          (res.data?.contractAlerts || []).length + (res.data?.visaAlerts || []).length
+      } catch (e) {
+        // 该菜单仅管理员可见，非管理员静默不显示
+        menuBadges['/reminder'] = 0
+      }
+    })()
+  ])
 }
 
 onMounted(() => {
@@ -594,9 +630,13 @@ const formatMsgTime = (value) => {
 const refreshMsgCount = async () => {
   try {
     const res = await getUnreadCountApi()
-    msgUnread.value = Number(res.data || 0)
+    const n = Number(res.data || 0)
+    msgUnread.value = n
+    // 侧边栏「消息中心」与顶部入口共用同一个数字，保证两边始终同步
+    menuBadges['/message'] = n
   } catch (e) {
     // 未登录或接口异常时不显示红点即可
+    menuBadges['/message'] = 0
   }
 }
 
@@ -630,6 +670,7 @@ const msgReadAll = async () => {
     ElMessage.success('已全部标记为已读')
     msgList.value = msgList.value.map(m => ({ ...m, isRead: 1 }))
     msgUnread.value = 0
+    menuBadges['/message'] = 0
   } catch (e) {
     // 错误提示由 request 拦截器统一处理
   }

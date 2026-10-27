@@ -37,11 +37,24 @@
 
       <el-table v-loading="loading" :data="tableData" border stripe>
         <el-table-column prop="interviewTime" label="面试时间" width="140">
-          <template #default="{ row }">{{ formatTime(row.interviewTime) }}</template>
+          <template #default="{ row }">
+            <div class="time-cell">
+              <span>{{ formatTime(row.interviewTime) }}</span>
+              <el-tag v-if="timeHint(row)" :type="timeHintType(row)" size="small" effect="plain" class="time-hint">
+                {{ timeHint(row) }}
+              </el-tag>
+            </div>
+          </template>
         </el-table-column>
-        <el-table-column prop="candidateName" label="候选人" width="95" />
+        <el-table-column label="候选人 / 应聘岗位" width="190">
+          <template #default="{ row }">
+            <div class="cand-cell">
+              <span class="cand-name">{{ row.candidateName || '-' }}</span>
+              <span class="cand-pos">{{ row.requisitionPosition || '未关联岗位' }}</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="candidatePhone" label="联系电话" width="120" />
-        <el-table-column prop="requisitionPosition" label="应聘岗位" min-width="120" show-overflow-tooltip />
         <el-table-column prop="round" label="轮次" width="75" align="center">
           <template #default="{ row }">
             <el-tag size="small" effect="plain">{{ roundText(row.round) }}</el-tag>
@@ -359,6 +372,23 @@ const resultText = (result) => ({ 0: '待面试', 1: '通过', 2: '未通过', 3
 const resultType = (result) => ({ 0: 'info', 1: 'success', 2: 'danger', 3: 'warning' }[result] || 'info')
 const formatTime = (time) => (time ? String(time).replace('T', ' ').slice(0, 16) : '-')
 
+/**
+ * 待面试场次的时间提醒：今天要面的标「今天」，已经过了约定时间还没登记结果的标「已逾期 N 天」。
+ * 只对 result=0（待面试）的行生效，面完的不再提醒。
+ */
+const timeHint = (row) => {
+  if (row.result !== 0 || !row.interviewTime) return ''
+  const day = String(row.interviewTime).replace('T', ' ').slice(0, 10)
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  if (day === todayStr) return '今天'
+  const diff = Math.floor((new Date(todayStr) - new Date(day)) / 86400000)
+  if (diff > 0) return `已逾期 ${diff} 天`
+  return ''
+}
+
+const timeHintType = (row) => (String(timeHint(row)).startsWith('已逾期') ? 'danger' : 'warning')
+
 onMounted(async () => {
   await loadCandidates()
   await loadData()
@@ -370,4 +400,9 @@ onMounted(async () => {
 .search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .tip { margin-left: 8px; font-size: 12px; color: #b1b3b8; }
+.time-cell { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.5; }
+.time-hint { margin-top: 2px; }
+.cand-cell { display: flex; flex-direction: column; line-height: 1.5; }
+.cand-name { color: #303133; font-weight: 500; }
+.cand-pos { font-size: 12px; color: #909399; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

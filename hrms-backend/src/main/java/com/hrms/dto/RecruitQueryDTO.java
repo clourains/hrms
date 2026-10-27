@@ -2,6 +2,9 @@ package com.hrms.dto;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
 /**
  * 招聘模块通用查询DTO
  *
@@ -40,4 +43,30 @@ public class RecruitQueryDTO extends BizQueryDTO {
 
     /** 候选人来源渠道（简历投递/内部推荐/猎头/招聘网站/校园招聘） */
     private String source;
+
+    // ========== 候选人高级筛选 ==========
+
+    /** 学历（专科/本科/硕士/博士） */
+    private String education;
+
+    /** 工作年限下限（含） */
+    private Integer workYearsMin;
+
+    /** 工作年限上限（含） */
+    private Integer workYearsMax;
+
+    /** 期望薪资下限（K/月，含） */
+    private BigDecimal salaryMin;
+
+    /** 期望薪资上限（K/月，含） */
+    private BigDecimal salaryMax;
+
+    /** 录入时间起（含当天） */
+    private LocalDate createTimeStart;
+
+    /** 录入时间止（含当天） */
+    private LocalDate createTimeEnd;
+
+    /** 面试情况筛选：1=已安排面试 0=从未安排 */
+    private Integer hasInterview;
 }

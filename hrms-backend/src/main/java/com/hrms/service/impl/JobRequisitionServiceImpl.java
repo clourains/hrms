@@ -106,7 +106,7 @@ public class JobRequisitionServiceImpl implements JobRequisitionService {
         Page<JobRequisition> result = requisitionMapper.selectPage(page, wrapper);
         List<JobRequisition> records = result.getRecords();
         fillDeptName(records);
-        fillCandidateCount(records);
+        fillCandidateStats(records);
         return new PageResult<>(result.getTotal(), records);
     }
 
@@ -132,15 +132,47 @@ public class JobRequisitionServiceImpl implements JobRequisitionService {
         }
     }
 
-    /** 批量补"收到多少份简历"，列表上直接能看出哪个需求没人投 */
-    private void fillCandidateCount(List<JobRequisition> records) {
+    /**
+     * 批量补候选人统计：一次查回这些需求下的所有候选人（只取需求 id + 阶段两列），
+     * 在内存里按需求分组累加，避免按行 selectCount（每页 10 行就要打 10 次库）。
+     * 投递 = 全部候选人；在用 = 阶段 1~4；淘汰 = 阶段 6；
+     * 已录用沿用需求上的 hired_count（由录用动作维护，含手工补录，故不从候选人数反推）。
+     */
+    private void fillCandidateStats(List<JobRequisition> records) {
         if (records == null || records.isEmpty()) {
             return;
         }
+        List<Long> ids = records.stream()
+                .map(JobRequisition::getId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<Long, int[]> statMap = new HashMap<>();
+        if (!ids.isEmpty()) {
+            List<Candidate> candidates = candidateMapper.selectList(new LambdaQueryWrapper<Candidate>()
+                    .select(Candidate::getRequisitionId, Candidate::getStage)
+                    .in(Candidate::getRequisitionId, ids));
+            for (Candidate c : candidates) {
+                if (c.getRequisitionId() == null) {
+                    continue;
+                }
+                int[] s = statMap.computeIfAbsent(c.getRequisitionId(), k -> new int[3]);
+                s[0]++;
+                if (c.getStage() != null && c.getStage() >= Candidate.STAGE_SCREENING
+                        && c.getStage() <= Candidate.STAGE_OFFER) {
+                    s[1]++;
+                } else if (c.getStage() != null && c.getStage() == Candidate.STAGE_REJECTED) {
+                    s[2]++;
+                }
+            }
+        }
+
         for (JobRequisition r : records) {
-            LambdaQueryWrapper<Candidate> w = new LambdaQueryWrapper<>();
-            w.eq(Candidate::getRequisitionId, r.getId());
-            r.setCandidateCount(Math.toIntExact(candidateMapper.selectCount(w)));
+            int[] s = statMap.get(r.getId());
+            r.setCandidateCount(s == null ? 0 : s[0]);
+            r.setActiveCount(s == null ? 0 : s[1]);
+            r.setRejectedCount(s == null ? 0 : s[2]);
         }
     }
 
@@ -153,7 +185,7 @@ public class JobRequisitionServiceImpl implements JobRequisitionService {
         List<JobRequisition> one = new ArrayList<>();
         one.add(requisition);
         fillDeptName(one);
-        fillCandidateCount(one);
+        fillCandidateStats(one);
         return requisition;
     }
 
