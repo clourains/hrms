@@ -18,7 +18,13 @@
     <div class="search-card">
       <el-form :inline="true" :model="searchForm">
         <el-form-item label="类型">
-          <el-select v-model="searchForm.msgType" placeholder="全部类型" clearable style="width: 140px">
+          <el-select
+            v-model="searchForm.msgType"
+            placeholder="全部类型"
+            clearable
+            style="width: 140px"
+            @change="handleSearch"
+          >
             <el-option label="系统" value="系统" />
             <el-option label="审批" value="审批" />
             <el-option label="薪资" value="薪资" />
@@ -61,7 +67,9 @@
           </div>
           <div class="msg-body">
             <div class="msg-title">
-              <el-tag :type="tagType(msg.msgType)" size="small" effect="plain">{{ msg.msgType }}</el-tag>
+              <span class="type-tag" @click.stop="handleFilterByType(msg.msgType)">
+                <el-tag :type="tagType(msg.msgType)" size="small" effect="plain">{{ msg.msgType }}</el-tag>
+              </span>
               <span class="title-text">{{ msg.title }}</span>
             </div>
             <div class="msg-content">{{ msg.content }}</div>
@@ -242,6 +250,13 @@ const refreshUnread = async () => {
 }
 
 const handleSearch = () => loadData()
+
+// 点击消息类型标签，直接按该类型筛选
+const handleFilterByType = (type) => {
+  if (!type) return
+  searchForm.msgType = type
+  loadData()
+}
 
 const handleReset = () => {
   searchForm.msgType = ''
@@ -451,5 +466,14 @@ onMounted(loadData)
   .detail-jump {
     padding-top: 20px;
   }
+}
+.type-tag {
+  display: inline-flex;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.type-tag:hover {
+  opacity: 0.72;
 }
 </style>

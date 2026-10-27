@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.hrms.entity.ApprovalInstance;
 import com.hrms.entity.ApprovalRecord;
+import com.hrms.entity.Attendance;
 import com.hrms.entity.Employee;
 import com.hrms.entity.Message;
 import com.hrms.entity.Overtime;
@@ -28,9 +29,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -430,6 +434,8 @@ public class ApprovalServiceImpl implements ApprovalService {
                 handleLeaveApproved(inst);
             } else if ("调薪".equals(inst.getBizType())) {
                 applySalaryAdjustment(inst);
+            } else if ("补卡".equals(inst.getBizType())) {
+                handleMakeupApproved(inst);
             }
         } catch (Exception e) {
             // 业务联动失败不阻断审批主流程，但不能再静默吞掉：
@@ -474,6 +480,76 @@ public class ApprovalServiceImpl implements ApprovalService {
                         + (oldSalary == null ? "未设置" : oldSalary + " 元") + " 调整为 "
                         + newSalary + " 元，后续薪资核算按新基数执行。",
                 inst.getTitle());
+    }
+
+    /**
+     * 补卡审批通过 → 回写当天上下班时间并按打卡时间重算状态。
+     * 只补申领的那一侧（上班/下班），另一侧沿用原记录。
+     */
+    private void handleMakeupApproved(ApprovalInstance inst) {
+        JsonNode detail = parseJson(inst.getDetail());
+        if (detail == null) {
+            throw new RuntimeException("补卡单缺少明细（需包含补卡日期与时间）");
+        }
+        LocalDate date = parseDate(detail.path("date").asText(""));
+        if (date == null) {
+            throw new RuntimeException("补卡单缺少补卡日期");
+        }
+        String type = detail.path("type").asText("上班");
+        LocalTime time = parseTime(detail.path("time").asText(""));
+        if (time == null) {
+            throw new RuntimeException("补卡单缺少有效的补卡时间");
+        }
+        String reason = detail.path("reason").asText("");
+        Long empId = resolveEmpId(inst.getApplicant());
+
+        Attendance existing = attendanceMapper.selectOne(new LambdaQueryWrapper<Attendance>()
+                .eq(Attendance::getEmpId, empId)
+                .eq(Attendance::getAttendDate, date)
+                .last("LIMIT 1"));
+        LocalDateTime checkIn = existing == null ? null : existing.getCheckInTime();
+        LocalDateTime checkOut = existing == null ? null : existing.getCheckOutTime();
+        if ("下班".equals(type)) {
+            checkOut = LocalDateTime.of(date, time);
+        } else {
+            checkIn = LocalDateTime.of(date, time);
+        }
+
+        BigDecimal workHours = null;
+        if (checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+            long minutes = Duration.between(checkIn, checkOut).toMinutes();
+            workHours = BigDecimal.valueOf(minutes)
+                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+        }
+
+        boolean late = checkIn != null && checkIn.toLocalTime().isAfter(LocalTime.of(9, 0));
+        boolean early = checkOut != null && checkOut.toLocalTime().isBefore(LocalTime.of(18, 0));
+        int status = AttendanceStatus.NORMAL;
+        if (late && early) {
+            status = AttendanceStatus.LATE_AND_EARLY;
+        } else if (late) {
+            status = AttendanceStatus.LATE;
+        } else if (early) {
+            status = AttendanceStatus.EARLY_LEAVE;
+        }
+        String remark = "补卡：" + type + (reason.isEmpty() ? "" : "，原因：" + reason);
+        attendanceMapper.upsertMakeup(empId, date, checkIn, checkOut, workHours, status, remark);
+
+        sendMsg(inst.getApplicant(), "补卡已生效",
+                date + " 的" + type + "打卡已补录为 " + time + "，当天考勤状态已重新计算。",
+                inst.getTitle());
+    }
+
+    private LocalTime parseTime(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return null;
+        }
+        String value = text.trim();
+        try {
+            return LocalTime.parse(value.length() == 5 ? value + ":00" : value);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** 业务联动失败时给申请人发站内信，让失败可见 */

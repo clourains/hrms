@@ -9,6 +9,7 @@ import com.hrms.entity.Department;
 import com.hrms.entity.Employee;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.service.EmployeeService;
+import com.hrms.util.ExcelExportUtil;
 import com.hrms.util.Result;
 import com.hrms.util.SensitiveMasker;
 import cn.hutool.poi.excel.ExcelReader;
@@ -85,6 +86,63 @@ public class EmployeeController {
             return Result.error(e.getMessage());
         }
     }
+
+    /**
+     * 导出员工信息（按当前筛选条件）
+     */
+    @RequireRole({"admin", "manager"})
+    @AuditLog(module = "员工管理", action = "导出")
+    @GetMapping("/export")
+    public void export(@RequestParam(required = false) String name,
+                       @RequestParam(required = false) String empNo,
+                       @RequestParam(required = false) Long deptId,
+                       @RequestParam(required = false) String position,
+                       @RequestParam(required = false) Integer status,
+                       HttpServletResponse response) throws Exception {
+        try {
+            Map<Long, String> deptMap = departmentMapper.selectList(null).stream()
+                    .collect(Collectors.toMap(Department::getId, Department::getDeptName, (a, b) -> a));
+            List<Employee> list = employeeService.listAll().stream()
+                    .filter(e -> name == null || name.isEmpty()
+                            || (e.getName() != null && e.getName().contains(name)))
+                    .filter(e -> empNo == null || empNo.isEmpty()
+                            || (e.getEmpNo() != null && e.getEmpNo().contains(empNo)))
+                    .filter(e -> deptId == null || deptId.equals(e.getDeptId()))
+                    .filter(e -> position == null || position.isEmpty()
+                            || (e.getPosition() != null && e.getPosition().contains(position)))
+                    .filter(e -> status == null || status.equals(e.getStatus()))
+                    .collect(Collectors.toList());
+
+            List<List<Object>> rows = new ArrayList<>();
+            for (Employee e : list) {
+                rows.add(java.util.Arrays.asList(
+                        e.getEmpNo(),
+                        e.getName(),
+                        e.getGender() == null ? "" : (e.getGender() == 1 ? "男" : "女"),
+                        deptMap.getOrDefault(e.getDeptId(), ""),
+                        e.getPosition(),
+                        e.getPhone(),
+                        e.getEmail(),
+                        e.getEntryDate(),
+                        STATUS_TEXT.getOrDefault(e.getStatus() == null ? -1 : e.getStatus(), "未知"),
+                        e.getSalary(),
+                        e.getPassportNo(),
+                        e.getVisaType(),
+                        e.getVisaExpireDate()
+                ));
+            }
+            ExcelExportUtil.write(response, "员工信息.xlsx",
+                    List.of("工号", "姓名", "性别", "部门", "职位", "手机号", "邮箱", "入职日期",
+                            "状态", "基本工资", "护照号", "签证类型", "签证到期日"),
+                    rows);
+        } catch (Exception ex) {
+            response.setStatus(500);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":500,\"message\":\"导出失败\",\"data\":null}");
+        }
+    }
+
+    private static final Map<Integer, String> STATUS_TEXT = Map.of(0, "离职", 1, "在职", 2, "试用期");
 
     /**
      * 新增员工

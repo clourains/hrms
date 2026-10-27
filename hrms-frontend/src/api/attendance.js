@@ -25,6 +25,11 @@ export const submitLeaveApplyApi = (data) => {
   return request.post('/approval/apply', data)
 }
 
+// 补卡 / 考勤异常申诉：统一走通用审批流（通过后由后端回写考勤）
+export const submitAttendanceAppealApi = (data) => {
+  return request.post('/approval/apply', data)
+}
+
 // ==================== P4-1 加班申请 ====================
 
 // 提交加班申请：创建加班单并发起审批，通过后计入薪资加班费

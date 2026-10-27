@@ -32,4 +32,23 @@ public interface AttendanceMapper extends BaseMapper<Attendance> {
                          @Param("attendDate") LocalDate attendDate,
                          @Param("status") Integer status,
                          @Param("remark") String remark);
+
+    /**
+     * 补卡审批通过后回写上下班时间：缺哪一侧只补哪一侧，另一侧保留原值。
+     */
+    @Insert("INSERT INTO sys_attendance (emp_id, attend_date, check_in_time, check_out_time, work_hours, " +
+            "status, remark, deleted, create_time, update_time) " +
+            "VALUES (#{empId}, #{attendDate}, #{checkIn}, #{checkOut}, #{workHours}, #{status}, #{remark}, 0, NOW(), NOW()) " +
+            "ON DUPLICATE KEY UPDATE " +
+            "check_in_time = IFNULL(#{checkIn}, check_in_time), " +
+            "check_out_time = IFNULL(#{checkOut}, check_out_time), " +
+            "work_hours = IFNULL(#{workHours}, work_hours), " +
+            "status = #{status}, remark = #{remark}, deleted = 0, update_time = NOW()")
+    int upsertMakeup(@Param("empId") Long empId,
+                     @Param("attendDate") LocalDate attendDate,
+                     @Param("checkIn") java.time.LocalDateTime checkIn,
+                     @Param("checkOut") java.time.LocalDateTime checkOut,
+                     @Param("workHours") java.math.BigDecimal workHours,
+                     @Param("status") Integer status,
+                     @Param("remark") String remark);
 }
