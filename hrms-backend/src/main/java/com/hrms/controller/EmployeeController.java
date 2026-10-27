@@ -10,6 +10,7 @@ import com.hrms.entity.Employee;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.service.EmployeeService;
 import com.hrms.util.Result;
+import com.hrms.util.SensitiveMasker;
 import cn.hutool.poi.excel.ExcelReader;
 import cn.hutool.poi.excel.ExcelUtil;
 import cn.hutool.poi.excel.ExcelWriter;
@@ -50,6 +51,7 @@ public class EmployeeController {
     public Result<PageResult<Employee>> page(@RequestBody EmployeeQueryDTO queryDTO) {
         try {
             PageResult<Employee> pageResult = employeeService.pageQuery(queryDTO);
+            SensitiveMasker.mask(pageResult.getList());
             return Result.success(pageResult);
         } catch (Exception e) {
             return Result.error(e.getMessage());
@@ -63,6 +65,7 @@ public class EmployeeController {
     public Result<Employee> getById(@PathVariable Long id) {
         try {
             Employee employee = employeeService.getById(id);
+            SensitiveMasker.mask(employee);
             return Result.success(employee);
         } catch (Exception e) {
             return Result.error(e.getMessage());
@@ -76,6 +79,7 @@ public class EmployeeController {
     public Result<List<Employee>> list() {
         try {
             List<Employee> list = employeeService.listAll();
+            SensitiveMasker.mask(list);
             return Result.success(list);
         } catch (Exception e) {
             return Result.error(e.getMessage());
