@@ -4,15 +4,19 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hrms.dto.PageResult;
 import com.hrms.dto.RecruitQueryDTO;
+import com.hrms.entity.Contract;
 import com.hrms.entity.Department;
 import com.hrms.entity.Employee;
 import com.hrms.entity.Probation;
+import com.hrms.mapper.ContractMapper;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.mapper.EmployeeMapper;
 import com.hrms.mapper.ProbationMapper;
 import com.hrms.service.ProbationService;
 import com.hrms.util.SortUtil;
 import com.hrms.util.Validators;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +65,14 @@ public class ProbationServiceImpl implements ProbationService {
 
     @Autowired
     private DepartmentMapper departmentMapper;
+
+    @Autowired
+    private ContractMapper contractMapper;
+
+    @Autowired
+    private EmployeeAccountSync accountSync;
+
+    private static final Logger log = LoggerFactory.getLogger(ProbationServiceImpl.class);
 
     @Override
     public PageResult<Probation> pageQuery(RecruitQueryDTO queryDTO) {
@@ -225,8 +237,46 @@ public class ProbationServiceImpl implements ProbationService {
             employee.setUpdateTime(LocalDateTime.now());
             syncWorkYears(employee, probation.getProbationStart());
             employeeMapper.updateById(employee);
+
+            // 转正同步签订劳动合同（默认 3 年）
+            // 原先这里不建合同，而全库又没有任何合同种子数据，
+            // 导致「到期提醒 → 合同到期」页永远是空的，等于这个功能没上线
+            createContractOnConfirm(probation.getEmployeeId());
         }
         return ok;
+    }
+
+    /**
+     * 转正后自动生成一份劳动合同（3 年期），避免合同台账永远为空。
+     * 已存在有效合同的员工不重复生成。
+     */
+    private void createContractOnConfirm(Long empId) {
+        try {
+            Long exists = contractMapper.selectCount(new LambdaQueryWrapper<Contract>()
+                    .eq(Contract::getEmpId, empId));
+            if (exists != null && exists > 0) {
+                return;
+            }
+            Employee emp = employeeMapper.selectById(empId);
+            if (emp == null) {
+                return;
+            }
+            LocalDate start = LocalDate.now();
+            Contract contract = new Contract();
+            contract.setEmpId(empId);
+            contract.setContractNo("HT-" + (emp.getEmpNo() == null ? empId : emp.getEmpNo()) + "-" + start.getYear());
+            contract.setContractType("劳动合同");
+            contract.setStartDate(start);
+            contract.setEndDate(start.plusYears(3));
+            contract.setStatus(1);
+            contract.setRemark("转正自动签订");
+            contract.setCreateTime(LocalDateTime.now());
+            contract.setUpdateTime(LocalDateTime.now());
+            contractMapper.insert(contract);
+        } catch (Exception e) {
+            // 合同生成失败不影响转正结论本身，只记录日志
+            log.error("转正自动生成合同失败，empId={}", empId, e);
+        }
     }
 
     @Override
@@ -257,6 +307,8 @@ public class ProbationServiceImpl implements ProbationService {
             employee.setLeaveDate(LocalDate.now());
             employee.setUpdateTime(LocalDateTime.now());
             employeeMapper.updateById(employee);
+            // 试用期不通过 = 离职，同步停用登录账号
+            accountSync.deactivateByEmpId(probation.getEmployeeId());
         }
         return ok;
     }

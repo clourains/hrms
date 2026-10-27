@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.dto.AnalyticsDTO.*;
 import com.hrms.service.AnalyticsService;
 import com.hrms.util.Result;
@@ -14,6 +15,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/analytics")
+@RequireRole({"admin", "manager"})
 public class AnalyticsController {
 
     @Autowired

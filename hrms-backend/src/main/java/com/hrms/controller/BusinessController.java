@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.service.BusinessService;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/business")
+@RequireRole({"admin", "manager"})
 public class BusinessController {
 
     @Autowired

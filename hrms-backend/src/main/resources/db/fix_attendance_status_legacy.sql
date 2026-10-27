@@ -1,0 +1,30 @@
+-- 考勤状态口径批量订正（可选脚本，默认不执行）
+--
+-- 用途：把「通过页面打卡产生」的历史考勤记录从旧口径
+--         0正常 / 1迟到 / 2早退 / 3迟到+早退
+--       整体映射到新口径
+--         1正常 / 2迟到 / 3早退 / 7迟到+早退
+--
+-- ⚠️ 使用前必须先判断你的库里是不是真的有旧口径数据，否则会把种子数据改坏。
+--
+-- 判断方法（先看一眼当前分布）：
+--   SELECT status, COUNT(*) FROM sys_attendance GROUP BY status;
+--
+--   · 出现 status = 0  → 一定存在旧口径数据（新口径没有 0），可以用本脚本
+--   · status 为 1/2/3/5 且没有 0 → 大概率是 V1 种子数据（本来就是新口径），
+--     不要执行本脚本，否则 1正常 会被误改成 2迟到
+--   · 种子数据是 2026-09-16 ~ 2026-10-15 的快照。如果你在这之后自己打过卡，
+--     建议先按 create_time 筛出那批记录单独核对：
+--       SELECT status, COUNT(*) FROM sys_attendance
+--        WHERE create_time > '2026-10-15' GROUP BY status;
+--
+-- 建议做法：先备份
+--   CREATE TABLE sys_attendance_bak AS SELECT * FROM sys_attendance;
+--
+-- 确认无误后，取消下面语句的注释执行。顺序不能颠倒：
+--   3→7 → 2→3 → 1→2 → 0→1，每一步的目标值在旧数据里都已清空，不会二次命中。
+
+-- UPDATE sys_attendance SET status = 7 WHERE status = 3;  -- 旧：迟到+早退
+-- UPDATE sys_attendance SET status = 3 WHERE status = 2;  -- 旧：早退
+-- UPDATE sys_attendance SET status = 2 WHERE status = 1;  -- 旧：迟到
+-- UPDATE sys_attendance SET status = 1 WHERE status = 0;  -- 旧：正常

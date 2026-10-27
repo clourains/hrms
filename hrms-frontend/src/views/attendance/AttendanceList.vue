@@ -120,6 +120,7 @@
               <el-option label="早退" value="early" />
               <el-option label="缺勤" value="absent" />
               <el-option label="请假" value="leave" />
+              <el-option label="出差" value="trip" />
             </el-select>
           </el-form-item>
           <el-form-item class="search-submit">
@@ -543,14 +544,17 @@ const fmtMonth = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
 const fmtDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 const timePart = (value) => (value ? String(value).slice(11, 19) : '')
 
-// 后端考勤状态：0正常 1迟到 2早退 3迟到+早退；其余（如休息日）无打卡时间按缺勤展示
+// 后端考勤状态：1正常 2迟到 3早退 4缺勤 5请假 6出差 7迟到+早退（与 AttendanceStatus 常量一致）
 const mapStatus = (att) => {
   const s = att.status
-  if (s === 1) return 'late'
-  if (s === 2) return 'early'
-  if (s === 3) return 'late'
-  if (s === 0 || s == null) return att.checkInTime ? 'normal' : 'absent'
-  return 'absent'
+  if (s === 2 || s === 7) return 'late'
+  if (s === 3) return 'early'
+  if (s === 4) return 'absent'
+  if (s === 5) return 'leave'
+  if (s === 6) return 'trip'
+  if (s === 1) return 'normal'
+  // 无状态或未知取值：有打卡时间按正常，否则按缺勤展示
+  return att.checkInTime ? 'normal' : 'absent'
 }
 
 const normalizeRow = (att) => ({
@@ -560,9 +564,9 @@ const normalizeRow = (att) => ({
   name: myEmp.value.name,
   department: myEmp.value.departmentName,
   checkIn: timePart(att.checkInTime),
-  checkInStatus: att.status === 1 || att.status === 3 ? 'late' : 'normal',
+  checkInStatus: att.status === 2 || att.status === 7 ? 'late' : 'normal',
   checkOut: timePart(att.checkOutTime),
-  checkOutStatus: att.status === 2 || att.status === 3 ? 'early' : 'normal',
+  checkOutStatus: att.status === 3 || att.status === 7 ? 'early' : 'normal',
   workHours: att.workHours != null ? `${att.workHours}h` : '--',
   status: mapStatus(att),
   remark: att.remark || ''
@@ -650,7 +654,8 @@ const getStatusText = (status) => {
     late: '迟到',
     early: '早退',
     absent: '缺勤',
-    leave: '请假'
+    leave: '请假',
+    trip: '出差'
   }
   return map[status] || '未知'
 }
@@ -661,7 +666,8 @@ const getStatusTagType = (status) => {
     late: 'warning',
     early: 'danger',
     absent: 'info',
-    leave: 'primary'
+    leave: 'primary',
+    trip: 'success'
   }
   return map[status] || 'info'
 }

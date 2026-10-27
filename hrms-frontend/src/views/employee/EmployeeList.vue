@@ -136,7 +136,7 @@
             <el-form-item label="性别" prop="gender">
               <el-radio-group v-model="formData.gender">
                 <el-radio :label="1">男</el-radio>
-                <el-radio :label="2">女</el-radio>
+                <el-radio :label="0">女</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -455,12 +455,14 @@ const loadDepartments = async () => {
 const fetchList = async () => {
   loading.value = true
   try {
-    // 后端 EmployeeQueryDTO 仅支持 name/deptId/position/status 条件
+    // 后端 EmployeeQueryDTO 支持 name/empNo/deptId/position/status 条件
     const payload = {
       pageNum: pagination.currentPage,
       pageSize: pagination.pageSize
     }
     if (searchForm.name) payload.name = searchForm.name
+    // 工号框此前只绑了 UI、没进请求体，后端 DTO 也没有该字段，导致筛选完全无效
+    if (searchForm.employeeNo) payload.empNo = searchForm.employeeNo
     if (searchForm.departmentId) payload.deptId = searchForm.departmentId
     if (searchForm.position) payload.position = searchForm.position
     if (searchForm.status !== '') payload.status = Number(searchForm.status)
@@ -638,7 +640,7 @@ const submitImport = async () => {
       }
       fetchList()
     } else {
-      ElMessage.error(res.msg || '导入失败')
+      ElMessage.error(res.message || '导入失败')
     }
   } finally {
     importLoading.value = false

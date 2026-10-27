@@ -24,6 +24,7 @@ public class PerformanceController {
     /**
      * 根据ID获取绩效记录
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/{id}")
     public Result<Performance> getById(@PathVariable Long id) {
         try {
@@ -37,6 +38,7 @@ public class PerformanceController {
     /**
      * 获取员工绩效列表
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/listByEmpId")
     public Result<List<Performance>> listByEmpId(@RequestParam Long empId) {
         try {
@@ -50,6 +52,7 @@ public class PerformanceController {
     /**
      * 根据周期查询绩效
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/listByPeriod")
     public Result<List<Performance>> listByPeriod(@RequestParam String period) {
         try {
@@ -82,6 +85,7 @@ public class PerformanceController {
     /**
      * 绩效统计
      */
+    @RequireRole({"admin", "manager"})
     @GetMapping("/statistics")
     public Result<Map<String, Object>> statistics(@RequestParam String period) {
         try {

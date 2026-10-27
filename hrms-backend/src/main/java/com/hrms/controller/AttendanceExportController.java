@@ -10,6 +10,7 @@ import com.hrms.entity.Employee;
 import com.hrms.mapper.AttendanceMapper;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.mapper.EmployeeMapper;
+import com.hrms.util.AttendanceStatus;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -100,9 +101,10 @@ public class AttendanceExportController {
                 .toList();
         for (Employee emp : sortedEmps) {
             List<Attendance> list = byEmp.getOrDefault(emp.getId(), Collections.emptyList());
-            long attendDays = list.stream().filter(a -> a.getCheckInTime() != null).count();
-            long lateCount = list.stream().filter(a -> a.getStatus() != null && (a.getStatus() == 1 || a.getStatus() == 3)).count();
-            long earlyCount = list.stream().filter(a -> a.getStatus() != null && (a.getStatus() == 2 || a.getStatus() == 3)).count();
+            long attendDays = list.stream().filter(a -> a.getCheckInTime() != null
+                    && !AttendanceStatus.isLeave(a.getStatus())).count();
+            long lateCount = list.stream().filter(a -> AttendanceStatus.isLate(a.getStatus())).count();
+            long earlyCount = list.stream().filter(a -> AttendanceStatus.isEarlyLeave(a.getStatus())).count();
             long abnormal = list.stream().filter(a -> a.getCheckInTime() != null && a.getCheckOutTime() == null).count();
             double totalHours = list.stream()
                     .map(a -> a.getWorkHours())
@@ -151,10 +153,13 @@ public class AttendanceExportController {
     private String statusText(Integer status) {
         if (status == null) return "未打卡";
         return switch (status) {
-            case 0 -> "正常";
-            case 1 -> "迟到";
-            case 2 -> "早退";
-            case 3 -> "迟到+早退";
+            case 1 -> "正常";
+            case 2 -> "迟到";
+            case 3 -> "早退";
+            case 4 -> "缺勤";
+            case 5 -> "请假";
+            case 6 -> "出差";
+            case 7 -> "迟到+早退";
             default -> "未知(" + status + ")";
         };
     }

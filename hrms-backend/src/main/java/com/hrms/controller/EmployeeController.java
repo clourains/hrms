@@ -178,6 +178,7 @@ public class EmployeeController {
     /**
      * 下载导入模板（P7-2）：表头 + 一行示例
      */
+    @RequireRole("admin")
     @GetMapping("/importTemplate")
     public void importTemplate(HttpServletResponse response) throws Exception {
         ExcelWriter writer = ExcelUtil.getWriter();

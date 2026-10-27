@@ -227,7 +227,7 @@ const handleSubmit = async () => {
       dialogVisible.value = false
       loadData()
     } else {
-      ElMessage.error(res.msg || '操作失败')
+      ElMessage.error(res.message || '操作失败')
     }
   } finally {
     submitting.value = false
@@ -245,7 +245,7 @@ const handleToggleStatus = async (row) => {
     ElMessage.success(target === 1 ? '已启用' : '已禁用')
     loadData()
   } else {
-    ElMessage.error(res.msg || '操作失败')
+    ElMessage.error(res.message || '操作失败')
   }
 }
 
@@ -260,7 +260,7 @@ const handleResetPassword = async (row) => {
     if (res.code === 200) {
       ElMessage.success('密码已重置')
     } else {
-      ElMessage.error(res.msg || '重置失败')
+      ElMessage.error(res.message || '重置失败')
     }
   } catch {
     // 用户取消
@@ -283,7 +283,7 @@ const handleDelete = async (row) => {
       ElMessage.success('用户已删除')
       loadData()
     } else {
-      ElMessage.error(res.msg || '删除失败')
+      ElMessage.error(res.message || '删除失败')
     }
   } catch {
     // 用户取消

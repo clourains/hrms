@@ -87,7 +87,9 @@ public class TradeOrderServiceImpl implements TradeOrderService {
 
         // 未发货前可以取消；已发货(3)之后货已经出库、锁定量也释放了，只能继续往前走
         TRANSITIONS.put(ST_PENDING, new HashSet<>(Arrays.asList(ST_CONFIRMED, ST_CANCELLED)));
-        TRANSITIONS.put(ST_CONFIRMED, new HashSet<>(Arrays.asList(ST_PREPARING, ST_SHIPPED, ST_CANCELLED)));
+        // 「已发货」只能由发货单推进产生（见 ShipmentServiceImpl 回写订单状态），
+        // 手工从「已确认」直接跳到「已发货」会跳过出库，物流跟踪页却是空的，两边对不上
+        TRANSITIONS.put(ST_CONFIRMED, new HashSet<>(Arrays.asList(ST_PREPARING, ST_CANCELLED)));
         TRANSITIONS.put(ST_PREPARING, new HashSet<>(Arrays.asList(ST_SHIPPED, ST_CANCELLED)));
         TRANSITIONS.put(ST_SHIPPED, new HashSet<>(Collections.singletonList(ST_SIGNED)));
         TRANSITIONS.put(ST_SIGNED, new HashSet<>(Collections.singletonList(ST_DONE)));
@@ -262,17 +264,21 @@ public class TradeOrderServiceImpl implements TradeOrderService {
         for (OrderItem item : items) {
             item.setOrderId(order.getId());
             orderItemMapper.insert(item);
-            if (item.getWarehouseId() != null) {
-                StockChangeDTO stock = new StockChangeDTO();
-                stock.setProductId(item.getProductId());
-                stock.setWarehouseId(item.getWarehouseId());
-                stock.setChangeType(3);
-                stock.setQuantity(item.getQuantity());
-                stock.setOrderNo(orderNo);
-                stock.setOperator("系统");
-                stock.setRemark("订单锁定库存");
-                inventoryService.changeStock(stock);
+            // 仓库不允许为空：空了后面锁定/扣减库存都是静默跳过，
+            // 账面库存永远不动，盘点时才发现对不上
+            if (item.getWarehouseId() == null) {
+                throw new RuntimeException("明细第 " + (items.indexOf(item) + 1)
+                        + " 行未选择发货仓库，无法锁定库存");
             }
+            StockChangeDTO stock = new StockChangeDTO();
+            stock.setProductId(item.getProductId());
+            stock.setWarehouseId(item.getWarehouseId());
+            stock.setChangeType(3);
+            stock.setQuantity(item.getQuantity());
+            stock.setOrderNo(orderNo);
+            stock.setOperator("系统");
+            stock.setRemark("订单锁定库存");
+            inventoryService.changeStock(stock);
         }
         return order;
     }
@@ -349,6 +355,11 @@ public class TradeOrderServiceImpl implements TradeOrderService {
         // 取消前先确认没有发货单：否则订单取消了、发货单还挂着，后面一推「运输中」照样出库扣库存
         if (status == ST_CANCELLED) {
             guardNoShipment(origin);
+        }
+        // 收款与订单状态此前各走各的：款没收到也能点「已完成」，两边数据长期对不上。
+        // 这里在推进到终态前校验收款状态，避免形成「已完成但未收款」的脏数据。
+        if (status == ST_DONE && origin.getPaymentStatus() != null && origin.getPaymentStatus() != 2) {
+            throw new RuntimeException("订单尚未收全款，不能标记已完成；请先在收付款页登记收款");
         }
 
         TradeOrder order = new TradeOrder();

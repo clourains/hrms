@@ -1,5 +1,6 @@
 package com.hrms.controller;
 
+import com.hrms.annotation.RequireRole;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +31,7 @@ import java.util.*;
  */
 @RestController
 @RequestMapping("/file")
+@RequireRole({"admin", "manager"})
 public class FileController {
 
     /** 单文件上限，与 application.yml 的 multipart 配置保持一致 */

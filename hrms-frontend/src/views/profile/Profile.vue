@@ -202,7 +202,7 @@ const attendStats = computed(() => {
     { label: '出勤天数', value: s.totalDays ?? s.attendDays ?? 0, cls: '' },
     { label: '迟到', value: s.lateCount ?? 0, cls: s.lateCount ? 'warn' : '' },
     { label: '早退', value: s.earlyLeaveCount ?? 0, cls: s.earlyLeaveCount ? 'warn' : '' },
-    { label: '工时(h)', value: s.totalHours ?? 0, cls: '' }
+    { label: '工时(h)', value: s.totalWorkHours ?? s.totalHours ?? 0, cls: '' }
   ]
 })
 
