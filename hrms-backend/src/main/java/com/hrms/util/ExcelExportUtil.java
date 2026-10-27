@@ -26,13 +26,21 @@ public final class ExcelExportUtil {
      */
     public static void write(HttpServletResponse response, String filename,
                              List<String> headers, List<List<Object>> rows) throws Exception {
-        ExcelWriter writer = ExcelUtil.getWriter();
+        // 必须给一个带 .xlsx 后缀的文件名让 Hutool 推断为 XSSFWorkbook。
+        // 无参构造会默认 HSSFWorkbook（.xls 二进制，D0CF11E0 魔数），与 Content-Type 不符。
+        ExcelWriter writer = new ExcelWriter("__hrms_export_temp__.xlsx");
         if (headers != null && !headers.isEmpty()) {
             writer.writeHeadRow(headers);
         }
         if (rows != null) {
             for (List<Object> row : rows) {
-                writer.writeRow(row);
+                if (row == null) continue;
+                // Hutool 的 writeRow 会对 null 单元格抛 NPE，这里手动把 null 转 ""
+                List<Object> safeRow = new java.util.ArrayList<>(row.size());
+                for (Object cell : row) {
+                    safeRow.add(cell == null ? "" : cell);
+                }
+                writer.writeRow(safeRow);
             }
         }
         writer.autoSizeColumnAll();

@@ -1,0 +1,8 @@
+fix: ExcelExportUtil 强制 xlsx 格式 + 补单元测试
+
+- 修复 hutool 无参构造默认 HSSFWorkbook（.xls 二进制 D0CF11E0），
+  改为 new ExcelWriter("__hrms_export_temp__.xlsx") 推断 XSSFWorkbook（ZIP 504B0304）
+- 对 null 单元格做防御（hutool writeRow 遇 null 抛 NPE）
+- 新增 JUnit 5 单元测试 5 个用例覆盖：正常导出、空行、自动补后缀、
+  null 单元格、全空入参；用 Spring MockHttpServletResponse +
+  ZipInputStream 校验 xlsx 合法性（[Content_Types].xml 存在）
