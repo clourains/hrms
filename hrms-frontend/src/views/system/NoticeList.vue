@@ -7,6 +7,7 @@
       icon="Notification"
     >
       <template #actions>
+        <el-button type="primary" plain :icon="Download" @click="handleExport">导出 Excel</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreateDialog">发布公告</el-button>
       </template>
     </PageHeader>
@@ -123,7 +124,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Refresh } from '@element-plus/icons-vue'
+import { Plus, Search, Refresh, Download } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import {
   getNoticeListApi, createNoticeApi, updateNoticeApi,
@@ -177,6 +178,30 @@ const handleReset = () => {
   searchForm.keyword = ''
   searchForm.status = null
   handleSearch()
+}
+
+// 导出 Excel（P8-A）
+const handleExport = async () => {
+  const base = import.meta.env.VITE_API_BASE || '/api'
+  const token = localStorage.getItem('token') || ''
+  const qs = new URLSearchParams()
+  if (searchForm.keyword) qs.append('keyword', searchForm.keyword)
+  if (searchForm.status !== null && searchForm.status !== '') qs.append('status', searchForm.status)
+  try {
+    const r = await fetch(`${base}/notice/export?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!r.ok) throw new Error(r.statusText)
+    const blob = await r.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = '公告列表.xlsx'
+    a.click()
+    URL.revokeObjectURL(a.href)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  }
 }
 
 const openCreateDialog = () => {

@@ -10,13 +10,16 @@ import com.hrms.entity.User;
 import com.hrms.mapper.NoticeMapper;
 import com.hrms.mapper.NoticeReadMapper;
 import com.hrms.mapper.UserMapper;
+import com.hrms.util.ExcelExportUtil;
 import com.hrms.util.Result;
 import com.hrms.util.UserContext;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -241,5 +244,36 @@ public class NoticeController {
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
+    }
+
+    /**
+     * 公告列表导出（P8-A）
+     */
+    @RequireRole("admin")
+    @GetMapping("/export")
+    public void export(@RequestParam(required = false) String keyword,
+                       @RequestParam(required = false) Integer status,
+                       HttpServletResponse response) throws Exception {
+        List<Notice> list = noticeMapper.selectList(new LambdaQueryWrapper<Notice>()
+                .and(StringUtils.hasText(keyword), w -> w
+                        .like(Notice::getTitle, keyword)
+                        .or().like(Notice::getContent, keyword))
+                .eq(status != null, Notice::getStatus, status)
+                .orderByDesc(Notice::getCreateTime));
+        List<List<Object>> rows = new ArrayList<>();
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        for (Notice n : list) {
+            rows.add(List.of(
+                    n.getId(),
+                    n.getTitle() == null ? "" : n.getTitle(),
+                    n.getLevel() == null ? "normal" : n.getLevel(),
+                    n.getStatus() != null && n.getStatus() == 1 ? "已发布" : "已下线",
+                    n.getPublisher() == null ? "" : n.getPublisher(),
+                    n.getCreateTime() == null ? "" : n.getCreateTime().format(fmt)
+            ));
+        }
+        ExcelExportUtil.write(response, "公告列表.xlsx",
+                List.of("ID", "标题", "级别", "状态", "发布人", "发布时间"),
+                rows);
     }
 }

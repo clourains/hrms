@@ -1,0 +1,48 @@
+package com.hrms.util;
+
+import cn.hutool.poi.excel.ExcelUtil;
+import cn.hutool.poi.excel.ExcelWriter;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+/**
+ * Excel 导出通用工具（P8-A）
+ *
+ * 统一处理 Content-Type、文件名 URL 编码、writer 生命周期。
+ * 用法：
+ *   ExcelExportUtil.write(response, "审计日志.xlsx",
+ *     List.of("时间","操作人","模块",...),
+ *     rows); // rows: List<List<Object>>
+ */
+public final class ExcelExportUtil {
+
+    private ExcelExportUtil() {}
+
+    /**
+     * 写出 Excel 到 response 并立即 flush+close
+     */
+    public static void write(HttpServletResponse response, String filename,
+                             List<String> headers, List<List<Object>> rows) throws Exception {
+        ExcelWriter writer = ExcelUtil.getWriter();
+        if (headers != null && !headers.isEmpty()) {
+            writer.writeHeadRow(headers);
+        }
+        if (rows != null) {
+            for (List<Object> row : rows) {
+                writer.writeRow(row);
+            }
+        }
+        writer.autoSizeColumnAll();
+
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        String safeName = filename.endsWith(".xlsx") ? filename : filename + ".xlsx";
+        response.setHeader("Content-Disposition",
+                "attachment; filename*=UTF-8''" + URLEncoder.encode(safeName, StandardCharsets.UTF_8));
+
+        writer.flush(response.getOutputStream(), true);
+        writer.close();
+    }
+}

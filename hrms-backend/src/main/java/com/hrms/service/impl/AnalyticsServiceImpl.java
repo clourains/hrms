@@ -7,9 +7,12 @@ import com.hrms.service.AnalyticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,6 +37,12 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
     @Autowired
     private PerformanceMapper performanceMapper;
+
+    @Autowired
+    private NoticeMapper noticeMapper;
+
+    @Autowired
+    private LoginLogMapper loginLogMapper;
 
     /**
      * 入职离职趋势（M1-5）：按入职日期/离职日期真实按月聚合。
@@ -126,7 +135,21 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         } else {
             stats.setAvgPerformance(0.0);
         }
-        
+
+        // P8-B 仪表盘扩展：生效公告数 + 今日活跃登录用户数
+        stats.setNoticeCount(Math.toIntExact(noticeMapper.selectCount(
+                new LambdaQueryWrapper<Notice>().eq(Notice::getStatus, 1))));
+        LocalDate today = LocalDate.now();
+        LocalDateTime dayStart = today.atStartOfDay();
+        LocalDateTime dayEnd = today.plusDays(1).atStartOfDay().minusSeconds(1);
+        List<LoginLog> todayLogs = loginLogMapper.selectList(
+                new LambdaQueryWrapper<LoginLog>()
+                        .eq(LoginLog::getSuccess, 1)
+                        .ge(LoginLog::getCreateTime, dayStart)
+                        .le(LoginLog::getCreateTime, dayEnd));
+        stats.setActiveUsersToday((int) todayLogs.stream()
+                .map(LoginLog::getUsername).filter(Objects::nonNull).distinct().count());
+
         return stats;
     }
 
