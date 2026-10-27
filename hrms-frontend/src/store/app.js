@@ -22,16 +22,16 @@ const mix = (c1, c2, w) => {
   )
 }
 
-// 主题色预设（art-design-pro 风格色板）
+// 主题色预设（柔和专业色板，保证白字对比度清晰）
 export const PRIMARY_PRESETS = [
-  '#409EFF', // 默认蓝
-  '#0FDC78', // 翠绿
-  '#7C3AED', // 紫罗兰
-  '#14B8A6', // 青碧
-  '#E6A23C', // 琥珀
-  '#F56C6C', // 珊瑚红
-  '#EC4899', // 玫粉
-  '#6366F1'  // 靛蓝
+  '#3B82F6', // 天蓝（默认）
+  '#22C55E', // 薄荷绿
+  '#8B5CF6', // 薰衣草紫
+  '#06B6D4', // 蒂芙尼青
+  '#F59E0B', // 落日橙
+  '#EF4444', // 玫瑰红
+  '#EC4899', // 樱花粉
+  '#6366F1'  // 暮山紫
 ]
 
 const MODE_KEY = 'hrms-theme-mode'
@@ -44,7 +44,7 @@ const LOCK_KEY = 'hrms-locked'
  */
 export const useAppStore = defineStore('app', () => {
   const isDark = ref(localStorage.getItem(MODE_KEY) === 'dark')
-  const primaryColor = ref(localStorage.getItem(PRIMARY_KEY) || '#409EFF')
+  const primaryColor = ref(localStorage.getItem(PRIMARY_KEY) || '#3B82F6')
   const locked = ref(sessionStorage.getItem(LOCK_KEY) === '1')
 
   // 设置抽屉开关（由 Layout 头部的齿轮图标打开）
@@ -96,6 +96,15 @@ export const useAppStore = defineStore('app', () => {
   }
 
   // store 首次实例化（App.vue 启动时）即生效，保证登录页也能应用主题
+  // 兜底：如果用户 localStorage 里存的是旧版超饱和预设色（白字对比度差），自动换新版柔和对应色
+  const LEGACY_TO_NEW = {
+    '#0FDC78': '#22C55E', '#14B8A6': '#06B6D4', '#E6A23C': '#F59E0B',
+    '#F56C6C': '#EF4444', '#7C3AED': '#8B5CF6', '#409EFF': '#3B82F6'
+  }
+  if (LEGACY_TO_NEW[primaryColor.value]) {
+    primaryColor.value = LEGACY_TO_NEW[primaryColor.value]
+    localStorage.setItem(PRIMARY_KEY, primaryColor.value)
+  }
   applyTheme()
 
   return {
