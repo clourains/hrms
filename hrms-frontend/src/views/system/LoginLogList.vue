@@ -9,7 +9,7 @@
       <template #actions>
         <el-button type="primary" plain :icon="Download" @click="handleExport">导出 Excel</el-button>
       </template>
-    />
+    </PageHeader>
 
     <!-- 搜索区 -->
     <div class="search-card">
