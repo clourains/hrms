@@ -1,12 +1,18 @@
 <template>
-  <div class="approval-container">
-    <el-card shadow="hover">
-      <!-- 操作栏 -->
-      <div class="action-bar">
+  <div class="approval-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="审批中心"
+      description="请假、加班、调薪等申请的多级审批处理与进度跟踪"
+      icon="DocumentChecked"
+    >
+      <template #actions>
         <el-button type="primary" :icon="Plus" @click="openApply">发起申请</el-button>
         <el-button :icon="Refresh" @click="loadActiveTab">刷新</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
+    <el-card shadow="hover">
       <el-tabs v-model="activeTab" @tab-change="loadActiveTab">
         <!-- 待我审批 -->
         <el-tab-pane name="todo">
@@ -71,6 +77,14 @@
               <span>结束：{{ leaveInfo.endDate }}</span>
               <span>天数：{{ leaveInfo.days }}</span>
               <span>事由：{{ leaveInfo.reason || '-' }}</span>
+            </div>
+          </div>
+          <div v-else-if="overtimeInfo" class="detail-section">
+            <div class="section-label">加班信息（通过后计入薪资加班费）</div>
+            <div class="leave-grid">
+              <span>加班日期：{{ overtimeInfo.overtimeDate }}</span>
+              <span>时长：{{ overtimeInfo.hours }} 小时</span>
+              <span>事由：{{ overtimeInfo.reason || '-' }}</span>
             </div>
           </div>
           <div v-else-if="detail.detail" class="detail-section">
@@ -181,10 +195,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import ApprovalCard from '@/components/ApprovalCard.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   applyApprovalApi,
   approveApprovalApi,
@@ -197,7 +213,16 @@ import {
   getApproverOptionsApi
 } from '@/api/approval'
 
-const activeTab = ref('todo')
+// 支持消息快速通道深链：/approval?tab=todo|mine|done
+const route = useRoute()
+const validTabs = ['todo', 'mine', 'done']
+const activeTab = ref(validTabs.includes(route.query.tab) ? route.query.tab : 'todo')
+watch(() => route.query.tab, (tab) => {
+  if (validTabs.includes(tab) && tab !== activeTab.value) {
+    activeTab.value = tab
+    loadActiveTab()
+  }
+})
 const todoList = ref([])
 const myList = ref([])
 const doneList = ref([])
@@ -238,6 +263,15 @@ const approverChain = computed(() => {
       return opt ? (opt.nickname || opt.username) : u
     })
     .join(' → ')
+})
+
+const overtimeInfo = computed(() => {
+  if (!detail.value || detail.value.bizType !== '加班' || !detail.value.detail) return null
+  try {
+    return JSON.parse(detail.value.detail)
+  } catch (e) {
+    return null
+  }
 })
 
 const formatTime = (v) => (v ? String(v).replace('T', ' ').slice(0, 16) : '')
@@ -360,13 +394,9 @@ onMounted(loadTodo)
 
 <style scoped lang="scss">
 .approval-container {
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
   .detail-title {
     margin: 0 0 8px;
-    color: #303133;
+    color: var(--el-text-color-primary);
   }
 
   .detail-meta {

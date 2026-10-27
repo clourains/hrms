@@ -113,6 +113,33 @@
       </el-col>
     </el-row>
 
+    <!-- 第三行：假期额度（P4-2） -->
+    <el-row v-if="leaveQuota" :gutter="16">
+      <el-col :span="24">
+        <el-card shadow="hover" class="profile-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">{{ leaveQuota.year }} 年假期额度（{{ leaveQuota.quotaType }}）</span>
+              <el-link type="primary" @click="$router.push('/attendance')">去请假</el-link>
+            </div>
+          </template>
+          <div class="quota-line">
+            <div class="quota-nums">
+              <span>总额 <b>{{ leaveQuota.totalDays }}</b> 天</span>
+              <span>已用 <b class="used">{{ leaveQuota.usedDays }}</b> 天</span>
+              <span>剩余 <b class="remain">{{ leaveQuota.remainDays }}</b> 天</span>
+            </div>
+            <el-progress
+              :percentage="quotaPercent"
+              :stroke-width="14"
+              :color="quotaPercent > 90 ? '#F56C6C' : '#409EFF'"
+              class="quota-bar"
+            />
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 快捷入口 -->
     <el-row :gutter="16">
       <el-col :span="24">
@@ -137,7 +164,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { DocumentChecked, ChatDotRound, Calendar } from '@element-plus/icons-vue'
-import { getSelfProfileApi, getSelfSalaryApi, getSelfAttendanceApi, getSelfAttendanceTodayApi } from '@/api/self'
+import { getSelfProfileApi, getSelfSalaryApi, getSelfAttendanceApi, getSelfAttendanceTodayApi, getSelfLeaveQuotaApi } from '@/api/self'
 import { checkInApi, checkOutApi } from '@/api/attendance'
 import { downloadPayslipApi } from '@/api/salary'
 import { getApprovalTodoApi } from '@/api/approval'
@@ -158,6 +185,14 @@ const salaryRows = ref([])
 
 const todoCount = ref(0)
 const msgUnread = ref(0)
+
+// P4-2 假期额度
+const leaveQuota = ref(null)
+const quotaPercent = computed(() => {
+  const q = leaveQuota.value
+  if (!q || !q.totalDays) return 0
+  return Math.min(100, Math.round((Number(q.usedDays) / Number(q.totalDays)) * 100))
+})
 
 const currentMonth = new Date().toISOString().slice(0, 7)
 
@@ -272,6 +307,7 @@ onMounted(() => {
   loadAttendance()
   loadSalary()
   loadBadges()
+  getSelfLeaveQuotaApi().then(res => { leaveQuota.value = res.data }).catch(() => {})
 })
 </script>
 
@@ -409,6 +445,28 @@ onMounted(() => {
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
+  }
+
+  .quota-line {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+
+    .quota-nums {
+      display: flex;
+      gap: 24px;
+      font-size: 14px;
+      color: #606266;
+      white-space: nowrap;
+
+      b { font-size: 18px; color: #303133; }
+      b.used { color: #E6A23C; }
+      b.remain { color: #409EFF; }
+    }
+
+    .quota-bar {
+      flex: 1;
+    }
   }
 
   .quick-badge {

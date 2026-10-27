@@ -1,10 +1,15 @@
 package com.hrms.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hrms.annotation.AuditLog;
 import com.hrms.annotation.RequireRole;
+import com.hrms.entity.Employee;
+import com.hrms.entity.Message;
 import com.hrms.entity.Salary;
 import com.hrms.entity.User;
+import com.hrms.mapper.MessageMapper;
 import com.hrms.mapper.UserMapper;
+import com.hrms.service.MailService;
 import com.hrms.service.SalaryService;
 import com.hrms.service.impl.PayslipService;
 import com.hrms.util.Result;
@@ -13,10 +18,16 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 薪资Controller
@@ -36,6 +47,12 @@ public class SalaryController {
 
     @Autowired
     private com.hrms.mapper.EmployeeMapper employeeMapper;
+
+    @Autowired
+    private MessageMapper messageMapper;
+
+    @Autowired
+    private MailService mailService;
 
     /**
      * 下载工资条 PDF（P2-3）：管理员可下载任意员工，普通用户只能下载自己
@@ -182,6 +199,82 @@ public class SalaryController {
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
+    }
+
+    /**
+     * 一键计算并发放工资条（P4-4）：计算完成后为每个绑定账号的员工发站内信，
+     * 内容含应发/实发金额，员工到「薪资管理」自助下载 PDF 工资条；
+     * 同月同标题已推送过的员工自动跳过，避免重复点击刷屏。
+     */
+    @RequireRole("admin")
+    @AuditLog(module = "薪资管理", action = "计算并推送工资条")
+    @PostMapping("/calculate-and-notify")
+    public Result<Map<String, Object>> calculateAndNotify(@RequestBody Map<String, String> body) {
+        try {
+            String month = body.get("salaryMonth");
+            if (month == null || !month.matches("\\d{4}-\\d{2}")) {
+                return Result.error("请提供正确的月份（yyyy-MM）");
+            }
+            Map<String, Object> calc = salaryService.calculateMonth(month);
+
+            List<Salary> list = salaryService.listByMonth(month);
+            List<Long> empIds = list.stream().map(Salary::getEmpId).distinct().collect(Collectors.toList());
+            Map<Long, String> usernameMap = userMapper.selectList(new LambdaQueryWrapper<User>()
+                            .in(User::getEmpId, empIds.isEmpty() ? List.of(0L) : empIds))
+                    .stream().filter(u -> u.getEmpId() != null)
+                    .collect(Collectors.toMap(User::getEmpId, User::getUsername, (a, b) -> a));
+
+            LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+            LocalDateTime now = LocalDateTime.now();
+            int notified = 0;
+            int emailed = 0;
+            for (Salary s : list) {
+                String username = usernameMap.get(s.getEmpId());
+                if (username == null || username.isEmpty()) {
+                    continue; // 未绑定登录账号的员工跳过
+                }
+                String title = month + " 工资条已发放";
+                Long dup = messageMapper.selectCount(new LambdaQueryWrapper<Message>()
+                        .eq(Message::getReceiver, username)
+                        .eq(Message::getTitle, title)
+                        .ge(Message::getCreateTime, todayStart));
+                if (dup != null && dup > 0) {
+                    continue;
+                }
+                BigDecimal gross = nvl(s.getBaseSalary()).add(nvl(s.getPerformanceBonus()))
+                        .add(nvl(s.getOvertimePay())).add(nvl(s.getAllowance()));
+                String content = String.format(
+                        "您的 %s 工资条已生成：应发 ¥%s，实发 ¥%s。请前往「薪资管理」页面查看明细并下载 PDF 工资条。",
+                        month, gross.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                        nvl(s.getNetSalary()).setScale(2, RoundingMode.HALF_UP).toPlainString());
+                Message msg = new Message();
+                msg.setReceiver(username);
+                msg.setTitle(title);
+                msg.setContent(content);
+                msg.setMsgType("薪资");
+                msg.setSender("system");
+                msg.setIsRead(0);
+                msg.setCreateTime(now);
+                msg.setUpdateTime(now);
+                messageMapper.insert(msg);
+                notified++;
+
+                // P6-3：SMTP 已启用时同步发邮件到员工档案邮箱；未启用/无邮箱自动跳过
+                String email = mailService.resolveEmailByUsername(username);
+                if (email != null && mailService.send(email, title, content)) {
+                    emailed++;
+                }
+            }
+            calc.put("notified", notified);
+            calc.put("emailed", emailed);
+            return Result.success("计算并推送完成", calc);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    private BigDecimal nvl(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     /**

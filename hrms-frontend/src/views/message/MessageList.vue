@@ -1,41 +1,48 @@
 <template>
-  <div class="message-container">
-    <el-card shadow="hover">
-      <!-- 搜索栏 -->
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item label="类型">
-            <el-select v-model="searchForm.msgType" placeholder="全部类型" clearable style="width: 140px">
-              <el-option label="系统" value="系统" />
-              <el-option label="审批" value="审批" />
-              <el-option label="提醒" value="提醒" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="关键字">
-            <el-input
-              v-model="searchForm.keyword"
-              placeholder="标题 / 内容"
-              clearable
-              style="width: 200px"
-              @keyup.enter="handleSearch"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <!-- 操作栏 -->
-      <div class="action-bar">
+  <div class="message-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="消息中心"
+      description="接收系统、审批、薪资与提醒消息，支持一键跳转处理"
+      icon="Bell"
+    >
+      <template #actions>
         <el-button type="success" :icon="Check" :disabled="unreadCount === 0" @click="handleReadAll">
           全部已读{{ unreadCount > 0 ? `（${unreadCount}）` : '' }}
         </el-button>
         <el-button v-if="isAdmin" type="primary" :icon="Promotion" @click="openCompose">发消息</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
-      <!-- 消息列表 -->
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
+        <el-form-item label="类型">
+          <el-select v-model="searchForm.msgType" placeholder="全部类型" clearable style="width: 140px">
+            <el-option label="系统" value="系统" />
+            <el-option label="审批" value="审批" />
+            <el-option label="薪资" value="薪资" />
+            <el-option label="提醒" value="提醒" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关键字">
+          <el-input
+            v-model="searchForm.keyword"
+            placeholder="标题 / 内容"
+            clearable
+            style="width: 200px"
+            @keyup.enter="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 消息列表 -->
+    <div class="table-card">
       <div v-loading="loading" class="msg-list">
         <el-empty v-if="rows.length === 0" description="暂无消息" />
         <div
@@ -65,11 +72,19 @@
             </div>
           </div>
           <div class="msg-actions">
+            <el-button
+              v-if="jumpTarget(msg)"
+              type="primary"
+              link
+              size="small"
+              :icon="Promotion"
+              @click.stop="handleJump(msg)"
+            >{{ jumpLabel(msg) }}</el-button>
             <el-button type="danger" link size="small" :icon="Delete" @click.stop="handleDelete(msg)">删除</el-button>
           </div>
         </div>
       </div>
-    </el-card>
+    </div>
 
     <!-- 消息详情抽屉 -->
     <el-drawer v-model="detailVisible" :title="currentMsg?.title || '消息详情'" size="420px">
@@ -80,6 +95,9 @@
           <span>{{ formatTime(currentMsg.createTime) }}</span>
         </div>
         <div class="detail-content">{{ currentMsg.content }}</div>
+        <div v-if="jumpTarget(currentMsg)" class="detail-jump">
+          <el-button type="primary" :icon="Promotion" @click="handleJump(currentMsg)">{{ jumpLabel(currentMsg) }}</el-button>
+        </div>
       </template>
     </el-drawer>
 
@@ -134,8 +152,11 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Check, Delete, Promotion, Bell, EditPen, Warning } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { messageJumpTarget as jumpTarget, messageJumpLabel as jumpLabel } from '@/utils/messageJump'
 import {
   getMessageInboxApi,
   getUnreadCountApi,
@@ -179,9 +200,9 @@ const typeIcon = (type) => {
 }
 
 const typeColor = (type) => {
-  if (type === '审批') return '#E6A23C'
-  if (type === '提醒') return '#F56C6C'
-  return '#409EFF'
+  if (type === '审批') return 'var(--el-color-warning)'
+  if (type === '提醒') return 'var(--el-color-danger)'
+  return 'var(--el-color-primary)'
 }
 
 const tagType = (type) => {
@@ -240,6 +261,24 @@ const handleView = async (msg) => {
       // 忽略
     }
   }
+}
+
+// 快速通道：标记已读后直达处理页面
+const router = useRouter()
+const handleJump = async (msg) => {
+  const target = jumpTarget(msg)
+  if (!target) return
+  detailVisible.value = false
+  if (msg.isRead === 0) {
+    try {
+      await markMessageReadApi(msg.id)
+      msg.isRead = 1
+      await refreshUnread()
+    } catch (e) {
+      // 忽略
+    }
+  }
+  router.push(target)
 }
 
 const handleReadAll = async () => {
@@ -307,16 +346,6 @@ onMounted(loadData)
 
 <style scoped lang="scss">
 .message-container {
-  .search-bar {
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #ebeef5;
-  }
-
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
   .msg-list {
     min-height: 200px;
   }
@@ -331,14 +360,14 @@ onMounted(loadData)
     transition: background-color 0.2s;
 
     &:hover {
-      background-color: #f5f7fa;
+      background-color: var(--el-fill-color-light);
     }
 
     &.unread {
-      background-color: #f0f7ff;
+      background-color: var(--el-color-primary-light-9);
 
       &:hover {
-        background-color: #e8f3ff;
+        background-color: var(--el-color-primary-light-8);
       }
 
       .title-text {
@@ -367,7 +396,7 @@ onMounted(loadData)
 
     .title-text {
       font-size: 14px;
-      color: #303133;
+      color: var(--el-text-color-primary);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -376,7 +405,7 @@ onMounted(loadData)
 
   .msg-content {
     font-size: 13px;
-    color: #606266;
+    color: var(--el-text-color-regular);
     margin-top: 6px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -389,11 +418,11 @@ onMounted(loadData)
     align-items: center;
     gap: 12px;
     font-size: 12px;
-    color: #909399;
+    color: var(--el-text-color-secondary);
     margin-top: 6px;
 
     .read-mark {
-      color: #c0c4cc;
+      color: var(--el-text-color-placeholder);
     }
   }
 
@@ -406,17 +435,21 @@ onMounted(loadData)
     align-items: center;
     gap: 12px;
     font-size: 13px;
-    color: #909399;
+    color: var(--el-text-color-secondary);
     padding-bottom: 12px;
-    border-bottom: 1px solid #ebeef5;
+    border-bottom: 1px solid var(--el-border-color-lighter);
   }
 
   .detail-content {
     font-size: 14px;
-    color: #303133;
+    color: var(--el-text-color-primary);
     line-height: 1.8;
     white-space: pre-wrap;
     padding-top: 16px;
+  }
+
+  .detail-jump {
+    padding-top: 20px;
   }
 }
 </style>

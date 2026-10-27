@@ -1,22 +1,34 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item label="关键字">
-            <el-input v-model="searchForm.keyword" placeholder="公司名称 / 编码 / 联系人" clearable style="width: 240px" @keyup.enter="handleSearch" />
-          </el-form-item>
-          <el-form-item label="国家">
-            <el-input v-model="searchForm.country" placeholder="如 美国" clearable style="width: 140px" />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-          </el-form-item>
-        </el-form>
+  <div class="page-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="客户管理"
+      description="维护海外客户档案与信用额度，支持按关键字、国家检索"
+      icon="Avatar"
+    >
+      <template #actions>
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增客户</el-button>
-      </div>
+      </template>
+    </PageHeader>
 
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keyword" placeholder="公司名称 / 编码 / 联系人" clearable style="width: 240px" @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="国家">
+          <el-input v-model="searchForm.country" placeholder="如 美国" clearable style="width: 140px" />
+        </el-form-item>
+        <el-form-item class="search-submit">
+          <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
+          <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 客户列表 -->
+    <div class="table-card">
       <el-table v-loading="loading" :data="tableData" border stripe @sort-change="handleSort">
         <el-table-column prop="customerCode" label="客户编码" width="120" sortable="custom" />
         <el-table-column prop="companyName" label="公司名称" min-width="200" show-overflow-tooltip sortable="custom" />
@@ -45,17 +57,18 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="pagination.pageNum"
-        v-model:page-size="pagination.pageSize"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next, jumper"
-        class="pagination"
-        @size-change="handleSizeChange"
-        @current-change="loadData"
-      />
-    </el-card>
+      <div class="pagination page-pagination">
+        <el-pagination
+          v-model:current-page="pagination.pageNum"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="loadData"
+        />
+      </div>
+    </div>
 
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑客户' : '新增客户'" width="640px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
@@ -148,6 +161,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import { getCustomerPageApi, addCustomerApi, updateCustomerApi, deleteCustomerApi } from '@/api/trade'
 
 const loading = ref(false)
@@ -243,9 +257,3 @@ const handleDelete = async (row) => {
 
 onMounted(loadData)
 </script>
-
-<style scoped>
-.page-container { width: 100%; }
-.search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-</style>

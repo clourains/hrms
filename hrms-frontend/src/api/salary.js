@@ -50,6 +50,11 @@ export const calculateSalaryApi = (salaryMonth) => {
   return request.post('/salary/calculate', { salaryMonth })
 }
 
+// 一键计算并推送工资条（P4-4，管理员）：计算完成后站内信通知员工
+export const calculateAndNotifyApi = (salaryMonth) => {
+  return request.post('/salary/calculate-and-notify', { salaryMonth })
+}
+
 // 下载工资条 PDF（P2-3）：管理员任意员工，普通员工仅自己
 export const downloadPayslipApi = (params) => {
   return request.download('/salary/payslip', params)

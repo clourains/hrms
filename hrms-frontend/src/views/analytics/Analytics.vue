@@ -187,10 +187,16 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { DataAnalysis, CaretTop, CaretBottom, User, UserFilled, Warning, TrendCharts, Money, Lightning, InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { getDashboardStatsApi, getEmployeeStructureApi, getAttendanceAnalysisApi, getSalaryAnalysisApi, getPerformanceAnalysisApi, getTalentPredictionApi, getAiInsightsApi, getTurnoverTrendApi } from '@/api/analytics'
+import { useAppStore } from '@/store/app'
 
 const loading = ref(false)
 const updateTime = ref(new Date().toLocaleString('zh-CN'))
 const structureType = ref('age')
+const appStore = useAppStore()
+
+// 暗黑模式：图表以 ECharts 内置 dark 主题重建，显式适配文字颜色
+const chartThemeName = () => (appStore.isDark ? 'dark' : undefined)
+const labelText = () => (appStore.isDark ? '#E5EAF3' : '#303133')
 
 const dashboardStats = ref(null)
 const employeeStructure = ref(null)
@@ -300,16 +306,18 @@ const initAllCharts = () => {
 
 const initDeptChart = () => {
   if (!deptChartRef.value) return
-  deptChart = echarts.init(deptChartRef.value)
+  deptChart?.dispose()
+  deptChart = echarts.init(deptChartRef.value, chartThemeName())
   const data = employeeStructure.value?.departmentDistribution || []
   deptChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'item', formatter: '{b}: {c}人 ({d}%)' },
     series: [{
       type: 'pie',
       radius: ['40%', '70%'],
       center: ['50%', '55%'],
-      itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
-      label: { show: true, formatter: '{b}\n{d}%', fontSize: 11 },
+      itemStyle: { borderRadius: 4, borderColor: appStore.isDark ? '#141414' : '#fff', borderWidth: 2 },
+      label: { show: true, formatter: '{b}\n{d}%', fontSize: 11, color: labelText() },
       labelLine: { length: 8, length2: 6 },
       data: data.map((d, i) => ({
         value: d.value,
@@ -322,22 +330,24 @@ const initDeptChart = () => {
 
 const initStructureChart = () => {
   if (!structureChartRef.value) return
-  structureChart = echarts.init(structureChartRef.value)
+  structureChart?.dispose()
+  structureChart = echarts.init(structureChartRef.value, chartThemeName())
   const dataMap = {
     age: employeeStructure.value?.ageDistribution || [],
     education: employeeStructure.value?.educationDistribution || [],
     gender: employeeStructure.value?.genderDistribution || []
   }
   structureChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'item', formatter: '{b}: {c}人 ({d}%)' },
-    legend: { bottom: '5%', left: 'center', itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11 } },
+    legend: { bottom: '5%', left: 'center', itemWidth: 10, itemHeight: 10, textStyle: { fontSize: 11, color: labelText() } },
     series: [{
       type: 'pie',
       radius: ['35%', '65%'],
       center: ['50%', '45%'],
-      itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { borderRadius: 4, borderColor: appStore.isDark ? '#141414' : '#fff', borderWidth: 2 },
       label: { show: false },
-      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold', color: labelText() } },
       data: dataMap[structureType.value].map((d, i) => ({
         value: d.value,
         name: d.name,
@@ -349,12 +359,14 @@ const initStructureChart = () => {
 
 const initAttritionChart = () => {
   if (!attritionChartRef.value) return
-  attritionChart = echarts.init(attritionChartRef.value)
+  attritionChart?.dispose()
+  attritionChart = echarts.init(attritionChartRef.value, chartThemeName())
   const futureData = talentPrediction.value?.futureHeadcount || []
   const attritionRate = talentPrediction.value?.predictedAttritionRate || 0
   const months = futureData.map(d => d.month)
   const counts = futureData.map(d => d.predictedCount)
   attritionChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
     grid: { left: '10%', right: '10%', top: '15%', bottom: '15%' },
     xAxis: { type: 'category', data: months.length > 0 ? months : ['本月'], axisLabel: { fontSize: 10 } },
@@ -378,9 +390,11 @@ const initAttritionChart = () => {
 
 const initSalaryChart = () => {
   if (!salaryChartRef.value) return
-  salaryChart = echarts.init(salaryChartRef.value)
+  salaryChart?.dispose()
+  salaryChart = echarts.init(salaryChartRef.value, chartThemeName())
   const data = salaryAnalysis.value?.salaryDistribution || []
   salaryChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: { type: 'category', data: data.map(d => d.name) },
@@ -396,16 +410,18 @@ const initSalaryChart = () => {
           borderRadius: [4, 4, 0, 0]
         }
       })),
-      label: { show: true, position: 'top', formatter: '{c}人' }
+      label: { show: true, position: 'top', formatter: '{c}人', color: labelText() }
     }]
   })
 }
 
 const initPerformanceChart = () => {
   if (!performanceChartRef.value) return
-  performanceChart = echarts.init(performanceChartRef.value)
+  performanceChart?.dispose()
+  performanceChart = echarts.init(performanceChartRef.value, chartThemeName())
   const data = performanceAnalysis.value?.gradeDistribution || []
   performanceChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'item', formatter: '{b}: {c}人 ({d}%)' },
     series: [{
       type: 'pie',
@@ -413,7 +429,7 @@ const initPerformanceChart = () => {
       center: ['50%', '55%'],
       roseType: 'radius',
       itemStyle: { borderRadius: 6 },
-      label: { formatter: '{b}\n{d}%', fontSize: 11 },
+      label: { formatter: '{b}\n{d}%', fontSize: 11, color: labelText() },
       data: data.map((d, i) => ({
         value: d.value,
         name: d.name,
@@ -425,9 +441,11 @@ const initPerformanceChart = () => {
 
 const initAttendanceChart = () => {
   if (!attendanceChartRef.value) return
-  attendanceChart = echarts.init(attendanceChartRef.value)
+  attendanceChart?.dispose()
+  attendanceChart = echarts.init(attendanceChartRef.value, chartThemeName())
   const deptData = attendanceAnalysis.value?.deptAttendance || []
   attendanceChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
     xAxis: { type: 'category', data: deptData.map(d => d.name), axisLabel: { fontSize: 10 } },
@@ -444,22 +462,24 @@ const initAttendanceChart = () => {
         borderRadius: [4, 4, 0, 0]
       },
       barWidth: '40%',
-      label: { show: true, position: 'top', formatter: '{c}%', fontSize: 10 }
+      label: { show: true, position: 'top', formatter: '{c}%', fontSize: 10, color: labelText() }
     }]
   })
 }
 
 const initRadarChart = () => {
   if (!radarChartRef.value) return
-  radarChart = echarts.init(radarChartRef.value)
+  radarChart?.dispose()
+  radarChart = echarts.init(radarChartRef.value, chartThemeName())
   const dimensions = performanceAnalysis.value?.dimensionAnalysis || []
   radarChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: {},
     radar: {
       indicator: dimensions.map(d => ({ name: d.name, max: 100 })),
       center: ['50%', '55%'],
       radius: '65%',
-      axisName: { fontSize: 10, color: '#606266' },
+      axisName: { fontSize: 10, color: appStore.isDark ? '#A3A6AD' : '#606266' },
       splitArea: { areaStyle: { color: ['rgba(64, 158, 255, 0.05)', 'rgba(64, 158, 255, 0.1)'] } }
     },
     series: [{
@@ -478,10 +498,12 @@ const initRadarChart = () => {
 // 入职离职趋势图（真实统计数据，紧邻 AI 流失预测形成"历史-预测"呼应）
 const initTrendChart = () => {
   if (!trendChartRef.value) return
-  trendChart = echarts.init(trendChartRef.value)
+  trendChart?.dispose()
+  trendChart = echarts.init(trendChartRef.value, chartThemeName())
   trendChart.setOption({
+    backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
-    legend: { data: ['入职人数', '离职人数'], top: 0 },
+    legend: { data: ['入职人数', '离职人数'], top: 0, textStyle: { color: labelText() } },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
     xAxis: { type: 'category', boundaryGap: false, data: trendData.value.map(d => d.month) },
     yAxis: { type: 'value', minInterval: 1 },
@@ -526,6 +548,11 @@ watch(trendPeriod, async () => {
       { data: trendData.value.map(d => d.leaveCount) }
     ]
   })
+})
+
+// 暗黑模式切换后重建全部图表
+watch(() => appStore.isDark, () => {
+  nextTick(() => initAllCharts())
 })
 
 const handleResize = () => {

@@ -1,10 +1,17 @@
 <template>
-  <div class="page-container">
-    <el-card shadow="hover">
+  <div class="page-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="仓库与库存"
+      description="管理仓库档案、库存总览与出入库流水，支持调拨与盘点"
+      icon="House"
+    />
+
+    <div class="table-card">
       <el-tabs v-model="activeTab">
         <!-- ========== 仓库管理 ========== -->
         <el-tab-pane label="仓库管理" name="warehouse">
-          <div class="search-bar">
+          <div class="search-card">
             <el-form :inline="true" :model="whSearch">
               <el-form-item label="关键字">
                 <el-input v-model="whSearch.keyword" placeholder="编码 / 名称 / 国家" clearable style="width: 200px" @keyup.enter="handleWhSearch" />
@@ -21,12 +28,12 @@
                   <el-option label="停用" :value="0" />
                 </el-select>
               </el-form-item>
-              <el-form-item>
+              <el-form-item class="search-submit">
                 <el-button type="primary" :icon="Search" @click="handleWhSearch">搜索</el-button>
                 <el-button :icon="Refresh" @click="resetWhSearch">重置</el-button>
+                <el-button type="primary" :icon="Plus" @click="handleAddWh">新增仓库</el-button>
               </el-form-item>
             </el-form>
-            <el-button type="primary" :icon="Plus" @click="handleAddWh">新增仓库</el-button>
           </div>
 
           <el-table v-loading="whLoading" :data="whList" border stripe @sort-change="handleWhSort">
@@ -57,16 +64,17 @@
             </el-table-column>
           </el-table>
 
-          <el-pagination
-            v-model:current-page="whPagination.pageNum"
-            v-model:page-size="whPagination.pageSize"
-            :total="whPagination.total"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next, jumper"
-            class="pagination"
-            @size-change="handleWhSizeChange"
-            @current-change="loadWarehouses"
-          />
+          <div class="pagination page-pagination">
+            <el-pagination
+              v-model:current-page="whPagination.pageNum"
+              v-model:page-size="whPagination.pageSize"
+              :total="whPagination.total"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleWhSizeChange"
+              @current-change="loadWarehouses"
+            />
+          </div>
         </el-tab-pane>
 
         <!-- ========== 库存总览 ========== -->
@@ -81,7 +89,7 @@
               </template>
             </span>
           </template>
-          <div class="search-bar">
+          <div class="search-card">
             <el-form :inline="true" :model="invSearch">
               <el-form-item label="产品">
                 <el-select v-model="invSearch.productId" placeholder="全部产品" clearable filterable style="width: 200px">
@@ -96,16 +104,14 @@
               <el-form-item>
                 <el-checkbox v-model="invSearch.lowStock" @change="handleInvSearch">只看低库存</el-checkbox>
               </el-form-item>
-              <el-form-item>
+              <el-form-item class="search-submit">
+                <el-button :icon="Sort" @click="handleOpenTransfer">仓间调拨</el-button>
+                <el-button :icon="Tickets" @click="openScDrawer">盘点单</el-button>
+                <el-button type="warning" :icon="Box" @click="handleOpenStockChange">出入库登记</el-button>
                 <el-button type="primary" :icon="Search" @click="handleInvSearch">搜索</el-button>
                 <el-button :icon="Refresh" @click="resetInvSearch">重置</el-button>
               </el-form-item>
             </el-form>
-            <div class="toolbar-right">
-              <el-button :icon="Sort" @click="handleOpenTransfer">仓间调拨</el-button>
-              <el-button :icon="Tickets" @click="openScDrawer">盘点单</el-button>
-              <el-button type="warning" :icon="Box" @click="handleOpenStockChange">出入库登记</el-button>
-            </div>
           </div>
 
           <el-table v-loading="invLoading" :data="invList" border stripe @sort-change="handleInvSort">
@@ -121,7 +127,7 @@
             <el-table-column prop="lockedQuantity" label="锁定数量" width="110" align="right" sortable="custom" />
             <el-table-column prop="availableQuantity" label="可用数量" width="110" align="right" sortable="custom">
               <template #default="{ row }">
-                <span :style="{ color: isLowStock(row) ? '#F56C6C' : '#303133', fontWeight: isLowStock(row) ? 600 : 400 }">
+                <span :style="{ color: isLowStock(row) ? 'var(--el-color-danger)' : 'var(--el-text-color-primary)', fontWeight: isLowStock(row) ? 600 : 400 }">
                   {{ row.availableQuantity }}
                 </span>
               </template>
@@ -146,21 +152,22 @@
             </el-table-column>
           </el-table>
 
-          <el-pagination
-            v-model:current-page="invPagination.pageNum"
-            v-model:page-size="invPagination.pageSize"
-            :total="invPagination.total"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next, jumper"
-            class="pagination"
-            @size-change="handleInvSizeChange"
-            @current-change="loadInventory"
-          />
+          <div class="pagination page-pagination">
+            <el-pagination
+              v-model:current-page="invPagination.pageNum"
+              v-model:page-size="invPagination.pageSize"
+              :total="invPagination.total"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleInvSizeChange"
+              @current-change="loadInventory"
+            />
+          </div>
         </el-tab-pane>
 
         <!-- ========== 变动记录 ========== -->
         <el-tab-pane label="变动记录" name="logs">
-          <div class="search-bar">
+          <div class="search-card">
             <el-form :inline="true" :model="logSearch">
               <el-form-item label="变动类型">
                 <el-select v-model="logSearch.changeType" placeholder="全部" clearable style="width: 130px">
@@ -170,7 +177,7 @@
                   <el-option label="解锁" :value="4" />
                 </el-select>
               </el-form-item>
-              <el-form-item>
+              <el-form-item class="search-submit">
                 <el-button type="primary" :icon="Search" @click="handleLogSearch">搜索</el-button>
                 <el-button :icon="Refresh" @click="resetLogSearch">重置</el-button>
               </el-form-item>
@@ -201,19 +208,20 @@
             <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
           </el-table>
 
-          <el-pagination
-            v-model:current-page="logPagination.pageNum"
-            v-model:page-size="logPagination.pageSize"
-            :total="logPagination.total"
-            :page-sizes="[10, 20, 50]"
-            layout="total, sizes, prev, pager, next, jumper"
-            class="pagination"
-            @size-change="handleLogSizeChange"
-            @current-change="loadLogs"
-          />
+          <div class="pagination page-pagination">
+            <el-pagination
+              v-model:current-page="logPagination.pageNum"
+              v-model:page-size="logPagination.pageSize"
+              :total="logPagination.total"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @size-change="handleLogSizeChange"
+              @current-change="loadLogs"
+            />
+          </div>
         </el-tab-pane>
       </el-tabs>
-    </el-card>
+    </div>
 
     <!-- 仓库编辑对话框 -->
     <el-dialog v-model="whDialogVisible" :title="isEditWh ? '编辑仓库' : '新增仓库'" width="600px" destroy-on-close>
@@ -344,25 +352,26 @@
 
     <!-- ========== 盘点单列表（P019） ========== -->
     <el-drawer v-model="scDrawerVisible" title="库存盘点单" size="1020px" destroy-on-close>
-      <div class="search-bar">
-        <el-form :inline="true" :model="scSearch">
-          <el-form-item label="单号">
-            <el-input v-model="scSearch.keyword" placeholder="盘点单号" clearable style="width: 180px" @keyup.enter="handleScSearch" />
-          </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="scSearch.status" placeholder="全部" clearable style="width: 120px">
-              <el-option label="草稿" :value="1" />
-              <el-option label="已确认" :value="2" />
-              <el-option label="已作废" :value="3" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" :icon="Search" @click="handleScSearch">搜索</el-button>
-            <el-button :icon="Refresh" @click="resetScSearch">重置</el-button>
-          </el-form-item>
-        </el-form>
-        <el-button type="primary" :icon="Plus" @click="handleOpenCreateSc">新建盘点单</el-button>
-      </div>
+      <div class="table-card">
+        <div class="search-card">
+          <el-form :inline="true" :model="scSearch">
+            <el-form-item label="单号">
+              <el-input v-model="scSearch.keyword" placeholder="盘点单号" clearable style="width: 180px" @keyup.enter="handleScSearch" />
+            </el-form-item>
+            <el-form-item label="状态">
+              <el-select v-model="scSearch.status" placeholder="全部" clearable style="width: 120px">
+                <el-option label="草稿" :value="1" />
+                <el-option label="已确认" :value="2" />
+                <el-option label="已作废" :value="3" />
+              </el-select>
+            </el-form-item>
+            <el-form-item class="search-submit">
+              <el-button type="primary" :icon="Search" @click="handleScSearch">搜索</el-button>
+              <el-button :icon="Refresh" @click="resetScSearch">重置</el-button>
+              <el-button type="primary" :icon="Plus" @click="handleOpenCreateSc">新建盘点单</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
 
       <el-table v-loading="scLoading" :data="scList" border stripe>
         <el-table-column prop="checkNo" label="盘点单号" width="170" />
@@ -377,7 +386,7 @@
         <el-table-column prop="diffRows" label="差异行" width="80" align="right" />
         <el-table-column label="差异合计" width="100" align="right">
           <template #default="{ row }">
-            <span :style="{ color: row.diffSum === 0 ? '#909399' : (row.diffSum > 0 ? '#67C23A' : '#F56C6C'), fontWeight: 600 }">
+            <span :style="{ color: row.diffSum === 0 ? 'var(--el-text-color-secondary)' : (row.diffSum > 0 ? 'var(--el-color-success)' : 'var(--el-color-danger)'), fontWeight: 600 }">
               {{ row.diffSum > 0 ? '+' : '' }}{{ row.diffSum }}
             </span>
           </template>
@@ -392,16 +401,18 @@
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="scPagination.pageNum"
-        v-model:page-size="scPagination.pageSize"
-        :total="scPagination.total"
-        :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        class="pagination"
-        @size-change="handleScSizeChange"
-        @current-change="loadScList"
-      />
+        <div class="pagination page-pagination">
+          <el-pagination
+            v-model:current-page="scPagination.pageNum"
+            v-model:page-size="scPagination.pageSize"
+            :total="scPagination.total"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            @size-change="handleScSizeChange"
+            @current-change="loadScList"
+          />
+        </div>
+      </div>
     </el-drawer>
 
     <!-- ========== 盘点单编辑/详情（P019） ========== -->
@@ -426,7 +437,7 @@
       <div class="check-toolbar">
         <span class="check-tip">
           共 {{ scItems.length }} 行，差异 <strong>{{ scDiffRows }}</strong> 行<template v-if="scOnlyDiff">（当前显示 {{ scViewItems.length }} 行）</template>，合计
-          <strong :style="{ color: scDiffSum === 0 ? '#909399' : (scDiffSum > 0 ? '#67C23A' : '#F56C6C') }">
+          <strong :style="{ color: scDiffSum === 0 ? 'var(--el-text-color-secondary)' : (scDiffSum > 0 ? 'var(--el-color-success)' : 'var(--el-color-danger)') }">
             {{ scDiffSum > 0 ? '+' : '' }}{{ scDiffSum }}
           </strong>
         </span>
@@ -452,7 +463,7 @@
         </el-table-column>
         <el-table-column label="差异" width="90" align="right">
           <template #default="{ row }">
-            <span :style="{ color: scItemDiff(row) === 0 ? '#909399' : (scItemDiff(row) > 0 ? '#67C23A' : '#F56C6C'), fontWeight: 600 }">
+            <span :style="{ color: scItemDiff(row) === 0 ? 'var(--el-text-color-secondary)' : (scItemDiff(row) > 0 ? 'var(--el-color-success)' : 'var(--el-color-danger)'), fontWeight: 600 }">
               {{ scItemDiff(row) > 0 ? '+' : '' }}{{ scItemDiff(row) }}
             </span>
           </template>
@@ -484,6 +495,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, EditPen, Delete, Box, Sort, Tickets } from '@element-plus/icons-vue'
+import PageHeader from '@/components/PageHeader.vue'
 import {
   getWarehousePageApi, getWarehouseListApi, addWarehouseApi, updateWarehouseApi, deleteWarehouseApi,
   getInventoryPageApi, getInventoryLogsApi, changeStockApi, getProductListApi,
@@ -521,7 +533,7 @@ const gotoLowStock = () => {
 }
 const changeTypeText = (t) => ({ 1: '入库', 2: '出库', 3: '锁定', 4: '解锁' }[t] || '未知')
 const changeTypeTag = (t) => ({ 1: 'success', 2: 'danger', 3: 'warning', 4: 'info' }[t] || 'info')
-const changeColor = (t) => ({ 1: '#67C23A', 2: '#F56C6C', 3: '#E6A23C', 4: '#909399' }[t] || '#303133')
+const changeColor = (t) => ({ 1: 'var(--el-color-success)', 2: 'var(--el-color-danger)', 3: 'var(--el-color-warning)', 4: 'var(--el-text-color-secondary)' }[t] || 'var(--el-text-color-primary)')
 const changePrefix = (t) => (t === 2 || t === 4 ? '-' : '+')
 
 // ========== 仓库管理（后端分页 + 排序） ==========
@@ -1066,16 +1078,15 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-container { width: 100%; }
-.search-bar { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
-.toolbar-right { display: flex; gap: 8px; }
+/* 标签页内搜索卡与表格的间距 */
+.search-card {
+  margin-bottom: 16px;
+}
 .value-edit { margin-left: 4px; padding: 0; }
 .check-toolbar { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
-.check-tip { color: #606266; font-size: 14px; }
+.check-tip { color: var(--el-text-color-regular); font-size: 14px; }
 .check-tip strong { margin: 0 4px; }
 .check-toolbar-right { display: flex; align-items: center; gap: 12px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
-
 /* 库存不足提醒：只在有不足时出现 */
 .tab-with-badge { display: inline-flex; align-items: center; gap: 6px; }
 .low-badge {

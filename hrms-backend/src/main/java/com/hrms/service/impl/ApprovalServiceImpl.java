@@ -1,20 +1,28 @@
 package com.hrms.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.hrms.entity.ApprovalInstance;
 import com.hrms.entity.ApprovalRecord;
 import com.hrms.entity.Message;
+import com.hrms.entity.Overtime;
 import com.hrms.entity.User;
 import com.hrms.mapper.ApprovalInstanceMapper;
 import com.hrms.mapper.ApprovalRecordMapper;
+import com.hrms.mapper.LeaveQuotaMapper;
 import com.hrms.mapper.MessageMapper;
+import com.hrms.mapper.OvertimeMapper;
 import com.hrms.mapper.UserMapper;
 import com.hrms.service.ApprovalService;
+import com.hrms.service.LeaveQuotaService;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -46,6 +54,12 @@ public class ApprovalServiceImpl implements ApprovalService {
 
     @Autowired
     private MessageMapper messageMapper;
+
+    @Autowired
+    private OvertimeMapper overtimeMapper;
+
+    @Autowired
+    private LeaveQuotaService leaveQuotaService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -144,6 +158,8 @@ public class ApprovalServiceImpl implements ApprovalService {
                 inst.setStatus(1);
                 inst.setUpdateTime(LocalDateTime.now());
                 instanceMapper.updateById(inst);
+                // P4-1/P4-2 业务联动：加班单生效、请假扣减额度
+                onApproved(inst);
                 sendMsg(inst.getApplicant(), "您的审批已通过",
                         "「" + inst.getTitle() + "」全部 " + inst.getNodeCount() + " 级审批已通过。", inst.getTitle());
             } else {
@@ -189,6 +205,8 @@ public class ApprovalServiceImpl implements ApprovalService {
             inst.setStatus(2);
             inst.setUpdateTime(LocalDateTime.now());
             instanceMapper.updateById(inst);
+            // P4-1 联动：加班单同步为已驳回
+            syncOvertimeStatus(inst.getId(), 2);
 
             sendMsg(inst.getApplicant(), "您的审批被驳回",
                     "「" + inst.getTitle() + "」在第 " + current.getNodeOrder() + " 级被驳回"
@@ -217,6 +235,8 @@ public class ApprovalServiceImpl implements ApprovalService {
             inst.setStatus(3);
             inst.setUpdateTime(LocalDateTime.now());
             instanceMapper.updateById(inst);
+            // P4-1 联动：加班单同步为已撤销
+            syncOvertimeStatus(inst.getId(), 3);
             if (current != null) {
                 sendMsg(current.getApprover(), "审批申请已撤销",
                         inst.getApplicantName() + " 撤销了「" + inst.getTitle() + "」，无需再处理。", inst.getTitle());
@@ -381,6 +401,78 @@ public class ApprovalServiceImpl implements ApprovalService {
         row.put("comment", rec.getComment());
         row.put("approveTime", rec.getApproveTime());
         return row;
+    }
+
+    /**
+     * P4-1/P4-2 审批全部通过后的业务联动：
+     * 加班单置为已生效（薪资计算取数）；请假按 detail.days 扣减年假额度。
+     */
+    private void onApproved(ApprovalInstance inst) {
+        try {
+            if ("加班".equals(inst.getBizType())) {
+                syncOvertimeStatus(inst.getId(), 1);
+            } else if ("请假".equals(inst.getBizType())) {
+                deductLeaveQuota(inst);
+            }
+        } catch (Exception ignored) {
+            // 业务联动失败不阻断审批主流程，可在日志中排查
+        }
+    }
+
+    /**
+     * 按审批实例ID同步加班单状态：1已通过 2已驳回 3已撤销
+     */
+    private void syncOvertimeStatus(Long instanceId, int status) {
+        Overtime ot = overtimeMapper.selectOne(new LambdaQueryWrapper<Overtime>()
+                .eq(Overtime::getInstanceId, instanceId)
+                .last("LIMIT 1"));
+        if (ot != null && ot.getStatus() != 1) {
+            ot.setStatus(status);
+            ot.setUpdateTime(LocalDateTime.now());
+            overtimeMapper.updateById(ot);
+        }
+    }
+
+    /**
+     * 请假审批通过 → 按申请人绑定员工扣减年假额度（仅年假类型扣池，事假/病假不占年假）
+     */
+    private void deductLeaveQuota(ApprovalInstance inst) {
+        JsonNode detail = parseJson(inst.getDetail());
+        String leaveType = detail == null ? "年假" : Objects.toString(detail.path("leaveType").asText(""), "年假");
+        if (leaveType.isEmpty()) {
+            leaveType = "年假";
+        }
+        if (!"年假".equals(leaveType)) {
+            return;
+        }
+        BigDecimal days = detail == null ? null : detail.path("days").decimalValue();
+        if (days == null || days.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, inst.getApplicant()));
+        if (user == null || user.getEmpId() == null) {
+            return;
+        }
+        int year = LocalDate.now().getYear();
+        if (detail != null && detail.path("startDate").asText("").length() >= 4) {
+            try {
+                year = Integer.parseInt(detail.path("startDate").asText().substring(0, 4));
+            } catch (NumberFormatException ignored) {
+                // 取当前年度
+            }
+        }
+        leaveQuotaService.deduct(user.getEmpId(), year, "年假", days);
+    }
+
+    private JsonNode parseJson(String text) {
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        try {
+            return JsonMapper.builder().build().readTree(text);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

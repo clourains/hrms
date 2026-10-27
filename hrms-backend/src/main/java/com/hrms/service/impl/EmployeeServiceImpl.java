@@ -7,6 +7,7 @@ import com.hrms.dto.PageResult;
 import com.hrms.entity.Employee;
 import com.hrms.mapper.EmployeeMapper;
 import com.hrms.service.EmployeeService;
+import com.hrms.util.UserContext;
 import com.hrms.util.Validators;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (queryDTO.getStatus() != null) {
             queryWrapper.eq(Employee::getStatus, queryDTO.getStatus());
         }
+        // P4-3 部门数据权限：部门经理强制只查本部门
+        applyDeptScope(queryWrapper);
         // 按创建时间倒序
         queryWrapper.orderByDesc(Employee::getCreateTime);
 
@@ -106,7 +109,18 @@ public class EmployeeServiceImpl implements EmployeeService {
     @Override
     public List<Employee> listAll() {
         LambdaQueryWrapper<Employee> queryWrapper = new LambdaQueryWrapper<>();
+        // P4-3 部门数据权限：部门经理仅返回本部门员工
+        applyDeptScope(queryWrapper);
         queryWrapper.orderByAsc(Employee::getEmpNo);
         return employeeMapper.selectList(queryWrapper);
+    }
+
+    /**
+     * P4-3 部门数据权限：manager 角色强制限定本部门，admin/普通员工不追加条件
+     */
+    private void applyDeptScope(LambdaQueryWrapper<Employee> queryWrapper) {
+        if (UserContext.isManager() && UserContext.getDeptId() != null) {
+            queryWrapper.eq(Employee::getDeptId, UserContext.getDeptId());
+        }
     }
 }

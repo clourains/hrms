@@ -1,9 +1,24 @@
 <template>
-  <div class="employee-container">
-    <el-card shadow="hover">
-      <!-- 搜索栏 -->
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
+  <div class="employee-container page-stack">
+    <!-- 页头 -->
+    <PageHeader
+      title="员工管理"
+      description="维护员工档案与在职状态，支持按部门、职位、状态筛选"
+      icon="User"
+    >
+      <template #actions>
+        <el-button type="primary" :icon="Plus" @click="handleAdd">新增员工</el-button>
+        <el-button type="success" :icon="Upload" @click="handleImport">导入</el-button>
+        <el-button type="warning" :icon="Download" @click="handleExport">导出</el-button>
+        <el-button type="danger" :icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+          批量删除
+        </el-button>
+      </template>
+    </PageHeader>
+
+    <!-- 搜索区 -->
+    <div class="search-card">
+      <el-form :inline="true" :model="searchForm">
           <el-form-item label="姓名">
             <el-input v-model="searchForm.name" placeholder="请输入姓名" clearable style="width: 180px" />
           </el-form-item>
@@ -25,24 +40,15 @@
               <el-option label="试用期" value="2" />
             </el-select>
           </el-form-item>
-          <el-form-item>
+          <el-form-item class="search-submit">
             <el-button type="primary" :icon="Search" @click="handleSearch">搜索</el-button>
             <el-button :icon="Refresh" @click="handleReset">重置</el-button>
           </el-form-item>
         </el-form>
-      </div>
+    </div>
 
-      <!-- 操作栏 -->
-      <div class="action-bar">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增员工</el-button>
-        <el-button type="success" :icon="Upload" @click="handleImport">导入</el-button>
-        <el-button type="warning" :icon="Download" @click="handleExport">导出</el-button>
-        <el-button type="danger" :icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-          批量删除
-        </el-button>
-      </div>
-
-      <!-- 表格 -->
+    <!-- 表格 -->
+    <div class="table-card">
       <el-table
         :data="tableData"
         v-loading="loading"
@@ -67,7 +73,7 @@
         </el-table-column>
         <el-table-column prop="departmentName" label="部门" width="120" align="center" />
         <el-table-column prop="position" label="职位" width="120" align="center" />
-        <el-table-column prop="phone" label="手机号" width="130" align="center" />
+        <el-table-column prop="phone" label="手机号" width="150" align="center" class-name="phone-col" />
         <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
         <el-table-column prop="entryDate" label="入职日期" width="120" align="center" />
         <el-table-column prop="status" label="状态" width="90" align="center">
@@ -87,7 +93,7 @@
       </el-table>
 
       <!-- 分页 -->
-      <div class="pagination">
+      <div class="pagination page-pagination">
         <el-pagination
           v-model:current-page="pagination.currentPage"
           v-model:page-size="pagination.pageSize"
@@ -99,7 +105,7 @@
           @current-change="handleCurrentChange"
         />
       </div>
-    </el-card>
+    </div>
 
     <!-- 新增/编辑弹窗 -->
     <el-dialog
@@ -229,15 +235,65 @@
         <el-descriptions-item label="地址" :span="2">{{ formData.address }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ formData.remark }}</el-descriptions-item>
       </el-descriptions>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Excel 导入弹窗（P7-2） -->
+    <el-dialog v-model="importVisible" title="批量导入员工" width="600px" destroy-on-close>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="请按模板格式填写：工号/姓名/性别(男/女)/部门(名称)/职位/手机号 为必填；工号不可重复，部门须与系统中已有部门同名"
+        style="margin-bottom: 14px"
+      />
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px">
+        <el-button link type="primary" :icon="Download" @click="downloadTemplate">下载导入模板</el-button>
+        <el-upload
+          :auto-upload="false"
+          :show-file-list="true"
+          :limit="1"
+          accept=".xlsx,.xls"
+          :on-change="onImportFileChange"
+        >
+          <el-button :icon="Upload">选择文件</el-button>
+        </el-upload>
+      </div>
+
+      <!-- 导入结果：失败行反馈 -->
+      <template v-if="importResult">
+        <el-alert
+          :type="importResult.failed === 0 ? 'success' : 'warning'"
+          :closable="false"
+          show-icon
+          :title="`导入完成：成功 ${importResult.success} 条，失败 ${importResult.failed} 条`"
+          style="margin-bottom: 10px"
+        />
+        <el-table v-if="importResult.errors && importResult.errors.length > 0" :data="importResult.errors" size="small" border max-height="220">
+          <el-table-column prop="row" label="行号" width="70" align="center" />
+          <el-table-column prop="empNo" label="工号" width="110" />
+          <el-table-column prop="name" label="姓名" width="90" />
+          <el-table-column prop="reason" label="失败原因" min-width="200" show-overflow-tooltip />
+        </el-table>
+      </template>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importLoading" @click="submitImport">开始导入</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Upload, Download, Delete, View, Edit } from '@element-plus/icons-vue'
-import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi } from '@/api/employee'
+import PageHeader from '@/components/PageHeader.vue'
+import { getEmployeePageApi, addEmployeeApi, updateEmployeeApi, deleteEmployeeApi, batchDeleteEmployeeApi, importEmployeeApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
@@ -294,7 +350,8 @@ const formRules = {
   position: [{ required: true, message: '请输入职位', trigger: 'blur' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确', trigger: 'blur' }
+    // 支持大陆手机号与带连字符的国际号码（如 +1-310-555-1001）
+    { pattern: /^\+?\d[\d\-]{5,19}$/, message: '手机号格式不正确', trigger: 'blur' }
   ],
   email: [
     { required: true, message: '请输入邮箱', trigger: 'blur' },
@@ -486,8 +543,63 @@ const handleSubmit = async () => {
   })
 }
 
+// P7-2 Excel 导入：弹窗 + 模板下载 + 失败行反馈
+const importVisible = ref(false)
+const importLoading = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+
 const handleImport = () => {
-  ElMessage.info('导入功能演示')
+  importFile.value = null
+  importResult.value = null
+  importVisible.value = true
+}
+
+const downloadTemplate = () => {
+  // 直接走后端模板接口（携带 token 由浏览器同源会话无效，这里用 axios 下载更稳）
+  const base = import.meta.env.VITE_API_BASE || '/api'
+  const token = localStorage.getItem('token') || ''
+  fetch(`${base}/employee/importTemplate`, { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = '员工导入模板.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    })
+    .catch(() => ElMessage.error('模板下载失败'))
+}
+
+const onImportFileChange = (file) => {
+  importFile.value = file.raw
+}
+
+const submitImport = async () => {
+  if (!importFile.value) {
+    ElMessage.warning('请先选择 Excel 文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    const res = await importEmployeeApi(fd)
+    if (res.code === 200) {
+      importResult.value = res.data
+      if (res.data.failed === 0) {
+        ElMessage.success(`导入成功 ${res.data.success} 条`)
+      } else {
+        ElMessage.warning(`成功 ${res.data.success} 条，失败 ${res.data.failed} 条，详见下方列表`)
+      }
+      fetchList()
+    } else {
+      ElMessage.error(res.msg || '导入失败')
+    }
+  } finally {
+    importLoading.value = false
+  }
 }
 
 const handleExport = () => {
@@ -504,28 +616,23 @@ const handleCurrentChange = (page) => {
   fetchList()
 }
 
+const route = useRoute()
+
 onMounted(async () => {
+  // P7-1 全局搜索跳转：?name=xxx 自动带入姓名筛选
+  if (route.query.name) {
+    searchForm.name = String(route.query.name)
+  }
   await loadDepartments()
   fetchList()
 })
 </script>
 
 <style scoped lang="scss">
-.employee-container {
-  .search-bar {
-    margin-bottom: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #ebeef5;
+  // 国际号码含连字符较长，禁止折行，超出省略
+  :deep(.phone-col .cell) {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-
-  .action-bar {
-    margin-bottom: 16px;
-  }
-
-  .pagination {
-    margin-top: 20px;
-    display: flex;
-    justify-content: flex-end;
-  }
-}
 </style>

@@ -11,9 +11,15 @@ public class UserContext {
     private static final ThreadLocal<String> CURRENT_USER = new ThreadLocal<>();
 
     /**
-     * 当前登录用户的角色（P045），如 admin / user
+     * 当前登录用户的角色（P045），如 admin / user / manager
      */
     private static final ThreadLocal<String> CURRENT_ROLE = new ThreadLocal<>();
+
+    /**
+     * 当前登录人绑定员工的部门ID（P4-3 部门数据权限），
+     * 由 JwtAuthenticationFilter 登录解析时填充，manager 角色按此过滤数据范围
+     */
+    private static final ThreadLocal<Long> CURRENT_DEPT_ID = new ThreadLocal<>();
 
     private UserContext() {
     }
@@ -42,6 +48,21 @@ public class UserContext {
     }
 
     /**
+     * 当前用户是否部门经理（P4-3）
+     */
+    public static boolean isManager() {
+        return "manager".equals(CURRENT_ROLE.get());
+    }
+
+    public static void setDeptId(Long deptId) {
+        CURRENT_DEPT_ID.set(deptId);
+    }
+
+    public static Long getDeptId() {
+        return CURRENT_DEPT_ID.get();
+    }
+
+    /**
      * 取当前用户，取不到时给个兜底值，避免流水里出现空白
      */
     public static String getOrDefault(String defaultValue) {
@@ -52,5 +73,6 @@ public class UserContext {
     public static void clear() {
         CURRENT_USER.remove();
         CURRENT_ROLE.remove();
+        CURRENT_DEPT_ID.remove();
     }
 }

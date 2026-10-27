@@ -136,6 +136,22 @@
             库存预警不再单独占一个顶部图标，
             改为在侧边栏「业务管理 / 仓库库存」上显示数字角标 + 仓库页内红字提示
           -->
+          <el-tooltip content="主题模式" placement="bottom">
+            <el-icon class="header-icon" :size="18" @click="appStore.toggleDark()">
+              <Moon v-if="!appStore.isDark" />
+              <Sunny v-else />
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip content="系统设置" placement="bottom">
+            <el-icon class="header-icon" :size="18" @click="appStore.settingsVisible = true">
+              <Setting />
+            </el-icon>
+          </el-tooltip>
+          <el-tooltip content="锁屏" placement="bottom">
+            <el-icon class="header-icon" :size="18" @click="appStore.lock()">
+              <Lock />
+            </el-icon>
+          </el-tooltip>
           <el-tooltip content="全屏" placement="bottom">
             <el-icon class="header-icon" :size="18" @click="toggleFullscreen">
               <FullScreen />
@@ -167,11 +183,14 @@
         </div>
       </el-header>
 
+      <!-- 多标签页导航 -->
+      <RouteTabs />
+
       <!-- 主内容区 -->
       <el-main class="main-content">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <component :is="Component" v-if="showView" :key="route.path" />
           </transition>
         </router-view>
       </el-main>
@@ -179,33 +198,71 @@
 
     <AiChat />
 
-    <!-- 全局搜索（P022） -->
-    <el-dialog v-model="searchVisible" title="搜索" width="520px" append-to-body>
+    <!-- 系统设置抽屉（主题模式/主题色） -->
+    <SettingsDrawer />
+
+    <!-- 锁屏遮罩 -->
+    <LockScreen />
+
+    <!-- 全局搜索（P022 菜单 + P7-1 员工/消息，Ctrl+K 唤起） -->
+    <el-dialog v-model="searchVisible" title="全局搜索" width="560px" append-to-body>
       <el-input
         ref="searchInputRef"
         v-model="searchKeyword"
-        placeholder="输入页面名称，如 库存 / 物流 / 订单"
+        placeholder="搜索页面 / 员工 / 消息（Ctrl+K）"
         prefix-icon="Search"
         clearable
       />
-      <div class="search-list">
+      <div class="search-list" v-loading="searchLoading" element-loading-text="搜索中...">
+        <!-- 页面 -->
+        <div v-if="filteredMenus.length > 0" class="search-group-title">页面</div>
         <div
           v-for="m in filteredMenus"
-          :key="m.path"
+          :key="'menu-' + m.path"
           class="search-item"
           @click="goMenu(m.path)"
         >
           <el-icon><component :is="m.icon" /></el-icon>
           <span>{{ m.title }}</span>
         </div>
-        <el-empty v-if="filteredMenus.length === 0" description="没有匹配的页面" :image-size="56" />
+
+        <!-- 员工 -->
+        <div v-if="empResults.length > 0" class="search-group-title">员工</div>
+        <div
+          v-for="e in empResults"
+          :key="'emp-' + e.id"
+          class="search-item"
+          @click="goEmployee(e)"
+        >
+          <el-icon><User /></el-icon>
+          <span>{{ e.name }}</span>
+          <span class="search-item-sub">{{ e.empNo }}</span>
+        </div>
+
+        <!-- 消息 -->
+        <div v-if="msgResults.length > 0" class="search-group-title">消息</div>
+        <div
+          v-for="msg in msgResults"
+          :key="'msg-' + msg.id"
+          class="search-item"
+          @click="goMessageCenter"
+        >
+          <el-icon><ChatDotRound /></el-icon>
+          <span class="search-item-msg">{{ msg.title }}</span>
+        </div>
+
+        <el-empty
+          v-if="searchKeyword && filteredMenus.length === 0 && empResults.length === 0 && msgResults.length === 0"
+          description="没有匹配的结果"
+          :image-size="56"
+        />
       </div>
     </el-dialog>
   </el-container>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
@@ -218,6 +275,7 @@ import {
   markMessageReadApi,
   readAllMessagesApi
 } from '@/api/message'
+import { getEmployeeListApi } from '@/api/employee'
 import {
   User,
   OfficeBuilding,
@@ -233,19 +291,37 @@ import {
   ArrowDown,
   Lock,
   SwitchButton,
-  ChatDotRound
+  ChatDotRound,
+  Setting,
+  Moon,
+  Sunny
 } from '@element-plus/icons-vue'
 import AiChat from '@/components/AiChat.vue'
+import RouteTabs from '@/components/RouteTabs.vue'
+import SettingsDrawer from '@/components/SettingsDrawer.vue'
+import LockScreen from '@/components/LockScreen.vue'
 import logoMark from '@/assets/logo-mark.png'
+import { useAppStore } from '@/store/app'
+import { messageJumpTarget } from '@/utils/messageJump'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const appStore = useAppStore()
 
 const isCollapse = ref(false)
 
+// 页签右键"刷新"触发：先卸载再重挂载 router-view，实现不刷新浏览器的页面重载
+const showView = ref(true)
+watch(() => appStore.refreshKey, async () => {
+  showView.value = false
+  await nextTick()
+  showView.value = true
+})
+
 // 企业级菜单规划：首页/仪表盘置顶，人事、业务各归其组，可视化分析统一放到底部
-// adminOnly: true 的菜单仅管理员可见（P045 角色权限）
+// adminOnly: true 的菜单仅管理员可见（P045 角色权限）；
+// roles: 数组指定可访问角色白名单（P4-3，如 manager 可见员工管理）
 const menuGroups = [
   { type: 'item', path: '/home', title: '首页', icon: 'HomeFilled' },
   { type: 'item', path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
@@ -254,15 +330,27 @@ const menuGroups = [
     title: '人事管理',
     icon: 'Avatar',
     children: [
-      { path: '/employee', title: '员工管理', icon: 'User', adminOnly: true },
+      { path: '/employee', title: '员工管理', icon: 'User', roles: ['admin', 'manager'] },
       { path: '/department', title: '部门管理', icon: 'OfficeBuilding', adminOnly: true },
       { path: '/attendance', title: '考勤管理', icon: 'Calendar' },
       { path: '/salary', title: '薪资管理', icon: 'Money' },
       { path: '/performance', title: '绩效管理', icon: 'TrendCharts' },
       { path: '/approval', title: '审批中心', icon: 'DocumentChecked' },
       { path: '/message', title: '消息中心', icon: 'ChatDotRound' },
-      { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true },
-      { path: '/audit', title: '审计日志', icon: 'Document', adminOnly: true }
+      { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true }
+    ]
+  },
+  {
+    type: 'group',
+    title: '系统管理',
+    icon: 'Setting',
+    adminOnly: true,
+    children: [
+      { path: '/user', title: '用户管理', icon: 'User' },
+      { path: '/notice', title: '公告管理', icon: 'Notification' },
+      { path: '/loginLog', title: '登录日志', icon: 'Key' },
+      { path: '/config', title: '参数配置', icon: 'Tools' },
+      { path: '/audit', title: '审计日志', icon: 'Document' }
     ]
   },
   {
@@ -294,14 +382,20 @@ const menuGroups = [
   }
 ]
 
-// 按当前登录角色过滤菜单（P045）
+// 按当前登录角色过滤菜单（P045 / P4-3）
 const visibleMenuGroups = computed(() => {
-  const isAdmin = userStore.role === 'admin'
+  const role = userStore.role
+  const isAdmin = role === 'admin'
+  const canSee = (item) => {
+    if (item.roles) return item.roles.includes(role)
+    if (item.adminOnly) return isAdmin
+    return true
+  }
   const groups = []
   for (const group of menuGroups) {
-    if (group.adminOnly && !isAdmin) continue
+    if (!canSee(group)) continue
     if (group.type === 'group') {
-      const children = group.children.filter(child => !child.adminOnly || isAdmin)
+      const children = group.children.filter(canSee)
       groups.push({ ...group, children })
     } else {
       groups.push(group)
@@ -339,10 +433,17 @@ const defaultOpeneds = computed(() => {
 const activeMenu = computed(() => route.path)
 const currentPageTitle = computed(() => route.meta?.title || '')
 
-// ========== 顶部搜索（P022） ==========
+// ========== 全局搜索（P022 菜单 + P7-1 员工/消息） ==========
 const searchVisible = ref(false)
 const searchKeyword = ref('')
 const searchInputRef = ref(null)
+const searchLoading = ref(false)
+const empResults = ref([])
+const msgResults = ref([])
+let empCache = null
+let searchTimer = null
+
+const canSeeEmployee = computed(() => ['admin', 'manager'].includes(userStore.role))
 
 const filteredMenus = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
@@ -352,8 +453,50 @@ const filteredMenus = computed(() => {
 
 const openSearch = () => {
   searchKeyword.value = ''
+  empResults.value = []
+  msgResults.value = []
   searchVisible.value = true
   nextTick(() => searchInputRef.value?.focus())
+}
+
+// 关键词变化时防抖搜索员工（客户端过滤缓存）和消息（服务端模糊）
+watch(searchKeyword, (kw) => {
+  clearTimeout(searchTimer)
+  const k = kw.trim()
+  if (!k) {
+    empResults.value = []
+    msgResults.value = []
+    return
+  }
+  searchTimer = setTimeout(() => doGlobalSearch(k), 300)
+})
+
+const doGlobalSearch = async (kw) => {
+  searchLoading.value = true
+  try {
+    // 员工：admin/manager 可见，首次拉全量后本地过滤
+    if (canSeeEmployee.value) {
+      if (!empCache) {
+        const res = await getEmployeeListApi()
+        empCache = res.code === 200 ? (res.data || []) : []
+      }
+      empResults.value = empCache
+        .filter(e => (e.name || '').includes(kw) || (e.empNo || '').toLowerCase().includes(kw.toLowerCase()))
+        .slice(0, 5)
+    }
+    // 消息：服务端按关键字模糊
+    const msgRes = await getMessageInboxApi({ keyword: kw })
+    msgResults.value = msgRes.code === 200 ? (msgRes.data || []).slice(0, 5) : []
+  } catch {
+    // 搜索失败静默，不影响菜单搜索
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+const goEmployee = (emp) => {
+  searchVisible.value = false
+  router.push({ path: '/employee', query: { name: emp.name } })
 }
 
 const goMenu = (path) => {
@@ -368,6 +511,14 @@ const menuBadges = reactive({
   '/warehouse': 0,           // 库存不足条数
   '/recruit/probation': 0    // 临近到期 + 已逾期的试用期人数
 })
+
+// Ctrl+K / Cmd+K 唤起全局搜索
+const onGlobalKeydown = (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    openSearch()
+  }
+}
 
 const groupTotal = (group) => (group.children || [])
   .reduce((sum, child) => sum + (menuBadges[child.path] || 0), 0)
@@ -420,6 +571,10 @@ onMounted(() => {
   refreshMsgCount()
 })
 
+// Ctrl+K 全局搜索快捷键注册/注销
+window.addEventListener('keydown', onGlobalKeydown)
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+
 // 切换页面时刷新角标，避免数据变动后数字不更新
 watch(() => route.path, () => {
   refreshMenuBadges()
@@ -465,7 +620,8 @@ const openMessage = async (m) => {
     }
   }
   msgVisible.value = false
-  router.push('/message')
+  // 快速通道：审批/薪资类消息直达处理页面，其余进消息中心
+  router.push(messageJumpTarget(m) || '/message')
 }
 
 const msgReadAll = async () => {
@@ -481,6 +637,7 @@ const msgReadAll = async () => {
 
 const goMessageCenter = () => {
   msgVisible.value = false
+  searchVisible.value = false
   router.push('/message')
 }
 
@@ -614,8 +771,8 @@ const handleCommand = async (command) => {
 }
 
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-light);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -631,11 +788,11 @@ const handleCommand = async (command) => {
 
 .collapse-btn {
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: color 0.3s;
 
   &:hover {
-    color: #409EFF;
+    color: var(--el-color-primary);
   }
 }
 
@@ -647,11 +804,11 @@ const handleCommand = async (command) => {
 
 .header-icon {
   cursor: pointer;
-  color: #606266;
+  color: var(--el-text-color-regular);
   transition: color 0.3s;
 
   &:hover {
-    color: #409EFF;
+    color: var(--el-color-primary);
   }
 }
 
@@ -667,22 +824,22 @@ const handleCommand = async (command) => {
   height: 60px;
 
   &:hover {
-    background-color: #f5f7fa;
+    background-color: var(--el-fill-color-light);
   }
 }
 
 .user-avatar {
-  background-color: #409EFF;
+  background-color: var(--el-color-primary);
   color: #fff;
 }
 
 .user-name {
   font-size: 14px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 
 .main-content {
-  background-color: #f5f7fa;
+  background-color: var(--el-bg-color-page);
   padding: 20px;
   min-height: 0;
   overflow-y: auto;
@@ -734,7 +891,7 @@ const handleCommand = async (command) => {
   align-items: center;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 8px;
 }
 .notice-item {
@@ -743,26 +900,26 @@ const handleCommand = async (command) => {
   cursor: pointer;
   transition: background-color 0.2s;
 
-  &:hover { background-color: #f5f7fa; }
+  &:hover { background-color: var(--el-fill-color-light); }
 }
-.notice-title { font-size: 13px; color: #303133; font-weight: 500; }
-.notice-sku { color: #909399; font-weight: 400; margin-left: 6px; font-size: 12px; }
-.notice-sub { font-size: 12px; color: #F56C6C; margin-top: 2px; }
-.notice-more { text-align: center; font-size: 12px; color: #409EFF; padding: 8px 0; cursor: pointer; }
+.notice-title { font-size: 13px; color: var(--el-text-color-primary); font-weight: 500; }
+.notice-sku { color: var(--el-text-color-secondary); font-weight: 400; margin-left: 6px; font-size: 12px; }
+.notice-sub { font-size: 12px; color: var(--el-color-danger); margin-top: 2px; }
+.notice-more { text-align: center; font-size: 12px; color: var(--el-color-primary); padding: 8px 0; cursor: pointer; }
 
 /* 站内消息弹层（P2-1） */
-.msg-unread { background-color: #f0f7ff; }
+.msg-unread { background-color: var(--el-color-primary-light-9); }
 .msg-pop-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-pop-content {
   font-size: 12px;
-  color: #606266;
+  color: var(--el-text-color-regular);
   margin-top: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.msg-pop-time { font-size: 12px; color: #c0c4cc; margin-top: 4px; }
+.msg-pop-time { font-size: 12px; color: var(--el-text-color-placeholder); margin-top: 4px; }
 
 /* 全局搜索列表 */
 .search-list { margin-top: 12px; max-height: 360px; overflow-y: auto; }
@@ -774,10 +931,20 @@ const handleCommand = async (command) => {
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 
-  &:hover { background-color: #f5f7fa; color: #409EFF; }
+  &:hover { background-color: var(--el-fill-color-light); color: var(--el-color-primary); }
 }
+
+/* 搜索分组（P7-1） */
+.search-group-title {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+.search-item-sub { font-size: 12px; color: var(--el-text-color-placeholder); }
+.search-item-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 路由过渡动画 */
 .fade-enter-active,
