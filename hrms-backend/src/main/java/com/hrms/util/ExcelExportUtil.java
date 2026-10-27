@@ -26,9 +26,10 @@ public final class ExcelExportUtil {
      */
     public static void write(HttpServletResponse response, String filename,
                              List<String> headers, List<List<Object>> rows) throws Exception {
-        // 必须给一个带 .xlsx 后缀的文件名让 Hutool 推断为 XSSFWorkbook。
-        // 无参构造会默认 HSSFWorkbook（.xls 二进制，D0CF11E0 魔数），与 Content-Type 不符。
-        ExcelWriter writer = new ExcelWriter("__hrms_export_temp__.xlsx");
+        // getWriter(true) 在内存中创建 XSSFWorkbook（.xlsx）。
+        // 注意不能用无参 getWriter()（默认 HSSFWorkbook=.xls 二进制，与 Content-Type 不符），
+        // 也不能用 getWriter(String 文件路径)（会真的落盘并在下次复用时读到旧内容）。
+        ExcelWriter writer = ExcelUtil.getWriter(true);
         if (headers != null && !headers.isEmpty()) {
             writer.writeHeadRow(headers);
         }
