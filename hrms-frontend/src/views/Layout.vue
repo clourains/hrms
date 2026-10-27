@@ -426,10 +426,10 @@ const menuItems = computed(() => {
   return items
 })
 
-// 进入页面时自动展开当前路由所在的分组
+// 进入页面时自动展开当前路由所在的分组（用 visibleMenuGroups 保证权限过滤后同步）
 const defaultOpeneds = computed(() => {
   const opened = []
-  for (const group of menuGroups) {
+  for (const group of visibleMenuGroups.value) {
     if (group.type === 'group' && group.children.some(child => child.path === route.path)) {
       opened.push(group.title)
     }
