@@ -95,13 +95,14 @@ public class SupplierServiceImpl implements SupplierService {
         if (origin == null) {
             throw new RuntimeException("供应商不存在或已删除");
         }
-        Validators.notCleared(origin.getSupplierCode(), supplier.getSupplierCode(), "供应商编码");
-        Validators.notCleared(origin.getCompanyName(), supplier.getCompanyName(), "公司名称");
-        Validators.notCleared(origin.getContactName(), supplier.getContactName(), "联系人");
-        Validators.notCleared(origin.getPhone(), supplier.getPhone(), "电话");
-        Validators.notCleared(origin.getCountry(), supplier.getCountry(), "国家");
-        Validators.notCleared(origin.getCity(), supplier.getCity(), "城市");
-        Validators.notCleared(origin.getCategory(), supplier.getCategory(), "供应类别");
+        // 编辑与新增同一套口径：必填字段一律不能为空（含历史数据本来就空的情况，编辑时须补齐）
+        Validators.text(supplier.getSupplierCode(), "供应商编码");
+        Validators.text(supplier.getCompanyName(), "公司名称");
+        Validators.text(supplier.getContactName(), "联系人");
+        Validators.text(supplier.getPhone(), "电话");
+        Validators.text(supplier.getCountry(), "国家");
+        Validators.text(supplier.getCity(), "城市");
+        Validators.text(supplier.getCategory(), "供应类别");
         supplier.setUpdateTime(LocalDateTime.now());
         return supplierMapper.updateById(supplier) > 0;
     }

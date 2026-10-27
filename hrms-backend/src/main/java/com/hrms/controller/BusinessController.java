@@ -49,4 +49,9 @@ public class BusinessController {
     public Result<List<Map<String, Object>>> inventoryValue() {
         return Result.success(businessService.inventoryValue());
     }
+
+    @GetMapping("/profit-ranking")
+    public Result<Map<String, Object>> profitRanking() {
+        return Result.success(businessService.profitRanking());
+    }
 }
