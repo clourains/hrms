@@ -741,8 +741,8 @@ const handleCommand = async (command) => {
 }
 
 .header {
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-light);
+  background: var(--el-color-primary);
+  border-bottom: 1px solid var(--el-color-primary);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -754,15 +754,35 @@ const handleCommand = async (command) => {
   display: flex;
   align-items: center;
   gap: 20px;
+
+  /* 面包屑：主色底上统一白色系（类似发布公告按钮的白字） */
+  :deep(.el-breadcrumb__inner) {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 400;
+    transition: color 0.2s;
+  }
+
+  :deep(.el-breadcrumb__inner.is-link:hover) {
+    color: #fff;
+  }
+
+  :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  :deep(.el-breadcrumb__separator) {
+    color: rgba(255, 255, 255, 0.6);
+  }
 }
 
 .collapse-btn {
   cursor: pointer;
-  color: var(--el-text-color-regular);
+  color: rgba(255, 255, 255, 0.85);
   transition: color 0.3s;
 
   &:hover {
-    color: var(--el-color-primary);
+    color: #fff;
   }
 }
 
@@ -774,11 +794,11 @@ const handleCommand = async (command) => {
 
 .header-icon {
   cursor: pointer;
-  color: var(--el-text-color-regular);
+  color: rgba(255, 255, 255, 0.85);
   transition: color 0.3s;
 
   &:hover {
-    color: var(--el-color-primary);
+    color: #fff;
   }
 }
 
@@ -792,20 +812,21 @@ const handleCommand = async (command) => {
   gap: 10px;
   padding: 0 10px;
   height: 60px;
+  color: rgba(255, 255, 255, 0.85);
 
   &:hover {
-    background-color: var(--el-fill-color-light);
+    background-color: rgba(255, 255, 255, 0.12);
   }
 }
 
 .user-avatar {
-  background-color: var(--el-color-primary);
-  color: #fff;
+  background-color: #fff;
+  color: var(--el-color-primary);
 }
 
 .user-name {
   font-size: 14px;
-  color: var(--el-text-color-primary);
+  color: #fff;
 }
 
 .main-content {

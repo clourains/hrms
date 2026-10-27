@@ -158,10 +158,20 @@ onUnmounted(() => document.removeEventListener('click', closeCtx))
     }
 
     &.is-active {
-      background: var(--el-color-primary-light-9);
-      color: var(--el-color-primary);
-      border-color: var(--el-color-primary-light-7) !important;
+      background: var(--el-color-primary);
+      color: #fff;
+      border-color: var(--el-color-primary) !important;
       font-weight: 500;
+
+      /* 蓝底上的关闭按钮同步白色 */
+      .is-icon-close {
+        color: rgba(255, 255, 255, 0.85);
+
+        &:hover {
+          color: #fff;
+          background: rgba(255, 255, 255, 0.2);
+        }
+      }
     }
 
     .is-icon-close {

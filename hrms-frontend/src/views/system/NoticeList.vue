@@ -7,7 +7,7 @@
       icon="Notification"
     >
       <template #actions>
-        <el-button type="primary" plain :icon="Download" @click="handleExport">导出 Excel</el-button>
+        <el-button type="primary" :icon="Download" @click="handleExport">导出 Excel</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreateDialog">发布公告</el-button>
       </template>
     </PageHeader>

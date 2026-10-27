@@ -16,9 +16,9 @@ const mix = (c1, c2, w) => {
   const a = hexToRgb(c1)
   const b = hexToRgb(c2)
   return rgbToHex(
-    a[0] + (b[0] - a[0]) * w,
-    a[1] + (b[1] - a[1]) * w,
-    a[2] + (b[2] - a[2]) * w
+    a[0] * w + b[0] * (1 - w),
+    a[1] * w + b[1] * (1 - w),
+    a[2] * w + b[2] * (1 - w)
   )
 }
 

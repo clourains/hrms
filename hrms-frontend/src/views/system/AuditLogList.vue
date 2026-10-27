@@ -7,7 +7,7 @@
       icon="Document"
     >
       <template #actions>
-        <el-button type="primary" plain :icon="Download" @click="handleExport">导出 Excel</el-button>
+        <el-button type="primary" :icon="Download" @click="handleExport">导出 Excel</el-button>
       </template>
     </PageHeader>
 

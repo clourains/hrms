@@ -396,7 +396,13 @@ const initSalaryChart = () => {
   salaryChart.setOption({
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+    // 右上角标注：说明口径（按月工资单）
+    graphic: [{
+      type: 'text',
+      right: 8, top: 4,
+      style: { text: '按月工资单', fontSize: 11, fill: appStore.isDark ? '#909399' : '#909399' }
+    }],
+    grid: { left: '3%', right: '4%', bottom: '3%', top: '12%', containLabel: true },
     xAxis: { type: 'category', data: data.map(d => d.name) },
     yAxis: { type: 'value', name: '人数' },
     series: [{
@@ -485,7 +491,7 @@ const initRadarChart = () => {
     series: [{
       type: 'radar',
       data: [{
-        value: dimensions.map(d => d.avg || 0),
+        value: dimensions.map(d => Math.round((d.avg || 0) * 100) / 100),
         name: '整体水平',
         areaStyle: { color: 'rgba(64, 158, 255, 0.3)' },
         lineStyle: { color: '#409EFF' },

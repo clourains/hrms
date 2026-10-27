@@ -322,7 +322,30 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         SalaryAnalysis analysis = new SalaryAnalysis();
         List<Salary> salaries = salaryMapper.selectList(null);
 
-        // 筛选当月数据
+        // 过滤：排除关联员工已删除/不存在的工资记录
+        List<Employee> allEmployees = employeeMapper.selectList(null);
+        Set<Long> validEmpIds = allEmployees.stream()
+                .filter(e -> e.getStatus() != null && e.getStatus() == 1)
+                .map(Employee::getId)
+                .collect(Collectors.toSet());
+        salaries = salaries.stream()
+                .filter(s -> validEmpIds.contains(s.getEmpId()))
+                .collect(Collectors.toList());
+
+        // 筛选当月数据：未传 month 时默认取"有有效薪资数据"的最新月份
+        // （跳过本月工资单尚未发放、net_salary 全为 0 的情况）
+        if (month == null || month.isEmpty()) {
+            month = salaries.stream()
+                    .filter(s -> s.getNetSalary() != null && s.getNetSalary().compareTo(BigDecimal.ZERO) > 0)
+                    .map(Salary::getSalaryMonth)
+                    .filter(Objects::nonNull)
+                    .max(String::compareTo)
+                    .orElse(salaries.stream()
+                            .map(Salary::getSalaryMonth)
+                            .filter(Objects::nonNull)
+                            .max(String::compareTo)
+                            .orElse(null));
+        }
         if (month != null && !month.isEmpty()) {
             String finalMonth = month;
             salaries = salaries.stream()
