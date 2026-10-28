@@ -8,6 +8,7 @@
     >
       <template #actions>
         <el-button type="primary" plain :icon="Promotion" @click="handleTestMail">测试发信</el-button>
+        <el-button :icon="Connection" @click="openApiRef.open()">开放接口</el-button>
       </template>
     </PageHeader>
 
@@ -64,17 +65,21 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
+
+    <OpenApiDialog ref="openApiRef" />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Promotion } from '@element-plus/icons-vue'
+import { Promotion, Connection } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import OpenApiDialog from '@/components/OpenApiDialog.vue'
 import { getConfigListApi, updateConfigApi, testMailApi } from '@/api/config'
 
 const loading = ref(false)
+const openApiRef = ref(null)
 const tableData = ref([])
 const dialogVisible = ref(false)
 const submitting = ref(false)

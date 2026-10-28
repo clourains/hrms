@@ -199,9 +199,17 @@ public class TradeOrderServiceImpl implements TradeOrderService {
         }
         Validators.notNull(order.getCustomerId(), "客户");
 
-        // 生成订单号 SO + 年月日 + 4位序号（见 generateOrderNo）
-        String orderNo = generateOrderNo();
-        order.setOrderNo(orderNo);
+        // 外部系统/Excel 导入可以指定订单号（沿用对方单号便于对账）；
+        // 页面手工建单不传，按 SO + 年月日 + 4 位序号生成（见 generateOrderNo）
+        boolean presetNo = StringUtils.hasText(order.getOrderNo());
+        if (presetNo) {
+            if (tradeOrderMapper.countByNoIncludeDeleted(order.getOrderNo()) > 0) {
+                throw new RuntimeException("订单号「" + order.getOrderNo() + "」已存在");
+            }
+        } else {
+            order.setOrderNo(generateOrderNo());
+        }
+        String orderNo = order.getOrderNo();
 
         if (order.getOrderDate() == null) {
             order.setOrderDate(LocalDate.now());
@@ -251,6 +259,10 @@ public class TradeOrderServiceImpl implements TradeOrderService {
                 tradeOrderMapper.insert(order);
                 break;
             } catch (DuplicateKeyException e) {
+                // 外部指定单号撞车不重试：重试会换成另一个号，对方系统就对不上了
+                if (presetNo) {
+                    throw new RuntimeException("订单号「" + order.getOrderNo() + "」已存在");
+                }
                 if (++attempts >= 5) {
                     throw new RuntimeException("订单号生成冲突，请重新提交");
                 }

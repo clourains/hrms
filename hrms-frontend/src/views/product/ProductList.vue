@@ -8,6 +8,7 @@
     >
       <template #actions>
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增产品</el-button>
+        <el-button :icon="Upload" @click="importRef.open()">批量导入</el-button>
       </template>
     </PageHeader>
 
@@ -122,18 +123,22 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <ImportDialog ref="importRef" module="product" label="产品" @success="loadData" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ImportDialog from '@/components/ImportDialog.vue'
 import { getProductPageApi, addProductApi, updateProductApi, deleteProductApi } from '@/api/trade'
 
 const loading = ref(false)
 const submitting = ref(false)
+const importRef = ref(null)
 const tableData = ref([])
 const dialogVisible = ref(false)
 const isEdit = ref(false)

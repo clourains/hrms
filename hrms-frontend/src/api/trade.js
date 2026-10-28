@@ -66,6 +66,21 @@ export const updateOrderApi = (data) => request.put('/order', data)
 export const updateOrderStatusApi = (id, status) => request.put(`/order/status/${id}/${status}`)
 export const deleteOrderApi = (id) => request.delete(`/order/${id}`)
 
+// ========== 发票管理 ==========
+export const getInvoicePageApi = (data) => request.post('/invoice/page', data)
+// 从销售订单开票（body 需带 orderId）
+export const createInvoiceApi = (data) => request.post('/invoice', data)
+export const updateInvoiceApi = (data) => request.put('/invoice', data)
+export const updateInvoiceStatusApi = (id, status) => request.put(`/invoice/status/${id}/${status}`)
+export const deleteInvoiceApi = (id) => request.delete(`/invoice/${id}`)
+
+// ========== 线下交易台账 ==========
+export const getOfflineDealPageApi = (data) => request.post('/offline-deal/page', data)
+export const addOfflineDealApi = (data) => request.post('/offline-deal', data)
+export const updateOfflineDealApi = (data) => request.put('/offline-deal', data)
+export const updateOfflineDealStatusApi = (id, status) => request.put(`/offline-deal/status/${id}/${status}`)
+export const deleteOfflineDealApi = (id) => request.delete(`/offline-deal/${id}`)
+
 // ========== 物流发货 ==========
 export const getShipmentPageApi = (data) => request.post('/shipment/page', data)
 export const getShipmentTracksApi = (id) => request.get(`/shipment/${id}/tracks`)

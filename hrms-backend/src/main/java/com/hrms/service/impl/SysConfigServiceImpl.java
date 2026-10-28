@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 系统参数配置Service实现类（P5-3）
@@ -27,10 +28,17 @@ public class SysConfigServiceImpl implements SysConfigService {
 
     private final Map<String, String> cache = new ConcurrentHashMap<>();
 
+    /** 开放接口密钥：不在参数配置列表中展示，只能通过「开放接口」弹窗查看/重置 */
+    private static final String OPEN_API_KEY = "openapi.accessKey";
+
     @Override
     public List<SysConfig> listAll() {
-        return sysConfigMapper.selectList(
+        List<SysConfig> configs = sysConfigMapper.selectList(
                 new LambdaQueryWrapper<SysConfig>().orderByAsc(SysConfig::getConfigKey));
+        // 密钥不进通用参数列表，避免管理员浏览参数时顺手看到、截屏或误改
+        return configs.stream()
+                .filter(config -> !OPEN_API_KEY.equals(config.getConfigKey()))
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -58,6 +66,9 @@ public class SysConfigServiceImpl implements SysConfigService {
 
     @Override
     public void updateValue(String key, String value, String operator) {
+        if (OPEN_API_KEY.equals(key)) {
+            throw new RuntimeException("开放接口密钥请到「开放接口」弹窗中重置，不能直接改参数");
+        }
         SysConfig config = sysConfigMapper.selectOne(
                 new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey, key));
         if (config == null) {

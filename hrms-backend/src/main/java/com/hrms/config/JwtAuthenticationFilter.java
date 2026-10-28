@@ -46,10 +46,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Autowired
     private EmployeeMapper employeeMapper;
 
+    @Autowired
+    private com.hrms.service.OpenApiKeyService openApiKeyService;
+
+    @Autowired
+    private com.hrms.service.OpenApiRateLimiter openApiRateLimiter;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         try {
+            // 开放接口不走登录：用请求头 X-API-Key 换一个「admin 身份」，只暴露批量写入路由
+            if (request.getRequestURI().startsWith(request.getContextPath() + "/open-api/import")) {
+                String apiKey = request.getHeader("X-API-Key");
+                if (!openApiKeyService.isValid(apiKey)) {
+                    SecurityConfig.writeJson(response, HttpServletResponse.SC_UNAUTHORIZED,
+                            "{\"code\":401,\"message\":\"X-API-Key 无效，请到系统「开放接口」复制最新密钥\",\"data\":null}");
+                    return;
+                }
+                // 限流兜底：即使密钥泄露，也不能被无限制地批量灌数据。
+                // 身份用「密钥 + 真实来源地址」：X-Forwarded-For 可被请求方伪造，
+                // 拿它当限流维度等于把限流开关交给调用者，所以这里只信 remoteAddr。
+                String clientIdentity = apiKey + "@" + request.getRemoteAddr();
+                if (!openApiRateLimiter.allow(clientIdentity)) {
+                    response.setHeader("Retry-After", "60");
+                    SecurityConfig.writeJson(response, 429,
+                            "{\"code\":429,\"message\":\"请求过于频繁，每个来源每分钟最多 60 次，请稍后再试\",\"data\":null}");
+                    return;
+                }
+                UsernamePasswordAuthenticationToken openApiAuth = new UsernamePasswordAuthenticationToken(
+                        "open-api", null, List.of(new SimpleGrantedAuthority("ROLE_admin")));
+                openApiAuth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(openApiAuth);
+                UserContext.set("open-api");
+                UserContext.setRole("admin");
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             String header = request.getHeader("Authorization");
             String token = header;
             if (token != null && token.startsWith("Bearer ")) {
