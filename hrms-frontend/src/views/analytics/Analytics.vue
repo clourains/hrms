@@ -29,12 +29,12 @@
               <span class="metric-title">{{ metric.title }}</span>
             </div>
             <div class="metric-value" :style="{ color: metric.color }">{{ metric.value }}</div>
-            <div class="metric-footer">
-              <span class="metric-trend" :class="metric.trend > 0 ? 'up' : 'down'">
+            <div class="metric-footer" v-if="metric.trend !== null || metric.hint">
+              <span v-if="metric.trend !== null" class="metric-trend" :class="metric.trend > 0 ? 'up' : 'down'">
                 <el-icon><component :is="metric.trend > 0 ? 'CaretTop' : 'CaretBottom'" /></el-icon>
                 {{ Math.abs(metric.trend) }}%
               </span>
-              <span class="metric-compare">较上月</span>
+              <span class="metric-compare">{{ metric.hint || '较上月' }}</span>
             </div>
           </div>
         </el-col>
@@ -65,7 +65,7 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">人员流失率</span>
-              <el-tag type="warning" size="small">AI预测</el-tag>
+              <el-tag type="warning" size="small">趋势预测</el-tag>
             </div>
             <div ref="attritionChartRef" class="chart-content"></div>
           </div>
@@ -100,7 +100,7 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">人才画像雷达</span>
-              <el-tag type="success" size="small">AI分析</el-tag>
+              <el-tag type="success" size="small">统计计算</el-tag>
             </div>
             <div ref="radarChartRef" class="chart-content"></div>
           </div>
@@ -109,7 +109,7 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">招聘需求预测</span>
-              <el-tag type="warning" size="small">AI预测</el-tag>
+              <el-tag type="warning" size="small">规则预估</el-tag>
             </div>
             <div class="hiring-prediction">
               <el-table :data="hiringData" size="small" border>
@@ -151,8 +151,54 @@
         <el-col :span="24">
           <div class="chart-panel">
             <div class="panel-header">
-              <span class="panel-title">AI智能洞察</span>
-              <el-tag type="primary" size="small">基于真实数据分析</el-tag>
+              <div class="insight-head">
+                <span class="panel-title">智能洞察</span>
+                <el-tag :type="aiSource === 'model' ? 'success' : 'info'" size="small" effect="plain">
+                  {{ aiSource === 'model' ? `${aiModelName} 生成` : '规则推算（AI 不可用）' }}
+                </el-tag>
+                <span v-if="aiGeneratedAt" class="insight-time" :class="{ 'is-expired': aiExpired }">
+                  <el-icon><Clock /></el-icon>
+                  分析于 {{ aiGeneratedAt }}
+                  <em class="insight-age" v-if="aiAgeText">{{ aiAgeText }}</em>
+                </span>
+              </div>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :icon="MagicStick"
+                :loading="aiLoading"
+                @click="runAiAnalysis"
+              >
+                {{ aiLoading ? '分析中…' : 'AI 深度分析' }}
+              </el-button>
+            </div>
+            <!-- 结论过期备注：超过 24 小时必须明示，避免把过期结论当作当前数据展示 -->
+            <el-alert
+              v-if="aiExpireNote"
+              :title="aiExpireNote"
+              :type="aiExpireLevel === 'stale' ? 'error' : 'warning'"
+              :closable="false"
+              show-icon
+              class="insight-alert"
+            />
+            <el-alert
+              v-if="aiFallback"
+              :title="aiFallback"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="insight-alert"
+            />
+            <div class="ai-trend" v-if="aiTrendComment">
+              <div class="trend-head">
+                <el-icon><TrendCharts /></el-icon>
+                <span class="trend-title">未来 12 个月人员趋势</span>
+                <el-tag :type="aiSource === 'model' ? 'success' : 'info'" size="small" effect="plain">
+                  {{ aiSource === 'model' ? '模型解读' : '规则推算' }}
+                </el-tag>
+              </div>
+              <div class="trend-body">{{ aiTrendComment }}</div>
             </div>
             <div class="ai-insights">
               <div v-for="(insight, index) in aiInsights" :key="index" class="insight-item">
@@ -160,32 +206,119 @@
                   <el-icon><component :is="getInsightIcon(insight.type)" /></el-icon>
                 </div>
                 <div class="insight-content">
-                  <div class="insight-title">{{ insight.title }}</div>
+                  <div class="insight-title-row">
+                    <span class="insight-title">{{ insight.title }}</span>
+                    <span
+                      v-if="insight.evidence && insight.evidence.length"
+                      class="ev-link"
+                      @click="openEvidence(insight)"
+                    >
+                      查看依据 · {{ insight.evidence.length }} 条
+                      <el-icon><ArrowRight /></el-icon>
+                    </span>
+                  </div>
                   <div class="insight-desc">{{ insight.description }}</div>
                   <div class="insight-suggestion" v-if="insight.suggestion">
                     <el-icon><Lightning /></el-icon>
                     <span>{{ insight.suggestion }}</span>
                   </div>
-                  <div class="insight-confidence" v-if="insight.confidence">
-                    置信度：{{ (insight.confidence * 100).toFixed(0) }}%
-                  </div>
                 </div>
               </div>
               <div v-if="aiInsights.length === 0" class="no-insights">
-                <el-empty description="暂无AI洞察数据" />
+                <el-empty description="暂无洞察数据，可点击右上角 AI 深度分析" />
               </div>
             </div>
           </div>
         </el-col>
       </el-row>
+
+      <!-- 洞察依据弹窗：数值全部由后端查库回填，模型只写文字 -->
+      <el-dialog v-model="evidenceVisible" width="620px">
+        <template #header>
+          <div class="ev-dialog-head">
+            <span class="ev-dialog-title">{{ activeInsight?.title || '洞察依据' }}</span>
+            <el-tag
+              v-if="activeInsight"
+              :type="activeInsight.type || 'info'"
+              size="small"
+              effect="plain"
+            >{{ insightTypeText(activeInsight.type) }}</el-tag>
+          </div>
+        </template>
+        <div v-if="activeInsight" class="ev-body">
+          <div class="ev-block">
+            <div class="ev-block-title">结论</div>
+            <div class="ev-text">{{ activeInsight.description }}</div>
+          </div>
+
+          <div class="ev-block" v-if="activeInsight.evidence && activeInsight.evidence.length">
+            <div class="ev-block-title">
+              依据明细<span class="ev-count">{{ activeInsight.evidence.length }} 条</span>
+            </div>
+            <div class="ev-table">
+              <div v-for="(row, i) in activeInsight.evidence" :key="i" class="ev-row">
+                <div class="ev-row-main">
+                  <span class="ev-label">{{ row.label }}</span>
+                  <span class="ev-value">{{ row.value }}</span>
+                </div>
+                <div class="ev-source" v-if="row.source">来源：{{ row.source }}</div>
+              </div>
+            </div>
+          </div>
+          <el-alert
+            v-else
+            title="本条结论由模型归纳，未匹配到可列明的依据行"
+            type="info"
+            :closable="false"
+            show-icon
+            class="ev-empty"
+          />
+
+          <div class="ev-block" v-if="activeInsight.basis">
+            <div class="ev-block-title">计算口径</div>
+            <div class="ev-basis">{{ activeInsight.basis }}</div>
+          </div>
+
+          <div class="ev-block" v-if="activeInsight.actions && activeInsight.actions.length">
+            <div class="ev-block-title">建议动作</div>
+            <ol class="ev-actions">
+              <li v-for="(a, i) in activeInsight.actions" :key="i">{{ a }}</li>
+            </ol>
+          </div>
+        </div>
+        <template #footer>
+          <div class="ev-footer">
+            <span class="ev-footer-note">
+              <el-icon><InfoFilled /></el-icon>
+              依据数值取自数据库实时统计<template v-if="aiGeneratedAt">，分析生成于 {{ aiGeneratedAt }}</template>
+            </span>
+            <div class="ev-footer-actions">
+              <el-button
+                v-for="(t, i) in (activeInsight && activeInsight.targets) || []"
+                :key="i"
+                size="small"
+                type="primary"
+                plain
+                @click="goTarget(t)"
+              >
+                {{ t.label }}
+                <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+              </el-button>
+              <el-button size="small" @click="evidenceVisible = false">关闭</el-button>
+            </div>
+          </div>
+        </template>
+      </el-dialog>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { DataAnalysis, CaretTop, CaretBottom, User, UserFilled, Warning, TrendCharts, Money, Lightning, InfoFilled, Refresh } from '@element-plus/icons-vue'
+import { DataAnalysis, CaretTop, CaretBottom, User, UserFilled, Warning, TrendCharts, Money, Lightning, InfoFilled, Refresh, MagicStick, ArrowRight, Clock } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { getDashboardStatsApi, getEmployeeStructureApi, getAttendanceAnalysisApi, getSalaryAnalysisApi, getPerformanceAnalysisApi, getTalentPredictionApi, getAiInsightsApi, getTurnoverTrendApi } from '@/api/analytics'
 import { useAppStore } from '@/store/app'
 
@@ -205,6 +338,20 @@ const salaryAnalysis = ref(null)
 const performanceAnalysis = ref(null)
 const talentPrediction = ref(null)
 const aiInsights = ref([])
+
+// 洞察来源：model = 大模型生成（默认展示最近一次结果）；rule = 模型不可用时的规则兜底
+const aiSource = ref('model')
+const aiModelName = ref('AI')
+const aiGeneratedAt = ref('')
+const aiCached = ref(false)
+const aiFallback = ref('')
+const aiLoading = ref(false)
+// 新鲜度：后端按生成时间判定，fresh(≤24h) / aging(24h~3天) / stale(>3天)
+const aiAgeHours = ref(0)
+const aiExpireLevel = ref('fresh')
+const aiExpireNote = ref('')
+// 趋势解读：模型撰写，规则兜底时由后端按真实入离职拼装
+const aiTrendComment = ref('')
 
 const deptChartRef = ref(null)
 const structureChartRef = ref(null)
@@ -234,11 +381,13 @@ const loadTrendData = async (months) => {
   trendData.value = res.data || []
 }
 
+// trend 为 null 表示暂无环比口径（后端未提供历史快照），此时不渲染「较上月」，
+// 改用 hint 展示本月真实发生数，避免出现恒为 0 的假环比误导使用者
 const coreMetrics = ref([
-  { title: '员工总数', value: '--', trend: 0, icon: 'User', color: '#409EFF' },
-  { title: '在职员工', value: '--', trend: 0, icon: 'UserFilled', color: '#67C23A' },
-  { title: '流失率', value: '--', trend: 0, icon: 'Warning', color: '#E6A23C' },
-  { title: '人均薪资', value: '--', trend: 0, icon: 'Money', color: '#F56C6C' }
+  { title: '员工总数', value: '--', trend: null, hint: '', icon: 'User', color: '#409EFF' },
+  { title: '在职员工', value: '--', trend: null, hint: '', icon: 'UserFilled', color: '#67C23A' },
+  { title: '流失率', value: '--', trend: null, hint: '', icon: 'Warning', color: '#E6A23C' },
+  { title: '人均薪资', value: '--', trend: null, hint: '', icon: 'Money', color: '#F56C6C' }
 ])
 
 const hiringData = ref([])
@@ -248,18 +397,36 @@ const getInsightIcon = (type) => {
   return map[type] || 'InfoFilled'
 }
 
+// ===== 洞察依据弹窗 =====
+const evidenceVisible = ref(false)
+const activeInsight = ref(null)
+const router = useRouter()
+
+const insightTypeText = (type) => ({ warning: '预警', success: '亮点', info: '观察' }[type] || '观察')
+
+const openEvidence = (insight) => {
+  activeInsight.value = insight
+  evidenceVisible.value = true
+}
+
+// 跳转到目标页并带入筛选条件；目标页由后端按类别给出，前端只负责 push
+const goTarget = (target) => {
+  if (!target || !target.path) return
+  evidenceVisible.value = false
+  router.push({ path: target.path, query: target.query || {} })
+}
+
 const loadAllData = async () => {
   loading.value = true
   updateTime.value = new Date().toLocaleString('zh-CN')
   try {
-    const [stats, structure, attendance, salary, performance, prediction, insights, trend] = await Promise.all([
+    const [stats, structure, attendance, salary, performance, prediction, trend] = await Promise.all([
       getDashboardStatsApi(),
       getEmployeeStructureApi(),
       getAttendanceAnalysisApi(),
       getSalaryAnalysisApi(),
       getPerformanceAnalysisApi(),
       getTalentPredictionApi(),
-      getAiInsightsApi(),
       getTurnoverTrendApi(TREND_PERIODS[trendPeriod.value] || 12)
     ])
 
@@ -269,7 +436,6 @@ const loadAllData = async () => {
     salaryAnalysis.value = salary.data
     performanceAnalysis.value = performance.data
     talentPrediction.value = prediction.data
-    aiInsights.value = insights.data || []
     trendData.value = trend.data || []
 
     updateCoreMetrics()
@@ -282,6 +448,81 @@ const loadAllData = async () => {
   } finally {
     loading.value = false
   }
+  // 洞察单独加载：无留存结果时后端会自动生成一次（数秒），不能阻塞图表渲染
+  loadInsightSilently()
+}
+
+/** 进入页面加载洞察：后端优先回放最近一次结果，没有才生成 */
+const loadInsightSilently = async () => {
+  aiLoading.value = true
+  try {
+    const res = await getAiInsightsApi()
+    applyInsightPayload(res.data, 'model')
+  } catch (e) {
+    console.error('Load AI insight error:', e)
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+/**
+ * 统一处理洞察接口返回。
+ * 后端返回 { list, source, model, generatedAt, elapsedMs, cached,
+ *          ageHours, expireLevel, expireNote, fallbackReason, trendComment }；
+ * 兼容旧版直接返回数组的情况。
+ */
+const applyInsightPayload = (data, fallbackSource = 'model') => {
+  const list = Array.isArray(data) ? data : (data?.list || [])
+  aiInsights.value = list
+  aiSource.value = Array.isArray(data) ? fallbackSource : (data?.source || fallbackSource)
+  aiModelName.value = data?.model || 'AI'
+  aiGeneratedAt.value = data?.generatedAt || ''
+  aiCached.value = Boolean(data?.cached)
+  aiFallback.value = data?.fallbackReason || ''
+  aiTrendComment.value = Array.isArray(data) ? '' : (data?.trendComment || '')
+  aiAgeHours.value = Array.isArray(data) ? 0 : Number(data?.ageHours || 0)
+  aiExpireLevel.value = Array.isArray(data) ? 'fresh' : (data?.expireLevel || 'fresh')
+  aiExpireNote.value = Array.isArray(data) ? '' : (data?.expireNote || '')
+}
+
+// 结论是否已过期（超过 24 小时）
+const aiExpired = computed(() => aiExpireLevel.value === 'aging' || aiExpireLevel.value === 'stale')
+
+// 生成时间距今多久，用于「什么时候的结果」这一眼看清
+const aiAgeText = computed(() => {
+  if (!aiGeneratedAt.value) return ''
+  const h = Number(aiAgeHours.value || 0)
+  if (h < 1) return '刚刚生成'
+  // 48 小时内仍按小时显示，与过期提示里的「26 小时前」保持同一口径
+  if (h < 48) return `${h} 小时前`
+  return `${Math.floor(h / 24)} 天前`
+})
+
+// 用户主动点击「AI 深度分析」：强制重新生成（无论是否过期都会覆盖当前结果）
+const runAiAnalysis = async () => {
+  if (aiLoading.value) return
+  aiLoading.value = true
+  try {
+    const res = await getAiInsightsApi(true)
+    applyInsightPayload(res.data, 'model')
+    if (aiSource.value === 'model') {
+      ElMessage.success('分析结果已更新')
+    } else {
+      ElMessage.warning(aiFallback.value || '智能分析服务暂不可用，已展示规则推算结果')
+    }
+  } catch (e) {
+    console.error('AI insight error:', e)
+    ElMessage.error('分析失败，已保留现有结果')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+// 金额缩写：卡片底部空间有限，万元以内直接显示，超过按万折算
+const fmtMoney = (n) => {
+  const v = Number(n) || 0
+  if (v >= 10000) return `¥${(v / 10000).toFixed(1)} 万`
+  return `¥${Math.round(v).toLocaleString()}`
 }
 
 const updateCoreMetrics = () => {
@@ -291,6 +532,11 @@ const updateCoreMetrics = () => {
   coreMetrics.value[1].value = (s.activeEmployees || 0) + '人'
   coreMetrics.value[2].value = (talentPrediction.value?.predictedAttritionRate || 0) + '%'
   coreMetrics.value[3].value = s.avgSalary ? '¥' + Number(s.avgSalary).toLocaleString() : '--'
+  // 无真实环比时，底部改成本月真实发生数，比留空或显示 0% 更有参考价值
+  coreMetrics.value[0].hint = `本月入职 ${s.newEmployees || 0} 人`
+  coreMetrics.value[1].hint = `本月离职 ${s.resignedEmployees || 0} 人`
+  coreMetrics.value[2].hint = '近 6 个月离职人数 ÷ 当前在职'
+  coreMetrics.value[3].hint = s.totalSalary ? `薪资总额 ${fmtMoney(s.totalSalary)}` : '本月薪资合计'
 }
 
 const initAllCharts = () => {
@@ -657,6 +903,32 @@ onUnmounted(() => {
 
 .ai-insights { padding: 10px 16px; }
 
+.insight-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.insight-time {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: #909399;
+  &.is-expired { color: #E6A23C; }
+  .insight-age {
+    font-style: normal;
+    padding: 0 5px; border-radius: 3px;
+    background: rgba(144, 147, 153, 0.14);
+  }
+  &.is-expired .insight-age { background: rgba(230, 162, 60, 0.16); }
+}
+.insight-alert { margin: 10px 16px 0; }
+
+/* 未来 12 个月趋势解读：与逐条洞察区分开，作为整体结论放在最前 */
+.ai-trend {
+  margin: 12px 16px 0; padding: 12px 14px; border-radius: 6px;
+  background: var(--el-fill-color-light, #f5f7fa);
+  border-left: 3px solid var(--el-color-primary, #409EFF);
+
+  .trend-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .trend-title { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary, #303133); }
+  .trend-body { font-size: 13px; line-height: 1.7; color: var(--el-text-color-regular, #606266); }
+}
+
+
 .insight-item {
   display: flex; gap: 12px; padding: 16px 0; border-bottom: 1px dashed #ebeef5;
   &:last-child { border-bottom: none; }
@@ -668,12 +940,66 @@ onUnmounted(() => {
 
   .insight-content {
     flex: 1;
-    .insight-title { font-size: 14px; font-weight: 500; color: #303133; margin-bottom: 6px; }
+    .insight-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+    .insight-title { font-size: 14px; font-weight: 500; color: #303133; }
+    .ev-link {
+      display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: #409EFF;
+      cursor: pointer; user-select: none;
+      &:hover { text-decoration: underline; }
+    }
     .insight-desc { font-size: 13px; color: #606266; line-height: 1.6; margin-bottom: 8px; }
-    .insight-suggestion { font-size: 12px; color: #E6A23C; line-height: 1.5; display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
-    .insight-confidence { font-size: 12px; color: #909399; }
+    .insight-suggestion { font-size: 12px; color: #E6A23C; line-height: 1.5; display: flex; gap: 6px; align-items: flex-start; }
   }
 }
 
 .no-insights { padding: 40px; }
+
+/* ===== 洞察依据弹窗 ===== */
+.ev-dialog-head { display: flex; align-items: center; gap: 10px; }
+.ev-dialog-title { font-size: 15px; font-weight: 600; color: #303133; }
+.ev-body { max-height: 62vh; overflow-y: auto; }
+
+.ev-block {
+  margin-bottom: 18px;
+  &:last-child { margin-bottom: 0; }
+}
+.ev-block-title {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  font-size: 12px; font-weight: 600; color: #909399; letter-spacing: .5px;
+}
+.ev-count {
+  font-weight: 400; color: #409EFF; background: rgba(64, 158, 255, .1);
+  padding: 1px 6px; border-radius: 8px; letter-spacing: 0;
+}
+.ev-text { font-size: 13px; line-height: 1.7; color: #606266; }
+
+.ev-table { border: 1px solid #ebeef5; border-radius: 6px; overflow: hidden; }
+.ev-row {
+  padding: 10px 12px; border-bottom: 1px solid #ebeef5;
+  &:last-child { border-bottom: none; }
+  &:nth-child(even) { background: #fafafa; }
+}
+.ev-row-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ev-label { font-size: 13px; color: #606266; }
+.ev-value { font-size: 14px; font-weight: 600; color: #303133; white-space: nowrap; }
+.ev-source { margin-top: 3px; font-size: 11px; color: #b1b3b8; }
+
+.ev-empty { margin-bottom: 18px; }
+
+.ev-basis {
+  padding: 10px 12px; border-radius: 6px; background: #f5f7fa;
+  font-size: 12px; line-height: 1.7; color: #606266;
+}
+
+.ev-actions {
+  margin: 0; padding-left: 18px;
+  li {
+    font-size: 13px; line-height: 1.7; color: #606266;
+    & + li { margin-top: 6px; }
+  }
+}
+
+.ev-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ev-footer-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ev-footer-note { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #909399; }
 </style>

@@ -21,6 +21,8 @@ export const deleteContractApi = (id) => {
 }
 
 // 到期提醒扫描（合同 + 签证，days 默认 60）
+// 注意：request.get 的第二个参数就是 query 参数本体，不要包 { params: ... }，
+// 否则会发成 ?params[days]=30，改了 CONTRACT_EXPIRE_DAYS 也不会生效。
 export const getExpiringApi = (days = 60) => {
-  return request.get('/contract/expiring', { params: { days } })
+  return request.get('/contract/expiring', { days })
 }

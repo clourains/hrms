@@ -62,7 +62,7 @@
     <!-- 快捷入口和最新动态 -->
     <el-row :gutter="20" class="chart-row">
       <el-col :lg="12" :md="24">
-        <el-card class="chart-card" shadow="hover">
+        <el-card class="chart-card quick-card" shadow="hover">
           <template #header>
             <span>快捷入口</span>
           </template>
@@ -80,18 +80,24 @@
       <el-col :lg="12" :md="24">
         <el-card class="chart-card" shadow="hover">
           <template #header>
-            <span>最新动态</span>
+            <div class="card-header">
+              <span>最新动态</span>
+              <span class="card-sub">来源：入职 / 离职 / 审批记录</span>
+            </div>
           </template>
-          <el-timeline>
-            <el-timeline-item
-              v-for="(item, index) in recentActivities"
-              :key="index"
-              :timestamp="item.time"
-              :color="item.color"
-            >
-              {{ item.content }}
-            </el-timeline-item>
-          </el-timeline>
+          <div v-loading="activityLoading" class="activity-body">
+            <el-timeline v-if="recentActivities.length">
+              <el-timeline-item
+                v-for="(item, index) in recentActivities"
+                :key="index"
+                :timestamp="item.time"
+                :color="ACTIVITY_COLORS[item.type] || '#909399'"
+              >
+                {{ item.content }}
+              </el-timeline-item>
+            </el-timeline>
+            <div v-else-if="!activityLoading" class="activity-empty">近 30 天暂无人员或审批动态</div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -102,6 +108,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCandidateFunnelApi, getRecruitStatisticsApi } from '@/api/recruit'
+import { getRecentActivitiesApi } from '@/api/analytics'
 
 const router = useRouter()
 
@@ -147,19 +154,38 @@ const quickActions = [
   { title: '数据分析', icon: 'DataAnalysis', color: '#67C23A', path: '/analytics' }
 ]
 
-const recentActivities = [
-  { content: '张三 提交了请假申请', time: '10分钟前', color: '#409EFF' },
-  { content: '李四 完成了本月绩效自评', time: '30分钟前', color: '#67C23A' },
-  { content: '王五 入职，分配到技术部', time: '2小时前', color: '#E6A23C' },
-  { content: '赵六 提交了补卡申请', time: '3小时前', color: '#909399' },
-  { content: '技术部 新增职位：高级工程师', time: '昨天', color: '#409EFF' }
-]
+const recentActivities = ref([])
+const activityLoading = ref(false)
+/** 动态类型配色：入职绿、离职灰、待审橙、通过蓝、驳回红 */
+const ACTIVITY_COLORS = {
+  onboard: '#67C23A',
+  leave: '#909399',
+  pending: '#E6A23C',
+  approved: '#409EFF',
+  rejected: '#F56C6C'
+}
+
+const loadActivities = async () => {
+  activityLoading.value = true
+  try {
+    const res = await getRecentActivitiesApi(6)
+    recentActivities.value = res.data || []
+  } catch (e) {
+    console.error('Load recent activities error:', e)
+    recentActivities.value = []
+  } finally {
+    activityLoading.value = false
+  }
+}
 
 const handleQuickAction = (path) => {
   router.push(path)
 }
 
-onMounted(loadRecruitData)
+onMounted(() => {
+  loadRecruitData()
+  loadActivities()
+})
 </script>
 
 <style scoped lang="scss">
@@ -171,10 +197,41 @@ onMounted(loadRecruitData)
   height: 100%;
 }
 
+/* 左侧只有 6 个入口，右侧动态条数更多会把两列拉等高的同时留下空白，这里垂直居中 */
+.quick-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.quick-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.card-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary, #909399);
+}
+
+.activity-body {
+  min-height: 180px;
+  padding: 4px 0 0 4px;
+}
+
+.activity-empty {
+  padding: 64px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--el-text-color-secondary, #909399);
 }
 
 .chart-container {

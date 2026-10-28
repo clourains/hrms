@@ -53,6 +53,14 @@ public interface AnalyticsService {
     java.util.List<java.util.Map<String, Object>> getTurnoverTrend(int months);
 
     /**
+     * 首页「最新动态」：由真实的入职、离职、审批记录拼装，按发生时间倒序。
+     * 不返回未来日期的入职计划，避免把「待入职」说成「已入职」。
+     *
+     * @param limit 返回条数上限（1-20）
+     */
+    java.util.List<java.util.Map<String, Object>> getRecentActivities(int limit);
+
+    /**
      * 获取招聘分析
      */
     RecruitmentAnalysis getRecruitmentAnalysis();

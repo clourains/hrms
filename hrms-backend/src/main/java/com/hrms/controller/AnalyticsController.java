@@ -2,6 +2,7 @@ package com.hrms.controller;
 
 import com.hrms.annotation.RequireRole;
 import com.hrms.dto.AnalyticsDTO.*;
+import com.hrms.service.AiInsightService;
 import com.hrms.service.AnalyticsService;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,9 @@ public class AnalyticsController {
 
     @Autowired
     private AnalyticsService analyticsService;
+
+    @Autowired
+    private AiInsightService aiInsightService;
 
     /**
      * 获取仪表盘统计数据
@@ -73,11 +77,16 @@ public class AnalyticsController {
     }
 
     /**
-     * 获取AI洞察
+     * 智能洞察
+     *
+     * generate=false（默认）：规则计算，本地生成，不联网、不产生费用；
+     * generate=true：把统计数据交给大模型生成洞察（用户主动触发，结果缓存 10 分钟），
+     * 模型不可用时自动回落规则结果，并在 fallbackReason 中说明原因。
      */
     @GetMapping("/ai-insights")
-    public Result<List<AiInsight>> getAiInsights() {
-        return Result.success(analyticsService.getAiInsights());
+    public Result<Map<String, Object>> getAiInsights(
+            @RequestParam(defaultValue = "false") boolean generate) {
+        return Result.success(aiInsightService.getInsights(generate));
     }
 
     /**
@@ -87,6 +96,15 @@ public class AnalyticsController {
     public Result<List<Map<String, Object>>> getTurnoverTrend(
             @RequestParam(defaultValue = "12") int months) {
         return Result.success(analyticsService.getTurnoverTrend(months));
+    }
+
+    /**
+     * 首页最新动态：由真实的入职、离职、审批记录拼装，按发生时间倒序
+     */
+    @GetMapping("/recent-activities")
+    public Result<List<Map<String, Object>>> getRecentActivities(
+            @RequestParam(defaultValue = "6") int limit) {
+        return Result.success(analyticsService.getRecentActivities(limit));
     }
 
     /**

@@ -109,6 +109,30 @@ public class AnalyticsDTO {
         private String description;                // 详细描述
         private String suggestion;                 // 建议
         private Double confidence;                 // 置信度
+
+        /**
+         * 依据类别，后端固定枚举（turnover/recruit/performance/salary/attendance/structure）。
+         * 作用是让后端按类别回填真实依据，模型只允许从枚举里选，不得自定义。
+         */
+        private String category;
+
+        /**
+         * 依据明细：每行 {label, value, source}，数值一律由后端查库组装，
+         * 不经模型生成，保证点开「依据」看到的是可核对的事实。
+         */
+        private List<Map<String, Object>> evidence;
+
+        /** 计算口径说明：这条结论的数字是怎么算出来的 */
+        private String basis;
+
+        /** 建议动作，由 suggestion 拆成可逐条执行的条目 */
+        private List<String> actions;
+
+        /**
+         * 可跳转的目标页：每行 {label, path, query}。
+         * 由后端按固定规则给出（模型不参与），前端据此 router.push 并带上筛选条件。
+         */
+        private List<Map<String, Object>> targets;
     }
 
     /**

@@ -695,6 +695,14 @@ onMounted(async () => {
   if (route.query.name) {
     searchForm.name = String(route.query.name)
   }
+  // 智能洞察跳转：?deptId=x&status=y 自动带入部门 / 在职状态筛选
+  // departmentId 必须用 Number：下拉选项的 value 是后端返回的 Long，传字符串会匹配不上、只显示数字
+  if (route.query.deptId) {
+    searchForm.departmentId = Number(route.query.deptId)
+  }
+  if (route.query.status !== undefined && route.query.status !== '') {
+    searchForm.status = String(route.query.status)
+  }
   await loadDepartments()
   await fetchList()
 
