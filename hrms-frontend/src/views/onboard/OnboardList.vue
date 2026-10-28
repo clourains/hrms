@@ -99,7 +99,7 @@
               <el-button type="success" link @click="handleCreateProfile(row)">新建档案</el-button>
               <el-button link :icon="Edit" @click="handleEdit(row)">编辑</el-button>
             </template>
-            <el-button v-else type="primary" link :icon="UserFilled" @click="goEmployee">查看档案</el-button>
+            <el-button v-else type="primary" link :icon="UserFilled" @click="openProfile(row)">查看档案</el-button>
             <el-button type="danger" link :icon="Delete" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -224,6 +224,39 @@
         <el-button type="primary" :loading="linking" @click="handleLink">确认关联</el-button>
       </template>
     </el-dialog>
+
+    <!-- 关联的员工档案详情 -->
+    <el-dialog v-model="detailVisible" title="员工档案" width="680px" destroy-on-close>
+      <div v-loading="detailLoading">
+        <template v-if="detail">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="工号">{{ detail.empNo || detail.employeeNo || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="姓名">{{ detail.name }}</el-descriptions-item>
+            <el-descriptions-item label="性别">{{ detail.gender === 1 ? '男' : detail.gender === 2 ? '女' : '—' }}</el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :type="empStatusOf(detail.status).type" size="small">{{ empStatusOf(detail.status).text }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="部门">{{ detailDeptName }}</el-descriptions-item>
+            <el-descriptions-item label="岗位">{{ detail.position || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="入职日期">{{ detail.entryDate || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="离职日期">{{ detail.leaveDate || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="手机号">{{ detail.phone || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="邮箱">{{ detail.email || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="出生日期">{{ detail.birthday || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="学历">{{ detail.education || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="关联登记单号" :span="2">{{ detailOnboardNo || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="登记来源" :span="2">{{ detailSource || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="地址" :span="2">{{ detail.address || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="备注" :span="2">{{ detail.remark || '—' }}</el-descriptions-item>
+          </el-descriptions>
+        </template>
+        <el-empty v-else-if="!detailLoading" description="未找到该员工档案，可能已被删除" />
+      </div>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+        <el-button type="primary" :icon="UserFilled" @click="goEmployee">打开员工管理</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -232,7 +265,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, UserFilled, Plus, Edit, Delete } from '@element-plus/icons-vue'
-import { getEmployeeListApi } from '@/api/employee'
+import { getEmployeeListApi, getEmployeeDetailApi } from '@/api/employee'
 import { getDepartmentListApi } from '@/api/department'
 import {
   getOnboardPageApi,
@@ -257,6 +290,10 @@ const employeeMap = ref({})
 const dateRange = ref([])
 const dialogVisible = ref(false)
 const linkVisible = ref(false)
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref(null)
+const detailRow = ref(null)
 const isEdit = ref(false)
 const formRef = ref(null)
 const linkEmployeeId = ref(null)
@@ -301,6 +338,27 @@ const linkableEmployees = computed(() => {
 })
 
 const empNoOf = (employeeId) => employeeMap.value[employeeId]?.empNo || ''
+
+const empStatusOf = (status) => {
+  if (status === 0) return { text: '离职', type: 'info' }
+  if (status === 2) return { text: '试用期', type: 'warning' }
+  return { text: '在职', type: 'success' }
+}
+
+// 档案里的部门名优先用档案自带的，其次用登记时的部门快照
+const detailDeptName = computed(() => {
+  if (!detail.value) return '—'
+  return detail.value.deptName || deptMap.value[detail.value.deptId] || detailRow.value?.deptName || '—'
+})
+
+const deptMap = computed(() => {
+  const map = {}
+  deptOptions.value.forEach((d) => { map[d.id] = d.deptName })
+  return map
+})
+
+const detailOnboardNo = computed(() => detailRow.value?.onboardNo || '')
+const detailSource = computed(() => detailRow.value?.source || '')
 
 const loadData = async () => {
   loading.value = true
@@ -470,6 +528,24 @@ const handleDelete = async (row) => {
 }
 
 const goEmployee = () => router.push('/employee')
+
+// 查看具体某个员工档案，而不是只跳到员工列表
+const openProfile = async (row) => {
+  if (!row.employeeId) return
+  detailRow.value = row
+  detail.value = null
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    const res = await getEmployeeDetailApi(row.employeeId)
+    detail.value = res.data || null
+  } catch (e) {
+    detail.value = null
+    ElMessage.error(e?.response?.data?.message || e.message || '员工档案加载失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
 
 loadBaseData()
 loadData()
