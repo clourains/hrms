@@ -193,7 +193,7 @@
     </section>
 
     <!-- 业务：全球物流实时航线 -->
-    <section v-if="viewMode === 'business'" class="cp-logistics">
+    <section v-if="viewMode === 'business'" class="cp-logistics" :class="{ 'is-zoomed': mapZoomed }">
       <div class="cp-panel">
         <div class="panel-head">
           <span class="panel-name">全球物流实时航线</span>
@@ -212,6 +212,9 @@
           <span class="panel-tag">
             {{ liveTrailNo ? `17TRACK · ${liveTrailNo} · ${liveNodeCount} 个节点` : '在途动态追踪 · 每 60 秒刷新' }}
           </span>
+          <el-button link class="map-zoom-btn" :icon="mapZoomed ? Close : FullScreen" @click="toggleMapZoom">
+            {{ mapZoomed ? '退出放大' : '放大' }}
+          </el-button>
         </div>
         <div ref="bizShipmentMapRef" class="panel-chart"></div>
       </div>
@@ -224,7 +227,12 @@
           <span class="live-dot small"></span>
           实时数据流
         </span>
-        <span class="stream-hint">自动轮播 · 每 4 秒刷新</span>
+        <div class="stream-actions">
+          <span class="stream-hint">自动轮播 · 每 30 秒滚动</span>
+          <el-button link class="stream-all-btn" @click="streamAllVisible = true">
+            查看全部 {{ activities.length }} 条
+          </el-button>
+        </div>
       </div>
 
       <div class="stream-body">
@@ -265,6 +273,32 @@
       <span class="insight-label">AI 洞察</span>
       <span class="insight-text">{{ insightText }}</span>
     </div>
+
+    <!-- 实时数据流：全部动态 -->
+    <el-dialog
+      v-model="streamAllVisible"
+      title="实时数据流 · 全部动态"
+      width="760px"
+      class="stream-dialog"
+      append-to-body
+    >
+      <div class="stream-dialog-body">
+        <div
+          v-for="item in activities"
+          :key="item.uid"
+          class="stream-item"
+          :class="'type-' + item.type"
+        >
+          <span class="si-type">{{ activityTypeText(item.type) }}</span>
+          <span class="si-content full">{{ item.content }}</span>
+          <span class="si-time">{{ item.at || item.time }}</span>
+        </div>
+        <div v-if="!activities.length" class="stream-empty">暂无实时动态</div>
+      </div>
+      <template #footer>
+        <el-button @click="streamAllVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -274,7 +308,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
-  DataBoard, Refresh, FullScreen, Back, User, UserFilled, Clock,
+  DataBoard, Refresh, FullScreen, Back, User, UserFilled, Clock, Close,
   TrendCharts, Money, Warning, Tickets, Box, ShoppingCart
 } from '@element-plus/icons-vue'
 import {
@@ -450,6 +484,7 @@ const deptRows = computed(() => {
 
 // 实时数据流：每次只展示 4 条，定时向后滚动，形成"流水"观感
 const streamOffset = ref(0)
+const streamAllVisible = ref(false)
 const visibleActivities = computed(() => {
   const list = activities.value
   if (!list.length) return []
@@ -1283,6 +1318,25 @@ const toggleFullscreen = async () => {
 
 const goBack = () => router.push('/dashboard')
 
+// 物流航线放大：面板浮层铺满视口，Esc 退出
+const mapZoomed = ref(false)
+
+const toggleMapZoom = () => {
+  mapZoomed.value = !mapZoomed.value
+}
+
+watch(mapZoomed, async () => {
+  // 容器尺寸变化后 ECharts 必须重新计算画布，否则仍是放大前的小图
+  await nextTick()
+  setTimeout(() => bizShipmentMap?.resize(), 80)
+})
+
+const handleKeydown = (e) => {
+  if (e.key === 'Escape' && mapZoomed.value) {
+    mapZoomed.value = false
+  }
+}
+
 const handleResize = () => {
   deptChart?.resize()
   salaryChart?.resize()
@@ -1301,6 +1355,8 @@ const handleResize = () => {
 
 // 视图切换后，DOM 重建，需重新初始化当前视图的图表
 watch(viewMode, async (mode) => {
+  // 切换视图时退出放大态，避免回到业务视图时地图仍处于浮层
+  mapZoomed.value = false
   await nextTick()
   if (mode === 'hr') {
     // 离开业务视图时停止物流动画并销毁地图实例
@@ -1325,11 +1381,12 @@ onMounted(() => {
   updateClock()
   clockTimer = setInterval(updateClock, 1000)
   loadAll()
-  // 数据流每 4 秒向前滚动一条
-  streamTimer = setInterval(() => { streamOffset.value += 1 }, 4000)
+  // 数据流每 30 秒向前滚动一条，节奏放慢便于阅读
+  streamTimer = setInterval(() => { streamOffset.value += 1 }, 30000)
   // 每 30 秒静默刷新，保证驾驶舱数据（含新增物流轨迹）不陈旧
   refreshTimer = setInterval(() => loadAll(true), 30000)
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', handleKeydown)
 })
 
 onBeforeUnmount(() => {
@@ -1337,6 +1394,7 @@ onBeforeUnmount(() => {
   clearInterval(streamTimer)
   clearInterval(refreshTimer)
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleKeydown)
   Object.values(rafIds).forEach(id => cancelAnimationFrame(id))
   if (bizShipmentTimer) clearInterval(bizShipmentTimer)
   bizShipmentMap?.dispose()
@@ -1723,6 +1781,37 @@ onBeforeUnmount(() => {
   }
 }
 
+/* 物流航线放大：面板浮层铺满视口，背后区域压暗，Esc 或按钮退出 */
+.cp-logistics.is-zoomed {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 3000;
+  flex: none;
+  min-height: 0;
+  padding: 10px 14px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: linear-gradient(160deg, rgba(10, 24, 44, 0.99), rgba(4, 10, 20, 0.99));
+  box-shadow: 0 0 0 100vmax rgba(2, 6, 16, 0.75), 0 24px 70px rgba(0, 0, 0, 0.65);
+
+  .panel-chart {
+    min-height: 0;
+  }
+}
+
+.map-zoom-btn {
+  margin-left: 10px;
+  color: #7dd3fc;
+  font-size: 11px;
+
+  &:hover {
+    color: #22d3ee;
+  }
+}
+
 .cp-panel {
   position: relative;
   flex: 1 1 0;
@@ -1897,6 +1986,63 @@ onBeforeUnmount(() => {
 .stream-hint {
   font-size: 10px;
   color: #475569;
+}
+
+.stream-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.stream-all-btn {
+  padding: 0;
+  font-size: 11px;
+  color: #7dd3fc;
+
+  &:hover {
+    color: #22d3ee;
+  }
+}
+
+/* 全部动态弹窗：沿用驾驶舱深色皮肤 */
+:global(.stream-dialog) {
+  background: linear-gradient(160deg, rgba(12, 27, 49, 0.98), rgba(6, 14, 28, 0.98));
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px;
+
+  .el-dialog__header {
+    border-bottom: 1px solid rgba(56, 189, 248, 0.14);
+  }
+
+  .el-dialog__title {
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #e2e8f0;
+  }
+
+  .el-dialog__headerbtn .el-dialog__close {
+    color: #7b8ca6;
+  }
+
+  .el-dialog__footer {
+    padding-top: 6px;
+  }
+}
+
+.stream-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.stream-dialog-body .si-content.full {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.5;
 }
 
 .stream-body {
