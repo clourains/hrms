@@ -172,7 +172,7 @@ const routes = [
         component: () => import('@/views/payment/PaymentList.vue'),
         meta: { title: '收付款', icon: 'Wallet', requiresAdmin: true }
       },
-      // ===== 招聘管理（招聘需求 -> 候选人 -> 面试 -> 试用期转正）=====
+      // ===== 入离管理（招聘需求 -> 候选人 -> 面试 -> 入职 -> 离职/辞退）=====
       {
         path: 'recruit/requisition',
         name: 'RecruitRequisition',
@@ -196,6 +196,27 @@ const routes = [
         name: 'RecruitProbation',
         component: () => import('@/views/recruit/ProbationList.vue'),
         meta: { title: '转正管理', icon: 'CircleCheck', requiresAdmin: true }
+      },
+      {
+        path: 'onboard',
+        name: 'Onboard',
+        component: () => import('@/views/onboard/OnboardList.vue'),
+        meta: { title: '入职登记', icon: 'Plus', requiresAdmin: true }
+      },
+      {
+        // 离职与辞退共用同一个列表组件，用 props 固定单据类别
+        path: 'exit/resign',
+        name: 'ExitResign',
+        component: () => import('@/views/exit/ExitList.vue'),
+        props: { kind: 1 },
+        meta: { title: '离职管理', icon: 'Right', requiresAdmin: true }
+      },
+      {
+        path: 'exit/dismiss',
+        name: 'ExitDismiss',
+        component: () => import('@/views/exit/ExitList.vue'),
+        props: { kind: 2 },
+        meta: { title: '辞退管理', icon: 'Warning', requiresAdmin: true }
       }
     ]
   },

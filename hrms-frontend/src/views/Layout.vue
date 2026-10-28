@@ -415,14 +415,17 @@ const menuGroups = [
   },
   {
     type: 'group',
-    title: '招聘管理',
-    icon: 'Promotion',
+    title: '入离管理',
+    icon: 'Avatar',
     adminOnly: true,
     children: [
       { path: '/recruit/requisition', title: '招聘需求', icon: 'Promotion' },
       { path: '/recruit/candidate', title: '候选人', icon: 'UserFilled' },
       { path: '/recruit/interview', title: '面试安排', icon: 'Calendar' },
-      { path: '/recruit/probation', title: '转正管理', icon: 'CircleCheck' }
+      { path: '/recruit/probation', title: '转正管理', icon: 'CircleCheck' },
+      { path: '/onboard', title: '入职登记', icon: 'Plus' },
+      { path: '/exit/resign', title: '离职管理', icon: 'Right' },
+      { path: '/exit/dismiss', title: '辞退管理', icon: 'Warning' }
     ]
   }
 ]
