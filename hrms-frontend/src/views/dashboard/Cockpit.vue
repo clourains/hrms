@@ -210,11 +210,31 @@
             <el-button v-if="liveTrailNo" size="small" link class="live-clear" @click="clearLiveTrail">清除</el-button>
           </div>
           <span class="panel-tag">
-            {{ liveTrailNo ? `17TRACK · ${liveTrailNo} · ${liveNodeCount} 个节点` : '在途动态追踪 · 每 60 秒刷新' }}
+            {{ liveTrailNo
+              ? `17TRACK · ${liveTrailNo} · ${liveNodeCount} 个节点`
+              : bizShipments.length > MAX_SHIP_ROUTES
+                ? `共 ${bizShipments.length} 票 · 地图仅显示最新 ${MAX_SHIP_ROUTES} 票 · 每票独立配色`
+                : `已同步真实轨迹 ${bizShipments.length} 票 · 每票独立配色 · 悬停查看节点` }}
           </span>
           <el-button link class="map-zoom-btn" :icon="mapZoomed ? Close : FullScreen" @click="toggleMapZoom">
             {{ mapZoomed ? '退出放大' : '放大' }}
           </el-button>
+        </div>
+        <div class="route-search">
+          <el-input
+            v-model="routeKeyword"
+            size="small"
+            class="route-input"
+            placeholder="搜索航线：发货单号 / 运单号 / 订单号 / 客户名称 / 货物名称"
+            clearable
+            @keyup.enter="handleRouteSearch"
+            @clear="resetRouteSearch"
+          />
+          <el-button size="small" type="primary" :loading="routeSearching" @click="handleRouteSearch">搜索航线</el-button>
+          <el-button v-if="routeFiltering" size="small" link @click="resetRouteSearch">清除搜索</el-button>
+          <span v-if="routeFiltering" class="route-hint">
+            匹配 {{ bizShipments.length }} 票{{ bizShipments.length ? '，已按匹配结果绘制' : '' }}
+          </span>
         </div>
         <div ref="bizShipmentMapRef" class="panel-chart"></div>
       </div>
@@ -319,7 +339,7 @@ import {
 import {
   getBusinessOverviewApi, getMonthlySalesApi, getTopCustomersApi,
   getTopProductsApi, getCountryDistributionApi, getInventoryValueApi,
-  getProfitRankingApi, getInventoryWarningCountApi, getShipmentPageApi,
+  getProfitRankingApi, getInventoryWarningCountApi, getShipmentMapRoutesApi,
   queryLiveTrackByNoApi
 } from '@/api/trade'
 import worldGeo from '@/assets/geo/world.json'
@@ -537,7 +557,6 @@ let bizShipmentMap = null
 // 业务物流航线数据
 const bizShipments = ref([])
 let shipmentRoutes = []
-let bizShipmentTimer = null
 let worldRegistered = false
 let lastShipKey = ''
 
@@ -548,9 +567,95 @@ const liveTrailNo = ref('')
 const liveNodeCount = ref(0)
 let liveTrail = null
 
+// 航线多字段搜索（发货单号 / 运单号 / 订单号 / 客户名称 / 货物名称）
+const routeKeyword = ref('')
+const routeSearching = ref(false)
+const routeFiltering = ref(false)
+
+// 用搜索结果重建地图；节点/位置变化时自动重绘
+const applyShipRoutes = (list) => {
+  const shipKey = list.map((r) => `${r.id}:${r.trackCount}:${r.latestLocation}`).join(',')
+  bizShipments.value = list
+  lastShipKey = shipKey
+  if (viewMode.value === 'business' && bizShipmentMapRef.value) {
+    setTimeout(() => initBizShipmentMap(), 60)
+  }
+}
+
+const handleRouteSearch = async () => {
+  const kw = routeKeyword.value.trim()
+  routeSearching.value = true
+  try {
+    const res = await getShipmentMapRoutesApi(kw)
+    const list = Array.isArray(res.data) ? res.data : []
+    routeFiltering.value = !!kw
+    applyShipRoutes(list)
+    if (kw && !list.length) {
+      ElMessage.warning('没有匹配的航线，可换发货单号 / 订单号 / 客户名称 / 货物名称试试')
+    }
+  } catch (e) {
+    ElMessage.error('航线搜索失败，请稍后重试')
+  } finally {
+    routeSearching.value = false
+  }
+}
+
+const resetRouteSearch = () => {
+  routeKeyword.value = ''
+  routeFiltering.value = false
+  routeSearching.value = true
+  getShipmentMapRoutesApi()
+    .then((res) => applyShipRoutes(Array.isArray(res.data) ? res.data : []))
+    .catch(() => {})
+    .finally(() => { routeSearching.value = false })
+}
+
 const SHIP_STATUS_TEXT = { 1: '待发货', 2: '运输中', 3: '已到达', 4: '已签收' }
-const SHIP_BASE_PROGRESS = { 1: 0.03, 2: 0.18, 3: 0.95, 4: 1 }
 const shipStatusColor = (s) => ({ 1: '#64748b', 2: '#22d3ee', 3: '#3b82f6', 4: '#22c55e' }[s] || '#94a3b8')
+
+// 驾驶舱最多同时画 50 票航线，每票一条独立颜色的线
+const MAX_SHIP_ROUTES = 50
+const SHIP_COLOR_STORE = 'hrms_cockpit_ship_route_colors'
+// 黄金角取色：50 票内颜色彼此差异明显，也避免和地图底色撞色
+const shipRouteColorAt = (i) => `hsl(${Math.round((i * 137.508) % 360)}, 82%, ${54 + (i % 3) * 6}%)`
+const loadShipColors = () => {
+  try {
+    return JSON.parse(localStorage.getItem(SHIP_COLOR_STORE)) || {}
+  } catch (e) {
+    return {}
+  }
+}
+let shipColorStore = loadShipColors()
+// 按发货单 id 固定颜色：新增发货单分到未占用的新颜色，已有航线的颜色不跳动
+const shipRouteColor = (id) => {
+  const key = String(id)
+  if (shipColorStore[key]) return shipColorStore[key]
+  const used = new Set(Object.values(shipColorStore))
+  let i = 0
+  while (i < MAX_SHIP_ROUTES && used.has(shipRouteColorAt(i))) i++
+  const color = shipRouteColorAt(i)
+  shipColorStore[key] = color
+  try {
+    localStorage.setItem(SHIP_COLOR_STORE, JSON.stringify(shipColorStore))
+  } catch (e) {
+    // 本地存储不可用时退化为内存分配，不影响展示
+  }
+  return color
+}
+
+// 真实位置在航线曲线上的比例（用于把已走路段画实、剩余画虚）
+const nearestProgress = (curve, coord) => {
+  let best = 0
+  let bestDist = Infinity
+  curve.forEach((pt, i) => {
+    const d = (pt[0] - coord[0]) ** 2 + (pt[1] - coord[1]) ** 2
+    if (d < bestDist) {
+      bestDist = d
+      best = i
+    }
+  })
+  return curve.length > 1 ? best / (curve.length - 1) : 0
+}
 
 const AXIS = { line: 'rgba(56,189,248,0.18)', label: '#7b8ca6' }
 const PALETTE = ['#22d3ee', '#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#818cf8', '#2dd4bf']
@@ -905,15 +1010,32 @@ const updateShipmentFrame = () => {
   shipmentRoutes.forEach((it) => {
     const total = it.curve.length - 1
     const idx = Math.max(0, Math.min(total, Math.round(it.progress * total)))
-    passed.push({ id: `passed-${it.id}`, data: [{ coords: it.curve.slice(0, Math.max(2, idx + 1)) }] })
-    if (it.status === 2) {
-      const cur = it.curve[idx]
+    // 已走的路段才画实线；没有任何真实位置时保持整条虚线
+    if (it.progress > 0) {
+      passed.push({
+        id: `passed-${it.id}`,
+        data: [{ coords: it.curve.slice(0, Math.max(2, idx + 1)) }]
+      })
+    }
+    if (it.cur) {
       moving.push({
-        value: [...cur, 1],
+        value: [...it.cur, 1],
         name: it.shipmentNo,
+        routeColor: it.color,
         portFrom: it.portFrom,
         portTo: it.portTo,
-        status: it.status
+        status: it.status,
+        trackingNo: it.trackingNo,
+        carrier: it.carrier,
+        latestNode: it.latestNode,
+        latestTime: it.latestTime,
+        trackCount: it.trackCount,
+        trackSource: it.trackSource,
+        orderNo: it.orderNo,
+        customerName: it.customerName,
+        productNames: it.productNames,
+        itemStyle: { color: it.color, shadowColor: it.color },
+        label: { show: true, formatter: '{b}', position: 'top', distance: 6, color: it.color, fontSize: 9 }
       })
     }
   })
@@ -926,24 +1048,25 @@ const initBizShipmentMap = () => {
     echarts.registerMap('world', worldGeo)
     worldRegistered = true
   }
-  if (bizShipmentTimer) {
-    clearInterval(bizShipmentTimer)
-    bizShipmentTimer = null
-  }
   bizShipmentMap?.dispose()
   bizShipmentMap = echarts.init(bizShipmentMapRef.value)
 
   shipmentRoutes = (bizShipments.value || [])
+    .slice(0, MAX_SHIP_ROUTES)
     .map((s) => {
       const p0 = getCoord(s.portFrom)
       const p2 = getCoord(s.portTo)
       if (!p0 || !p2) return null
+      const cur = s.latestLocation ? getCoord(s.latestLocation) : null
+      const curve = buildRouteCurve(p0, p2)
       return {
         ...s,
         p0,
         p2,
-        curve: buildRouteCurve(p0, p2),
-        progress: SHIP_BASE_PROGRESS[s.status] ?? 0.05
+        cur,
+        curve,
+        color: shipRouteColor(s.id),
+        progress: cur ? nearestProgress(curve, cur) : 0
       }
     })
     .filter(Boolean)
@@ -964,22 +1087,36 @@ const initBizShipmentMap = () => {
           return `<b>${p.data.location || '-'}</b><br/>${p.data.node}<br/><span style="color:#7b8ca6">${p.data.trackTime || ''}</span>`
         }
         if (p.data.portFrom) {
-          return `<b>${p.data.name}</b><br/>${p.data.portFrom} → ${p.data.portTo}<br/>状态：${SHIP_STATUS_TEXT[p.data.status] || '-'}`
+          const lines = [
+            `<b>${p.data.name}</b>`,
+            `${p.data.portFrom} → ${p.data.portTo}`,
+            p.data.orderNo ? `订单：${p.data.orderNo}` : '',
+            p.data.customerName ? `客户：${p.data.customerName}` : '',
+            p.data.productNames ? `货物：${p.data.productNames}` : '',
+            `运单：${p.data.trackingNo || '-'}（${p.data.carrier || '-'}）`,
+            `状态：${SHIP_STATUS_TEXT[p.data.status] || '-'}`,
+            p.data.latestNode ? `最新节点：${p.data.latestNode}` : '',
+            p.data.latestTime ? `<span style="color:#7b8ca6">${String(p.data.latestTime).replace('T', ' ').slice(0, 19)}</span>` : '',
+            `已同步 ${p.data.trackCount || 0} 个节点 · ${p.data.trackSource || '本地节点'}`
+          ]
+          return lines.filter(Boolean).join('<br/>')
         }
         return p.name
       }
     },
     geo: {
       map: 'world',
-      roam: false,
-      zoom: 1.02,
+      roam: true,
+      zoom: 1.08,
+      scaleLimit: { min: 1, max: 8 },
+      label: { show: false, emphasis: { show: true, color: '#cbd5e1', fontSize: 10 } },
       itemStyle: {
         areaColor: 'rgba(30, 58, 95, 0.45)',
         borderColor: 'rgba(56, 189, 248, 0.22)',
         borderWidth: 0.5
       },
-      emphasis: { itemStyle: { areaColor: 'rgba(45, 80, 130, 0.6)' }, label: { show: false } },
-      silent: true
+      emphasis: { itemStyle: { areaColor: 'rgba(45, 80, 130, 0.6)' }, label: { show: true } },
+      silent: false
     },
     series: [
       ...shipmentRoutes.map((it) => ({
@@ -989,7 +1126,7 @@ const initBizShipmentMap = () => {
         polyline: true,
         data: [{ coords: it.curve }],
         silent: true,
-        lineStyle: { color: 'rgba(148, 163, 184, 0.4)', width: 1.2, type: 'dashed' }
+        lineStyle: { color: it.color, opacity: 0.35, width: 1.2, type: 'dashed' }
       })),
       ...shipmentRoutes.map((it) => ({
         id: `passed-${it.id}`,
@@ -999,10 +1136,10 @@ const initBizShipmentMap = () => {
         data: [],
         silent: true,
         lineStyle: {
-          color: shipStatusColor(it.status),
+          color: it.color,
           width: 2.2,
           shadowBlur: 8,
-          shadowColor: shipStatusColor(it.status)
+          shadowColor: it.color
         }
       })),
       ...shipmentRoutes.map((it) => ({
@@ -1018,11 +1155,26 @@ const initBizShipmentMap = () => {
           trailLength: 0.2,
           symbol: 'circle',
           symbolSize: 3,
-          color: shipStatusColor(it.status)
+          color: it.color
         },
         silent: true,
         zlevel: 2
       })),
+      {
+        id: 'ports',
+        type: 'scatter',
+        coordinateSystem: 'geo',
+        data: shipmentRoutes.map((it) => ({
+          value: it.p2,
+          name: it.portTo,
+          itemStyle: { color: it.color }
+        })),
+        symbolSize: 4,
+        itemStyle: { color: 'rgba(56, 189, 248, 0.85)' },
+        label: { show: true, formatter: '{b}', position: 'right', distance: 4, color: '#8fa6c2', fontSize: 9 },
+        tooltip: { formatter: (p) => `目的港：${p.name}` },
+        zlevel: 1
+      },
       {
         id: 'ships',
         type: 'effectScatter',
@@ -1033,25 +1185,28 @@ const initBizShipmentMap = () => {
         itemStyle: { color: '#22d3ee', shadowBlur: 10, shadowColor: '#22d3ee' },
         zlevel: 3
       }
-    ]
+    ],
+    graphic: shipmentRoutes.length === 0
+      ? [{
+          type: 'text',
+          left: 'center',
+          top: 'middle',
+          silent: true,
+          style: {
+            text: '暂无已同步真实轨迹的发货单\n到「物流跟踪」同步 17TRACK 后自动上图',
+            fill: '#7b8ca6',
+            fontSize: 13,
+            lineHeight: 22,
+            align: 'center'
+          }
+        }]
+      : []
   })
 
   updateShipmentFrame()
 
   // 视图切换 / 发货单变化重建地图后，把已查到的实时轨迹补绘回来
   if (liveTrail) applyLiveTrail()
-
-  // 在途单据沿航线持续推进，形成动态位置
-  bizShipmentTimer = setInterval(() => {
-    let changed = false
-    shipmentRoutes.forEach((it) => {
-      if (it.status === 2 && it.progress < 0.93) {
-        it.progress = Math.min(0.93, it.progress + 0.0045)
-        changed = true
-      }
-    })
-    if (changed) updateShipmentFrame()
-  }, 220)
 }
 
 // 实时查单系列固定 id，便于按 id 增量更新 / 清空
@@ -1227,7 +1382,8 @@ const loadAll = async (silent = false) => {
       getInventoryValueApi().catch(() => null),
       getProfitRankingApi().catch(() => null),
       getInventoryWarningCountApi().catch(() => null),
-      getShipmentPageApi({ pageNum: 1, pageSize: 100 }).catch(() => null)
+      // 只取已同步真实轨迹的发货单，没有节点的单不出现在地图上；搜索时按关键字过滤
+      getShipmentMapRoutesApi(routeFiltering.value ? routeKeyword.value.trim() : '').catch(() => null)
     ])
 
     stats.value = s.data || {}
@@ -1248,16 +1404,11 @@ const loadAll = async (silent = false) => {
     if (bProfit && bProfit.data) bizProfit.value = bProfit.data
     if (bWarn && bWarn.data !== undefined) warningCount.value = Number(bWarn.data) || 0
 
-    // 物流航线：取发货单列表（含起运港/目的港/状态）
-    const shipList = Array.isArray(bShip?.data?.list)
-      ? bShip.data.list
-      : (Array.isArray(bShip?.data) ? bShip.data : [])
-    const shipKey = shipList.map((r) => {
-      const s = r.shipment || r
-      return `${s.id}:${s.status}:${s.portFrom}>${s.portTo}`
-    }).join(',')
-    bizShipments.value = shipList.map((r) => r.shipment || r)
-    // 新增发货单或状态变化时重建航线图，保证新轨迹自动出现
+    // 物流航线：只展示已有真实轨迹节点的发货单（节点来自 17TRACK 同步或本地流转）
+    const shipList = Array.isArray(bShip?.data) ? bShip.data : []
+    const shipKey = shipList.map((r) => `${r.id}:${r.trackCount}:${r.latestLocation}`).join(',')
+    bizShipments.value = shipList
+    // 新增发货单或轨迹节点变化时重建航线图，保证新轨迹自动出现
     if (shipKey !== lastShipKey) {
       lastShipKey = shipKey
       if (viewMode.value === 'business' && bizShipmentMapRef.value) {
@@ -1359,11 +1510,7 @@ watch(viewMode, async (mode) => {
   mapZoomed.value = false
   await nextTick()
   if (mode === 'hr') {
-    // 离开业务视图时停止物流动画并销毁地图实例
-    if (bizShipmentTimer) {
-      clearInterval(bizShipmentTimer)
-      bizShipmentTimer = null
-    }
+    // 离开业务视图时销毁地图实例，回来时按最新真实轨迹重建
     bizShipmentMap?.dispose()
     bizShipmentMap = null
     initHrCharts()
@@ -1396,7 +1543,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('keydown', handleKeydown)
   Object.values(rafIds).forEach(id => cancelAnimationFrame(id))
-  if (bizShipmentTimer) clearInterval(bizShipmentTimer)
   bizShipmentMap?.dispose()
   deptChart?.dispose()
   salaryChart?.dispose()
@@ -1775,6 +1921,51 @@ onBeforeUnmount(() => {
     }
 
     .live-clear {
+      color: #7b8ca6;
+      font-size: 11px;
+    }
+  }
+
+  /* 航线多字段搜索条：发货单号/运单号/订单号/客户/货物名称 */
+  .route-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px 0;
+
+    .route-input {
+      width: 320px;
+
+      :deep(.el-input__wrapper) {
+        background: rgba(6, 16, 30, 0.92);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.26) inset;
+        padding: 1px 8px;
+      }
+
+      :deep(.el-input__inner) {
+        color: #cbd5e1;
+        font-size: 11px;
+        height: 24px;
+      }
+
+      :deep(.el-input__inner::placeholder) {
+        color: #5b6b82;
+      }
+    }
+
+    :deep(.el-button--primary) {
+      background: rgba(34, 211, 238, 0.14);
+      border-color: rgba(34, 211, 238, 0.45);
+      color: #22d3ee;
+    }
+
+    :deep(.el-button--primary:hover) {
+      background: rgba(34, 211, 238, 0.24);
+      border-color: rgba(34, 211, 238, 0.7);
+      color: #67e8f9;
+    }
+
+    .route-hint {
       color: #7b8ca6;
       font-size: 11px;
     }

@@ -7,14 +7,19 @@ import com.hrms.dto.PageResult;
 import com.hrms.dto.StockChangeDTO;
 import com.hrms.entity.Inventory;
 import com.hrms.entity.OrderItem;
+import com.hrms.entity.Product;
+import com.hrms.entity.Customer;
 import com.hrms.entity.Shipment;
 import com.hrms.entity.ShipmentTrack;
 import com.hrms.entity.TradeOrder;
+import com.hrms.mapper.CustomerMapper;
 import com.hrms.mapper.OrderItemMapper;
+import com.hrms.mapper.ProductMapper;
 import com.hrms.mapper.ShipmentMapper;
 import com.hrms.mapper.ShipmentTrackMapper;
 import com.hrms.mapper.TradeOrderMapper;
 import com.hrms.service.InventoryService;
+import com.hrms.service.SeventeenTrackService;
 import com.hrms.service.ShipmentService;
 import com.hrms.util.SortUtil;
 import com.hrms.util.UserContext;
@@ -41,6 +46,9 @@ import java.util.stream.Collectors;
 public class ShipmentServiceImpl implements ShipmentService {
 
     private static final DateTimeFormatter NO_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    /** 轨迹时间统一口径，和 17TRACK 返回格式一致 */
+    private static final DateTimeFormatter TRACK_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static final int STATUS_PENDING = 1;
     private static final int STATUS_SHIPPING = 2;
@@ -71,7 +79,16 @@ public class ShipmentServiceImpl implements ShipmentService {
     private OrderItemMapper orderItemMapper;
 
     @Autowired
+    private CustomerMapper customerMapper;
+
+    @Autowired
+    private ProductMapper productMapper;
+
+    @Autowired
     private InventoryService inventoryService;
+
+    @Autowired
+    private SeventeenTrackService seventeenTrackService;
 
     @Override
     public PageResult<Map<String, Object>> pageQuery(BizQueryDTO queryDTO) {
@@ -595,5 +612,239 @@ public class ShipmentServiceImpl implements ShipmentService {
         if (value != null && value.length() > max) {
             throw new RuntimeException(label + "最多 " + max + " 个字符");
         }
+    }
+
+    @Override
+    public List<Map<String, Object>> mapRoutes(String keyword) {
+        String kw = keyword == null ? "" : keyword.trim();
+        LambdaQueryWrapper<Shipment> wrapper = new LambdaQueryWrapper<Shipment>()
+                .isNotNull(Shipment::getTrackingNo)
+                .ne(Shipment::getTrackingNo, "");
+        // 多字段搜索：发货单号/运单号/承运商/集装箱号/起运目的港，以及订单号/客户/货物名称命中的订单
+        if (StringUtils.hasText(kw)) {
+            Set<Long> matchedOrderIds = matchOrderIds(kw);
+            wrapper.and(w -> {
+                w.like(Shipment::getShipmentNo, kw)
+                        .or().like(Shipment::getTrackingNo, kw)
+                        .or().like(Shipment::getCarrier, kw)
+                        .or().like(Shipment::getContainerNo, kw)
+                        .or().like(Shipment::getPortFrom, kw)
+                        .or().like(Shipment::getPortTo, kw);
+                if (!matchedOrderIds.isEmpty()) {
+                    w.or().in(Shipment::getOrderId, matchedOrderIds);
+                }
+            });
+        }
+        // 只取「已运输/清关中/已签收」且填了追踪号的单，驾驶舱不再画待发货的空线
+        List<Shipment> ships = shipmentMapper.selectList(wrapper
+                .ge(Shipment::getStatus, STATUS_SHIPPING)
+                .orderByDesc(Shipment::getUpdateTime)
+                .last("LIMIT 50"));
+        if (ships.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> ids = ships.stream().map(Shipment::getId).collect(Collectors.toList());
+        List<ShipmentTrack> tracks = shipmentTrackMapper.selectList(new LambdaQueryWrapper<ShipmentTrack>()
+                .in(ShipmentTrack::getShipmentId, ids)
+                .orderByAsc(ShipmentTrack::getTrackTime)
+                .orderByAsc(ShipmentTrack::getId));
+        Map<Long, List<ShipmentTrack>> byShip = tracks.stream()
+                .collect(Collectors.groupingBy(ShipmentTrack::getShipmentId));
+
+        // 订单号 / 客户 / 货物名称，供面板与 tooltip 显示，便于按“货名”确认是哪一票
+        Set<Long> orderIds = ships.stream()
+                .map(Shipment::getOrderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, TradeOrder> orderMap = orderIds.isEmpty() ? Collections.emptyMap()
+                : tradeOrderMapper.selectBatchIds(orderIds).stream()
+                .collect(Collectors.toMap(TradeOrder::getId, o -> o, (a, b) -> a));
+        Set<Long> customerIds = orderMap.values().stream()
+                .map(TradeOrder::getCustomerId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, String> customerNameMap = customerIds.isEmpty() ? Collections.emptyMap()
+                : customerMapper.selectBatchIds(customerIds).stream()
+                .collect(Collectors.toMap(Customer::getId,
+                        c -> c.getCompanyName() == null ? "" : c.getCompanyName(), (a, b) -> a));
+        List<OrderItem> items = orderIds.isEmpty() ? Collections.emptyList()
+                : orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                .in(OrderItem::getOrderId, orderIds));
+        Set<Long> productIds = items.stream()
+                .map(OrderItem::getProductId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, String> productNameMap = productIds.isEmpty() ? Collections.emptyMap()
+                : productMapper.selectBatchIds(productIds).stream()
+                .collect(Collectors.toMap(Product::getId,
+                        p -> p.getName() == null ? "" : p.getName(), (a, b) -> a));
+        Map<Long, String> productNamesByOrder = new HashMap<>();
+        for (OrderItem item : items) {
+            String name = productNameMap.get(item.getProductId());
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            productNamesByOrder.merge(item.getOrderId(), name,
+                    (old, add) -> old.contains(add) ? old : old + " / " + add);
+        }
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Shipment s : ships) {
+            List<ShipmentTrack> list = byShip.getOrDefault(s.getId(), Collections.emptyList());
+            if (list.isEmpty()) {
+                // 没有任何真实节点就不画，避免固定进度假航线
+                continue;
+            }
+            ShipmentTrack latest = list.get(list.size() - 1);
+            ShipmentTrack located = null;
+            for (int i = list.size() - 1; i >= 0; i--) {
+                if (StringUtils.hasText(list.get(i).getLocation())) {
+                    located = list.get(i);
+                    break;
+                }
+            }
+            boolean fromTracker = list.stream().anyMatch(t -> "17TRACK".equals(t.getOperator()));
+            TradeOrder order = s.getOrderId() == null ? null : orderMap.get(s.getOrderId());
+            Map<String, Object> row = new HashMap<>();
+            row.put("id", s.getId());
+            row.put("shipmentNo", s.getShipmentNo());
+            row.put("trackingNo", s.getTrackingNo());
+            row.put("carrier", s.getCarrier());
+            row.put("status", s.getStatus());
+            row.put("portFrom", s.getPortFrom());
+            row.put("portTo", s.getPortTo());
+            row.put("orderNo", order == null ? "" : order.getOrderNo());
+            row.put("customerName", order == null ? "" : customerNameMap.getOrDefault(order.getCustomerId(), ""));
+            row.put("productNames", s.getOrderId() == null ? "" : productNamesByOrder.getOrDefault(s.getOrderId(), ""));
+            row.put("trackCount", list.size());
+            row.put("trackSource", fromTracker ? "17TRACK" : "本地节点");
+            row.put("latestNode", latest.getNode());
+            row.put("latestContent", latest.getContent());
+            row.put("latestTime", latest.getTrackTime());
+            row.put("latestLocation", located == null ? "" : located.getLocation());
+            row.put("latestLocatedTime", located == null ? null : located.getTrackTime());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 关键词命中订单号 / 客户名称 / 货物名称时，返回对应订单 id。
+     * 这样只知道货名或客户也能找到对应航线。
+     */
+    private Set<Long> matchOrderIds(String keyword) {
+        Set<Long> ids = new LinkedHashSet<>();
+        tradeOrderMapper.selectList(new LambdaQueryWrapper<TradeOrder>()
+                        .like(TradeOrder::getOrderNo, keyword))
+                .forEach(o -> ids.add(o.getId()));
+
+        List<Long> customerIds = customerMapper.selectList(new LambdaQueryWrapper<Customer>()
+                        .like(Customer::getCompanyName, keyword)
+                        .or().like(Customer::getContactName, keyword))
+                .stream().map(Customer::getId).collect(Collectors.toList());
+        if (!customerIds.isEmpty()) {
+            tradeOrderMapper.selectList(new LambdaQueryWrapper<TradeOrder>()
+                            .in(TradeOrder::getCustomerId, customerIds))
+                    .forEach(o -> ids.add(o.getId()));
+        }
+
+        List<Long> productIds = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                        .like(Product::getName, keyword)
+                        .or().like(Product::getNameEn, keyword)
+                        .or().like(Product::getSku, keyword))
+                .stream().map(Product::getId).collect(Collectors.toList());
+        if (!productIds.isEmpty()) {
+            orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
+                            .in(OrderItem::getProductId, productIds))
+                    .forEach(item -> ids.add(item.getOrderId()));
+        }
+        return ids;
+    }
+
+    @Override
+    @Transactional
+    public int syncLiveTracks(Long shipmentId) {
+        Shipment shipment = shipmentMapper.selectById(shipmentId);
+        if (shipment == null) {
+            throw new RuntimeException("发货单不存在");
+        }
+        if (!StringUtils.hasText(shipment.getTrackingNo())) {
+            throw new RuntimeException("该发货单还没有追踪号，无法同步轨迹");
+        }
+        List<Map<String, Object>> nodes = seventeenTrackService.query(shipment.getTrackingNo());
+        List<ShipmentTrack> existing = listTracks(shipmentId);
+        LinkedHashSet<String> exists = existing.stream()
+                .map(t -> (t.getContent() == null ? "" : t.getContent()) + "|"
+                        + (t.getTrackTime() == null ? "" : t.getTrackTime().format(TRACK_FMT)))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        int inserted = 0;
+        for (Map<String, Object> node : nodes) {
+            String content = str(node.get("content"));
+            LocalDateTime trackTime = parseTrackTime(str(node.get("trackTime")));
+            if (!exists.add(content + "|" + trackTime.format(TRACK_FMT))) {
+                continue;
+            }
+            ShipmentTrack track = new ShipmentTrack();
+            track.setShipmentId(shipmentId);
+            track.setStatus(inferTrackStatus(str(node.get("node")) + " " + content,
+                    shipment.getStatus() == null ? STATUS_SHIPPING : shipment.getStatus()));
+            track.setNode(str(node.get("node")));
+            track.setLocation(str(node.get("location")));
+            track.setContent(content);
+            track.setTrackTime(trackTime);
+            track.setOperator("17TRACK");
+            track.setCreateTime(LocalDateTime.now());
+            shipmentTrackMapper.insert(track);
+            inserted++;
+        }
+        return inserted;
+    }
+
+    private String str(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    /**
+     * 17TRACK 节点没有统一状态字段，按节点文案归类：
+     * 签收→已签收(4)，清关→清关中(3)，揽收/运输/离港/到港/派送→运输中(2)，其余沿用发货单当前状态。
+     */
+    private int inferTrackStatus(String text, int fallback) {
+        if (!StringUtils.hasText(text)) {
+            return fallback;
+        }
+        String lower = text.toLowerCase();
+        if (text.contains("签收") || text.contains("已送达") || lower.contains("delivered")) {
+            return STATUS_SIGNED;
+        }
+        if (text.contains("清关") || lower.contains("customs")) {
+            return STATUS_CUSTOMS;
+        }
+        if (text.contains("揽收") || text.contains("运输") || text.contains("离港") || text.contains("到港")
+                || text.contains("派送") || text.contains("出发") || text.contains("抵达")
+                || lower.contains("picked") || lower.contains("transit") || lower.contains("arrived")
+                || lower.contains("depart") || lower.contains("out for delivery")) {
+            return STATUS_SHIPPING;
+        }
+        return fallback;
+    }
+
+    /** 17TRACK 时间一般为 yyyy-MM-dd HH:mm:ss；容器事件可能是 ISO 带 T，解析失败就记当前时间 */
+    private LocalDateTime parseTrackTime(String text) {
+        if (!StringUtils.hasText(text)) {
+            return LocalDateTime.now();
+        }
+        String value = text.trim().replace('T', ' ');
+        for (String pattern : new String[]{"yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm", "yyyy-MM-dd"}) {
+            try {
+                DateTimeFormatter fmt = DateTimeFormatter.ofPattern(pattern);
+                return pattern.equals("yyyy-MM-dd")
+                        ? LocalDateTime.parse(value + " 00:00:00", TRACK_FMT)
+                        : LocalDateTime.parse(value, fmt);
+            } catch (Exception ignored) {
+                // 尝试下一种格式
+            }
+        }
+        return LocalDateTime.now();
     }
 }

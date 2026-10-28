@@ -224,6 +224,11 @@
               :loading="liveLoading"
               @click="handleQueryByNo"
             >查其他单号</el-button>
+            <el-button
+              size="small"
+              :icon="Download"
+              @click="handleExportTracks"
+            >导出轨迹</el-button>
           </div>
         </div>
 
@@ -332,14 +337,16 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
-import { Search, Refresh, Plus, Edit, Delete, Location, Van } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Location, Van, Download } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import worldGeo from '@/assets/geo/world.json'
 import { getCoord } from '@/utils/geoCoord'
 import {
   getShipmentPageApi, addShipmentApi, updateShipmentApi,
   updateShipmentStatusApi, deleteShipmentApi, getOrderPageApi, getShipmentTracksApi,
-  getShipmentLiveTracksApi, queryLiveTrackByNoApi
+  queryLiveTrackByNoApi,
+
+  syncShipmentTracksApi, downloadShipmentTracksApi
 } from '@/api/trade'
 
 const statusMap = { 1: '待发货', 2: '运输中', 3: '清关中', 4: '已签收' }
@@ -745,7 +752,7 @@ const stopLocalTrackPoll = () => {
   }
 }
 
-// 同步第三方实时轨迹（17TRACK）：未配置 Key / 号码无效时后端返回明确错误
+// 同步第三方实时轨迹（17TRACK）：落库去重，驾驶舱地图与导出都用这份数据
 const handleSyncLive = async () => {
   if (!trackShipment.value?.id) {
     return
@@ -756,17 +763,31 @@ const handleSyncLive = async () => {
   }
   liveLoading.value = true
   try {
-    const res = await getShipmentLiveTracksApi(trackShipment.value.id)
-    const nodes = (res.data?.nodes || []).map((n, i) => ({ ...n, id: `live-${i}` }))
-    tracks.value = nodes
-    trackSource.value = '17track'
+    const res = await syncShipmentTracksApi(trackShipment.value.id)
+    const inserted = res.data?.inserted ?? 0
+    const total = res.data?.total ?? 0
+    const local = await getShipmentTracksApi(trackShipment.value.id)
+    tracks.value = local.data || []
+    trackSource.value = tracks.value.some(t => t.operator === '17TRACK') ? '17track' : 'local'
     stopLocalTrackPoll()
-    ElMessage.success(`已同步 ${nodes.length} 条 17TRACK 实时轨迹`)
+    ElMessage.success(`已同步，新增 ${inserted} 条轨迹，共 ${total} 条`)
   } catch (e) {
     // 请求拦截器已弹出后端返回的错误信息
   } finally {
     liveLoading.value = false
   }
+}
+
+// 单票轨迹导出（Excel：发货单信息 + 全部节点）
+const handleExportTracks = () => {
+  if (!trackShipment.value?.id) {
+    return
+  }
+  if (!tracks.value.length) {
+    ElMessage.warning('当前没有轨迹可导出，请先同步实时轨迹')
+    return
+  }
+  downloadShipmentTracksApi(trackShipment.value.id)
 }
 
 // 按任意运单号查 17TRACK：便于用真实快递单号演示（不依赖当前发货单）

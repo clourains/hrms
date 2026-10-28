@@ -83,6 +83,17 @@ export const deleteOfflineDealApi = (id) => request.delete(`/offline-deal/${id}`
 
 // ========== 物流发货 ==========
 export const getShipmentPageApi = (data) => request.post('/shipment/page', data)
+
+// 驾驶舱航线：只返回已有真实轨迹节点的在途/签收单
+// keyword 支持发货单号 / 运单号 / 订单号 / 客户名称 / 货物名称
+export const getShipmentMapRoutesApi = (keyword = '') =>
+  request.get('/shipment/map-routes', keyword ? { keyword } : {})
+
+// 17TRACK 节点落库（去重），同步后地图与导出可用
+export const syncShipmentTracksApi = (id) => request.post(`/shipment/${id}/sync-tracks`)
+
+// 单票物流轨迹导出 Excel
+export const downloadShipmentTracksApi = (id) => request.download(`/shipment/${id}/tracks/export`)
 export const getShipmentTracksApi = (id) => request.get(`/shipment/${id}/tracks`)
 
 // 第三方实时轨迹（17TRACK）：按发货单运单号实时查询
