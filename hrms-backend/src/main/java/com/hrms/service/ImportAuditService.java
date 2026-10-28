@@ -48,6 +48,7 @@ public class ImportAuditService {
             log.setSuccess(result.getSuccess());
             log.setSkipped(result.getSkipped());
             log.setFailed(result.getFailed());
+            log.setErrors(errorDetail(result));
             log.setCreateTime(LocalDateTime.now());
             importLogMapper.insert(log);
         } catch (Exception ignored) {
@@ -56,15 +57,44 @@ public class ImportAuditService {
     }
 
     /**
-     * 最近导入记录（按模块过滤，module 为空则查全部）
+     * 最近导入记录（按模块/来源过滤，为空则查全部）
      */
-    public List<ImportLog> recent(String module, int limit) {
+    public List<ImportLog> recent(String module, String source, int limit) {
         LambdaQueryWrapper<ImportLog> wrapper = new LambdaQueryWrapper<>();
         if (StringUtils.hasText(module)) {
             wrapper.eq(ImportLog::getModule, module);
         }
+        if (StringUtils.hasText(source)) {
+            wrapper.eq(ImportLog::getSource, source);
+        }
         wrapper.orderByDesc(ImportLog::getId).last("LIMIT " + Math.max(1, Math.min(limit, 50)));
         return importLogMapper.selectList(wrapper);
+    }
+
+    /**
+     * 失败明细转文本，最多保留 20 条、4000 字符，避免日志过大
+     */
+    private String errorDetail(ImportResult result) {
+        if (result.getErrors() == null || result.getErrors().isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (ImportResult.RowError error : result.getErrors()) {
+            count++;
+            if (count > 20) {
+                sb.append("……其余 ").append(result.getErrors().size() - 20).append(" 条略");
+                break;
+            }
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            // 开放接口的行号从 0 开始，展示时统一成从 1 开始
+            int rowNo = error.getRow() <= 0 ? count : error.getRow();
+            sb.append("第 ").append(rowNo).append(" 行：").append(error.getMessage());
+        }
+        String text = sb.toString();
+        return text.length() > 4000 ? text.substring(0, 4000) : text;
     }
 
     /**

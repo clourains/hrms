@@ -1,0 +1,37 @@
+server:
+  port: 8090
+  error:
+    include-message: always
+
+spring:
+  application:
+    name: erp-demo
+  datasource:
+    url: jdbc:h2:mem:erpdemo;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  task:
+    scheduling:
+      enabled: true
+  jackson:
+    time-zone: Asia/Shanghai
+
+hrms:
+  push:
+    base-url: http://localhost:8080/api
+    api-key: hrms_57388576ddbe48c987749b5a68243c79
+
+erp:
+  import:
+    dir: c:/Users/111/Desktop/hrms/erp-demo/inbox
+    auto-confirm: true
+    interval-ms: 10000
+
+logging:
+  level:
+    com.erpdemo: INFO

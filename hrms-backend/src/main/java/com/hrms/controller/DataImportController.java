@@ -58,11 +58,13 @@ public class DataImportController {
     }
 
     /**
-     * 最近导入记录（按模块过滤），用于核对是谁导入的、结果如何
+     * 最近导入记录（按模块/来源过滤），用于核对是谁导入的、结果如何
+     * source：EXCEL / API，留空查全部
      */
     @GetMapping("/logs")
     public Result<List<ImportLog>> logs(@RequestParam(required = false) String module,
+                                       @RequestParam(required = false) String source,
                                        @RequestParam(defaultValue = "20") int limit) {
-        return Result.success(importAuditService.recent(module, limit));
+        return Result.success(importAuditService.recent(module, source, limit));
     }
 }

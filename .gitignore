@@ -26,5 +26,10 @@ logs/
 
 # ---- 其他 ----
 *.zip
+!erp-demo-bundle.zip
 *.tmp
 .trae/
+
+# ---- ERP 实验工程运行时数据 ----
+erp-demo/inbox/archive/
+erp-demo/inbox/*.csv

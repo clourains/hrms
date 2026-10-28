@@ -41,5 +41,8 @@ public class ImportLog implements Serializable {
 
     private Integer failed;
 
+    /** 失败明细（每行一条，最多 20 条） */
+    private String errors;
+
     private LocalDateTime createTime;
 }

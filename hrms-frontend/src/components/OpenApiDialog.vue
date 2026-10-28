@@ -45,6 +45,30 @@
       style="margin-top: 12px"
     />
 
+    <div class="log-head">
+      <span class="log-title">最近调用记录</span>
+      <el-button link type="primary" :icon="Refresh" :loading="logLoading" @click="loadLogs">刷新</el-button>
+    </div>
+    <el-table v-loading="logLoading" :data="logs" size="small" border empty-text="暂无接口调用记录">
+      <el-table-column label="时间" width="145">
+        <template #default="{ row }">{{ fmtTime(row.createTime) }}</template>
+      </el-table-column>
+      <el-table-column label="模块" width="100">
+        <template #default="{ row }">{{ moduleText(row.module) }}</template>
+      </el-table-column>
+      <el-table-column label="提交 / 成功 / 跳过 / 失败" width="165">
+        <template #default="{ row }">
+          {{ row.total }} / <span class="ok">{{ row.success }}</span> /
+          <span class="skip">{{ row.skipped }}</span> /
+          <span :class="{ bad: row.failed > 0 }">{{ row.failed }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="失败明细" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.errors || '-' }}</template>
+      </el-table-column>
+      <el-table-column prop="ip" label="调用 IP" width="120" show-overflow-tooltip />
+    </el-table>
+
     <template #footer>
       <el-button @click="visible = false">关闭</el-button>
     </template>
@@ -54,14 +78,22 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, RefreshRight } from '@element-plus/icons-vue'
-import { getOpenApiCredentialApi, rotateOpenApiKeyApi } from '@/api/dataImport'
+import { CopyDocument, Refresh, RefreshRight } from '@element-plus/icons-vue'
+import { getImportLogsApi, getOpenApiCredentialApi, rotateOpenApiKeyApi } from '@/api/dataImport'
 
 const visible = ref(false)
 const apiKey = ref('')
 const keyVisible = ref(false)
 const endpoints = ref([])
+const logs = ref([])
+const logLoading = ref(false)
 const baseUrl = window.location.origin + '/api'
+
+const MODULE_TEXT = { shipment: '发货单', order: '销售订单', customer: '客户', product: '产品', employee: '员工' }
+const moduleText = (module) => MODULE_TEXT[module] || module || '-'
+
+// 后端返回形如 2026-10-29T10:00:00 或 2026-10-29 10:00:00，统一成可读格式
+const fmtTime = (value) => (value ? String(value).replace('T', ' ').slice(0, 19) : '-')
 
 // 默认打码：截屏、旁人围观时不会把完整密钥带走；复制按钮仍复制完整值
 const shownKey = computed(() => {
@@ -77,6 +109,18 @@ const open = async () => {
   const res = await getOpenApiCredentialApi()
   apiKey.value = res.data.apiKey
   endpoints.value = res.data.endpoints || []
+  loadLogs()
+}
+
+// 只看外部系统的调用（source=API），Excel 导入记录不混进来
+const loadLogs = async () => {
+  logLoading.value = true
+  try {
+    const res = await getImportLogsApi(null, 10, 'API')
+    logs.value = res.data || []
+  } finally {
+    logLoading.value = false
+  }
 }
 
 const copy = async (text) => {
@@ -117,5 +161,25 @@ defineExpose({ open })
   background: var(--el-fill-color-light);
   font-size: 13px;
   word-break: break-all;
+}
+.log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 8px;
+}
+.log-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ok {
+  color: var(--el-color-success);
+}
+.skip {
+  color: var(--el-text-color-secondary);
+}
+.bad {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 </style>

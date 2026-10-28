@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模拟 ERP · 出库管理</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 32px 20px 60px;
+            background: #f3f5f9;
+            color: #26303e;
+            font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+            font-size: 14px;
+        }
+        .wrap { max-width: 1280px; margin: 0 auto; }
+        header { margin-bottom: 22px; }
+        h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; color: #1d2a3a; }
+        .sub { color: #73808f; font-size: 13px; }
+        .card {
+            background: #fff;
+            border: 1px solid #e6eaf1;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(25, 45, 75, .05);
+            padding: 20px 22px;
+            margin-bottom: 20px;
+        }
+        .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin: 0 0 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title::before {
+            content: "";
+            width: 4px; height: 16px;
+            border-radius: 2px;
+            background: #3b7cf6;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px 18px;
+        }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 12px; color: #6b7785; }
+        .field input, .field select {
+            height: 36px;
+            padding: 0 10px;
+            border: 1px solid #d7dde7;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #26303e;
+            background: #fbfcfe;
+            outline: none;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .field input:focus, .field select:focus {
+            border-color: #3b7cf6;
+            box-shadow: 0 0 0 3px rgba(59, 124, 246, .12);
+            background: #fff;
+        }
+        .form-actions {
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        button {
+            border: 0;
+            border-radius: 8px;
+            height: 34px;
+            padding: 0 16px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: filter .15s, opacity .15s;
+        }
+        button:hover { filter: brightness(.95); }
+        button:disabled { opacity: .45; cursor: not-allowed; }
+        .btn-primary { background: #3b7cf6; color: #fff; }
+        .btn-mini { height: 28px; padding: 0 12px; font-size: 12px; background: #eef3fe; color: #2f6be0; }
+        .btn-mini.warn { background: #fdeeee; color: #d34545; }
+        .btn-mini:disabled { background: #f1f3f6; color: #a8b0bb; }
+        .msg { font-size: 13px; color: #d34545; }
+        .msg.ok { color: #1a9d63; }
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .toolbar .tip { font-size: 12px; color: #8b96a4; }
+        .table-scroll { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 1100px; }
+        th, td { padding: 11px 10px; text-align: left; border-bottom: 1px solid #eef1f6; white-space: nowrap; }
+        th { font-size: 12px; font-weight: 600; color: #6b7785; background: #f8fafc; }
+        tbody tr:hover { background: #fafbfe; }
+        .badge {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .badge.wait { background: #fff6e5; color: #b27a17; }
+        .badge.confirmed { background: #e9f1ff; color: #2f6be0; }
+        .badge.none { background: #f1f3f6; color: #8b96a4; }
+        .badge.pending { background: #fff6e5; color: #b27a17; }
+        .badge.done { background: #e7f8ef; color: #1a9d63; }
+        .badge.failed { background: #fdecec; color: #d34545; }
+        .err { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: #b56767; font-size: 12px; }
+        .empty { padding: 36px 0; text-align: center; color: #98a2b0; }
+        .import-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 24px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            background: #f8fafc;
+            border: 1px dashed #dde4ee;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #5b6674;
+        }
+        .import-meta code {
+            padding: 2px 6px;
+            background: #eef3fe;
+            border-radius: 4px;
+            color: #2f6be0;
+            font-family: Consolas, "Courier New", monospace;
+        }
+        .import-table { min-width: 900px; }
+        .import-table td.cell-msg { white-space: normal; max-width: 320px; font-size: 12px; color: #6b7785; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <h1>模拟 ERP · 出库管理</h1>
+        <div class="sub">出库确认后自动推送运单到 HRMS，生成发货单与航线轨迹（演示环境，数据存于内存）</div>
+    </header>
+
+    <section class="card">
+        <h2 class="card-title">新增出库单</h2>
+        <form id="createForm">
+            <div class="form-grid">
+                <div class="field">
+                    <label>运单号 *</label>
+                    <input name="trackingNo" placeholder="如 TESTERP-0001" autocomplete="off" required>
+                </div>
+                <div class="field">
+                    <label>承运商</label>
+                    <input name="carrier" placeholder="如 UPS / DHL" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>运输方式</label>
+                    <select name="transportType">
+                        <option value="海运">海运</option>
+                        <option value="空运">空运</option>
+                        <option value="铁路">铁路</option>
+                        <option value="陆运">陆运</option>
+                        <option value="快递" selected>快递</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>起运港</label>
+                    <input name="portFrom" placeholder="如 上海港" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>目的港</label>
+                    <input name="portTo" placeholder="如 美国纽约" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>目的国家</label>
+                    <input name="destCountry" placeholder="如 美国" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>关联订单号</label>
+                    <input name="orderNo" placeholder="可留空" autocomplete="off">
+                </div>
+                <div class="field">
+                    <label>发货日期</label>
+                    <input name="shipDate" type="date">
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn-primary">创建出库单</button>
+                <span id="formMsg" class="msg"></span>
+            </div>
+        </form>
+    </section>
+
+    <section class="card">
+        <div class="toolbar">
+            <h2 class="card-title" style="margin:0;">监控目录自动导入</h2>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <span class="tip">把 17TRACK 导出的 CSV 放进该目录，每 10 秒自动扫描</span>
+                <button type="button" id="scanBtn" class="btn-mini">立即扫描</button>
+            </div>
+        </div>
+        <div class="import-meta">
+            <div>监控目录：<code id="importDir">—</code></div>
+            <div>出库策略：<span id="autoConfirm">—</span></div>
+            <div>模板：<code>erp-demo/templates/shipment-import-template.csv</code></div>
+        </div>
+        <div class="table-scroll">
+            <table class="import-table">
+                <thead>
+                <tr>
+                    <th>文件名</th>
+                    <th>总行数</th>
+                    <th>导入</th>
+                    <th>跳过</th>
+                    <th>状态</th>
+                    <th>说明</th>
+                    <th>时间</th>
+                </tr>
+                </thead>
+                <tbody id="importTbody">
+                <tr><td colspan="7" class="empty">加载中…</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="scanMsg" class="msg" style="margin-top:10px;"></div>
+    </section>
+
+    <section class="card">
+        <div class="toolbar">
+            <h2 class="card-title" style="margin:0;">出库单列表</h2>
+            <span class="tip" id="refreshTip">每 5 秒自动刷新</span>
+        </div>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                <tr>
+                    <th>出库单号</th>
+                    <th>运单号</th>
+                    <th>承运商</th>
+                    <th>航线</th>
+                    <th>状态</th>
+                    <th>推送状态</th>
+                    <th>重试次数</th>
+                    <th>错误信息</th>
+                    <th>操作</th>
+                </tr>
+                </thead>
+                <tbody id="tbody">
+                <tr><td colspan="9" class="empty">加载中…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script>
+    const tbody = document.getElementById('tbody');
+    const formMsg = document.getElementById('formMsg');
+    const form = document.getElementById('createForm');
+    const importTbody = document.getElementById('importTbody');
+    const importDirEl = document.getElementById('importDir');
+    const autoConfirmEl = document.getElementById('autoConfirm');
+    const scanBtn = document.getElementById('scanBtn');
+    const scanMsg = document.getElementById('scanMsg');
+    let busy = false;
+
+    const statusMap = { WAIT: ['wait', '待出库'], CONFIRMED: ['confirmed', '已出库'] };
+    const pushMap = {
+        PENDING: ['pending', 'PENDING'],
+        DONE: ['done', 'DONE'],
+        FAILED: ['failed', 'FAILED']
+    };
+    const importMap = {
+        SUCCESS: ['done', 'SUCCESS'],
+        PARTIAL: ['pending', 'PARTIAL'],
+        ERROR: ['failed', 'ERROR']
+    };
+
+    function esc(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function route(item) {
+        const from = item.portFrom || '—';
+        const to = item.portTo || '—';
+        const country = item.destCountry ? '（' + item.destCountry + '）' : '';
+        return esc(from + ' → ' + to + country);
+    }
+
+    function badge(map, key, fallback) {
+        const entry = map[key];
+        if (!entry) return '<span class="badge none">' + fallback + '</span>';
+        return '<span class="badge ' + entry[0] + '">' + entry[1] + '</span>';
+    }
+
+    function render(rows) {
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无出库单，请先新增</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(item => {
+            const actions = [];
+            if (item.status === 'WAIT') {
+                actions.push('<button class="btn-mini" data-action="confirm" data-id="' + item.id + '">确认出库</button>');
+            }
+            if (item.pushStatus === 'FAILED') {
+                actions.push('<button class="btn-mini warn" data-action="retry" data-id="' + item.id + '">重试推送</button>');
+            }
+            return '<tr>'
+                + '<td>' + esc(item.outboundNo) + '</td>'
+                + '<td>' + esc(item.trackingNo) + '</td>'
+                + '<td>' + esc(item.carrier || '—') + '</td>'
+                + '<td>' + route(item) + '</td>'
+                + '<td>' + badge(statusMap, item.status, item.status) + '</td>'
+                + '<td>' + badge(pushMap, item.pushStatus, '未推送') + '</td>'
+                + '<td>' + (item.pushStatus ? item.attempts : '—') + '</td>'
+                + '<td class="err" title="' + esc(item.lastError) + '">' + esc(item.lastError || '—') + '</td>'
+                + '<td>' + (actions.join(' ') || '—') + '</td>'
+                + '</tr>';
+        }).join('');
+    }
+
+    async function load() {
+        try {
+            const res = await fetch('/api/outbound');
+            if (!res.ok) throw new Error('加载失败');
+            render(await res.json());
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="9" class="empty">加载失败，请稍后重试</td></tr>';
+        }
+    }
+
+    async function post(url) {
+        if (busy) return;
+        busy = true;
+        try {
+            const res = await fetch(url, { method: 'POST' });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || err.error || '操作失败');
+            }
+            formMsg.textContent = '';
+            await load();
+        } catch (e) {
+            formMsg.textContent = e.message;
+            formMsg.className = 'msg';
+        } finally {
+            busy = false;
+        }
+    }
+
+    function formatTime(value) {
+        if (!value) return '—';
+        return String(value).replace('T', ' ').slice(0, 19);
+    }
+
+    function renderImport(rows) {
+        if (!rows || !rows.length) {
+            importTbody.innerHTML = '<tr><td colspan="7" class="empty">暂无导入记录</td></tr>';
+            return;
+        }
+        importTbody.innerHTML = rows.map(item => '<tr>'
+            + '<td>' + esc(item.fileName) + '</td>'
+            + '<td>' + (item.rowsTotal == null ? 0 : item.rowsTotal) + '</td>'
+            + '<td>' + (item.rowsImported == null ? 0 : item.rowsImported) + '</td>'
+            + '<td>' + (item.rowsSkipped == null ? 0 : item.rowsSkipped) + '</td>'
+            + '<td>' + badge(importMap, item.status, item.status || '—') + '</td>'
+            + '<td class="cell-msg" title="' + esc(item.message) + '">' + esc(item.message || '—') + '</td>'
+            + '<td>' + formatTime(item.createTime) + '</td>'
+            + '</tr>').join('');
+    }
+
+    async function loadImport() {
+        try {
+            const res = await fetch('/api/import/info');
+            if (!res.ok) throw new Error('加载失败');
+            const info = await res.json();
+            importDirEl.textContent = info.dir || '—';
+            autoConfirmEl.innerHTML = info.autoConfirm
+                ? '<span class="badge done">自动确认出库</span>'
+                : '<span class="badge none">仅创建待出库</span>';
+            renderImport(info.history);
+        } catch (e) {
+            importTbody.innerHTML = '<tr><td colspan="7" class="empty">导入信息加载失败</td></tr>';
+        }
+    }
+
+    scanBtn.addEventListener('click', async () => {
+        scanBtn.disabled = true;
+        try {
+            const res = await fetch('/api/import/scan', { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || data.error || '扫描失败');
+            scanMsg.className = 'msg ok';
+            scanMsg.textContent = '扫描完成：文件 ' + (data.files || 0) + ' 个，导入 '
+                + (data.imported || 0) + ' 条，跳过 ' + (data.skipped || 0) + ' 条，错误 '
+                + (data.errors || 0) + ' 个';
+            await Promise.all([load(), loadImport()]);
+        } catch (e) {
+            scanMsg.className = 'msg';
+            scanMsg.textContent = e.message;
+        } finally {
+            scanBtn.disabled = false;
+        }
+    });
+
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const data = Object.fromEntries(new FormData(form).entries());
+        try {
+            const res = await fetch('/api/outbound', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body.message || body.error || '创建失败');
+            formMsg.textContent = '已创建：' + body.outboundNo;
+            formMsg.className = 'msg ok';
+            form.reset();
+            form.elements.shipDate.value = new Date().toISOString().slice(0, 10);
+            await load();
+        } catch (e) {
+            formMsg.textContent = e.message;
+            formMsg.className = 'msg';
+        }
+    });
+
+    tbody.addEventListener('click', event => {
+        const btn = event.target.closest('button[data-action]');
+        if (!btn) return;
+        post('/api/outbound/' + btn.dataset.id + '/' + btn.dataset.action);
+    });
+
+    form.elements.shipDate.value = new Date().toISOString().slice(0, 10);
+    load();
+    loadImport();
+    setInterval(load, 5000);
+    setInterval(loadImport, 5000);
+</script>
+</body>
+</html>
