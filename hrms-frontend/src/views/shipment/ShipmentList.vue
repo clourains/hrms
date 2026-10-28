@@ -725,6 +725,8 @@ const handleOpenTracks = async (row) => {
   // 运输中/待发货/已到达：每 15 秒自动拉取最新轨迹节点，节点更新后动画进度同步前进
   if (Number(row.shipment.status) !== 4) {
     trackPollTimer = setInterval(async () => {
+      // 已切换到 17TRACK 实时轨迹时，不再用本地轨迹覆盖
+      if (trackSource.value === '17track') return
       try {
         const res = await getShipmentTracksApi(row.shipment.id)
         tracks.value = res.data || []
@@ -732,6 +734,14 @@ const handleOpenTracks = async (row) => {
         // 轮询失败静默处理，不打断当前动画
       }
     }, 15000)
+  }
+}
+
+// 进入 17TRACK 实时模式：停止本地轨迹轮询，避免 15 秒后把实时节点覆盖回本地数据
+const stopLocalTrackPoll = () => {
+  if (trackPollTimer) {
+    clearInterval(trackPollTimer)
+    trackPollTimer = null
   }
 }
 
@@ -747,9 +757,10 @@ const handleSyncLive = async () => {
   liveLoading.value = true
   try {
     const res = await getShipmentLiveTracksApi(trackShipment.value.id)
-    const nodes = res.data?.nodes || []
+    const nodes = (res.data?.nodes || []).map((n, i) => ({ ...n, id: `live-${i}` }))
     tracks.value = nodes
     trackSource.value = '17track'
+    stopLocalTrackPoll()
     ElMessage.success(`已同步 ${nodes.length} 条 17TRACK 实时轨迹`)
   } catch (e) {
     // 请求拦截器已弹出后端返回的错误信息
@@ -780,9 +791,10 @@ const handleQueryByNo = async () => {
   liveLoading.value = true
   try {
     const res = await queryLiveTrackByNoApi(trackingNo)
-    const nodes = res.data?.nodes || []
+    const nodes = (res.data?.nodes || []).map((n, i) => ({ ...n, id: `live-${i}` }))
     tracks.value = nodes
     trackSource.value = '17track'
+    stopLocalTrackPoll()
     ElMessage.success(`已获取 ${nodes.length} 条 17TRACK 实时轨迹`)
   } catch (e) {
     // 请求拦截器已弹出后端返回的错误信息
