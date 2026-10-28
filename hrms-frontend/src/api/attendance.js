@@ -30,6 +30,16 @@ export const submitAttendanceAppealApi = (data) => {
   return request.post('/approval/apply', data)
 }
 
+// 外勤/出差登记：走通用审批流，通过后逐日写入 6=出差
+export const submitFieldWorkApi = (data) => {
+  return request.post('/approval/apply', data)
+}
+
+// 团队出勤汇总（admin 全员 / manager 本部门）
+export const getTeamSummaryApi = (params) => {
+  return request.get('/attendance/team-summary', params)
+}
+
 // ==================== P4-1 加班申请 ====================
 
 // 提交加班申请：创建加班单并发起审批，通过后计入薪资加班费

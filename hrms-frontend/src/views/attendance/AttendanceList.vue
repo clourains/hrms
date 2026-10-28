@@ -3,14 +3,16 @@
     <!-- 页头 -->
     <PageHeader
       title="考勤管理"
-      description="每日打卡与考勤记录管理，支持补卡、请假、加班申请与月报导出"
+      description="坐班人员每日打卡，业务人员用外勤登记；补卡、请假、加班均走审批"
       icon="Calendar"
     >
       <template #actions>
         <el-button type="warning" :icon="EditPen" @click="handleMakeup">补卡申请</el-button>
         <el-button type="success" :icon="Calendar" @click="handleLeave">请假申请</el-button>
         <el-button type="primary" :icon="Sunrise" @click="handleOvertime">加班申请</el-button>
+        <el-button type="success" :icon="Van" @click="handleFieldWork">外勤登记</el-button>
         <el-button :icon="List" @click="showMyOvertime">我的加班</el-button>
+        <el-button v-if="canTeamSummary" :icon="DataLine" @click="openTeamSummary">团队汇总</el-button>
         <el-button type="primary" :icon="Download" @click="handleExport">导出报表</el-button>
         <el-button :icon="TrendCharts" @click="handleStats">统计分析</el-button>
       </template>
@@ -45,6 +47,7 @@
               {{ hasCheckedOut ? '已签退' : '下班签退' }}
             </el-button>
           </div>
+          <div class="checkin-hint">坐班人员请上下班打卡；外出、出差请提交「外勤登记」，审批通过后自动按外出计入考勤。</div>
           <div class="checkin-records">
             <div class="record-item">
               <span class="record-label">上班打卡</span>
@@ -383,17 +386,70 @@
         <el-button type="primary" :loading="exportLoading" @click="confirmExport">导出 Excel</el-button>
       </template>
     </el-dialog>
+
+    <!-- 外勤登记（业务人员不打卡，改走外勤）：审批通过后逐日写入 6=出差 -->
+    <el-dialog v-model="fieldWorkVisible" title="外勤登记" width="480px">
+      <el-form :model="fieldWorkForm" label-width="100px">
+        <el-form-item label="开始日期">
+          <el-date-picker v-model="fieldWorkForm.startDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择开始日期" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="结束日期">
+          <el-date-picker v-model="fieldWorkForm.endDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择结束日期" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="地点">
+          <el-input v-model="fieldWorkForm.location" placeholder="如：上海客户现场、海外仓" />
+        </el-form-item>
+        <el-form-item label="外勤事由">
+          <el-input v-model="fieldWorkForm.reason" type="textarea" :rows="3" placeholder="如：客户拜访、展会接待、仓库盘点" />
+        </el-form-item>
+        <el-form-item label="审批人">
+          <el-select v-model="fieldWorkForm.approvers" multiple placeholder="按顺序选择审批人" style="width: 100%">
+            <el-option v-for="u in approverOptions" :key="u.username" :label="u.nickname" :value="u.username" />
+          </el-select>
+        </el-form-item>
+        <div class="fw-note">外勤按工作日逐天计入考勤，周末自动跳过；审批通过后可在团队汇总中看到。</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="fieldWorkVisible = false">取消</el-button>
+        <el-button type="primary" :loading="fieldWorkSubmitting" @click="submitFieldWork">提交审批</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 团队出勤汇总：admin 看全员，manager 自动限定本部门 -->
+    <el-drawer v-model="teamSummaryVisible" title="团队出勤汇总" size="760px">
+      <div class="team-toolbar">
+        <el-date-picker v-model="teamMonth" type="month" value-format="YYYY-MM" placeholder="选择月份" style="width: 150px" />
+        <el-select v-if="isAdmin" v-model="teamDeptId" placeholder="全部部门" clearable style="width: 160px">
+          <el-option v-for="dept in departmentOptions" :key="dept.id" :label="dept.name" :value="dept.id" />
+        </el-select>
+        <el-button type="primary" :icon="Search" :loading="teamLoading" @click="loadTeamSummary">查询</el-button>
+        <span class="team-hint">管理者仅可查看本人权限范围；外勤按天计入出勤</span>
+      </div>
+      <el-table v-loading="teamLoading" :data="teamRows" border stripe max-height="calc(100vh - 220px)">
+        <el-table-column prop="empNo" label="工号" width="110" align="center" />
+        <el-table-column prop="name" label="姓名" width="90" align="center" />
+        <el-table-column prop="deptName" label="部门" width="110" align="center" />
+        <el-table-column prop="attend" label="出勤" width="70" align="center" />
+        <el-table-column prop="late" label="迟到" width="70" align="center" />
+        <el-table-column prop="early" label="早退" width="70" align="center" />
+        <el-table-column prop="absent" label="缺勤" width="70" align="center" />
+        <el-table-column prop="leave" label="请假" width="70" align="center" />
+        <el-table-column prop="trip" label="外勤/出差" width="90" align="center" />
+      </el-table>
+      <el-empty v-if="!teamLoading && teamRows.length === 0" description="该月份暂无团队考勤数据" />
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts, Sunrise, List } from '@element-plus/icons-vue'
+import { Search, Refresh, Clock, Finished, EditPen, Calendar, Download, TrendCharts, Sunrise, List, Van, DataLine } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import {
   getAttendanceListApi, getAttendanceStatsApi, getAttendanceDetailApi, checkInApi, checkOutApi,
-  applyOvertimeApi, getMyOvertimeApi, getMyLeaveQuotaApi, submitLeaveApplyApi, submitAttendanceAppealApi
+  applyOvertimeApi, getMyOvertimeApi, getMyLeaveQuotaApi, submitLeaveApplyApi, submitAttendanceAppealApi,
+  submitFieldWorkApi, getTeamSummaryApi
 } from '@/api/attendance'
 import { getApproverOptionsApi } from '@/api/approval'
 import { request } from '@/utils/request'
@@ -406,6 +462,20 @@ const userStore = useUserStore()
 const loading = ref(false)
 const makeupDialogVisible = ref(false)
 const leaveDialogVisible = ref(false)
+
+// 外勤登记（业务人员替代打卡）
+const fieldWorkVisible = ref(false)
+const fieldWorkSubmitting = ref(false)
+const fieldWorkForm = reactive({ startDate: '', endDate: '', location: '', reason: '', approvers: [] })
+
+// 团队汇总（admin 全员 / manager 本部门）
+const teamSummaryVisible = ref(false)
+const teamLoading = ref(false)
+const teamMonth = ref('')
+const teamDeptId = ref(null)
+const teamRows = ref([])
+const canTeamSummary = computed(() => ['admin', 'manager'].includes(userStore.role))
+const isAdmin = computed(() => userStore.role === 'admin')
 
 // 当前时间
 const currentTime = ref('')
@@ -612,6 +682,60 @@ const submitLeave = async () => {
     // 拦截器统一提示
   } finally {
     leaveSubmitting.value = false
+  }
+}
+
+// 外勤登记：不上报打卡的业务人员替代方案，审批通过后逐日写 6=出差
+const handleFieldWork = () => {
+  Object.assign(fieldWorkForm, { startDate: '', endDate: '', location: '', reason: '', approvers: [] })
+  fieldWorkVisible.value = true
+  loadApproverOptions()
+}
+
+const submitFieldWork = async () => {
+  const { startDate, endDate, location, reason, approvers } = fieldWorkForm
+  if (!startDate || !endDate) { ElMessage.warning('请选择外勤起止日期'); return }
+  if (endDate < startDate) { ElMessage.warning('结束日期不能早于开始日期'); return }
+  if (!String(location).trim()) { ElMessage.warning('请填写外勤地点'); return }
+  if (!approvers.length) { ElMessage.warning('请选择审批人'); return }
+  fieldWorkSubmitting.value = true
+  try {
+    await submitFieldWorkApi({
+      bizType: '外勤',
+      title: `${myEmp.value.name} 外勤 ${startDate}${startDate === endDate ? '' : ' 至 ' + endDate}`,
+      detail: { startDate, endDate, location: String(location).trim(), reason },
+      approvers
+    })
+    ElMessage.success('外勤登记已提交，审批通过后自动计入考勤')
+    fieldWorkVisible.value = false
+  } catch (e) {
+    // 拦截器统一提示
+  } finally {
+    fieldWorkSubmitting.value = false
+  }
+}
+
+// 团队汇总：admin 可筛全部或指定部门；manager 由后端强制限定本部门
+const openTeamSummary = () => {
+  teamMonth.value = fmtMonth(new Date())
+  teamDeptId.value = null
+  teamSummaryVisible.value = true
+  loadTeamSummary()
+}
+
+const loadTeamSummary = async () => {
+  if (!teamMonth.value) { ElMessage.warning('请选择月份'); return }
+  teamLoading.value = true
+  try {
+    const res = await getTeamSummaryApi({
+      month: teamMonth.value,
+      deptId: isAdmin.value ? (teamDeptId.value || undefined) : undefined
+    })
+    teamRows.value = res.data || []
+  } catch (e) {
+    // 拦截器统一提示
+  } finally {
+    teamLoading.value = false
   }
 }
 
@@ -1093,6 +1217,37 @@ onUnmounted(() => {
         margin-top: 4px;
       }
     }
+  }
+
+  .checkin-hint {
+    margin-top: 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.85);
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 6px;
+    padding: 8px 10px;
+    text-align: left;
+  }
+
+  .fw-note {
+    margin: 4px 0 0 100px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+  }
+
+  .team-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .team-hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   .ot-rate-hint {

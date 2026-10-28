@@ -370,6 +370,8 @@ watch(() => appStore.refreshKey, async () => {
 const menuGroups = [
   { type: 'item', path: '/home', title: '首页', icon: 'HomeFilled' },
   { type: 'item', path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
+  // 公告中心：所有登录用户可见，发布入口仍在「系统管理 → 公告管理」
+  { type: 'item', path: '/notice-center', title: '公告中心', icon: 'Notification' },
   {
     type: 'group',
     title: '人事管理',

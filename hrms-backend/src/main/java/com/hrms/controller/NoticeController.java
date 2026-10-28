@@ -1,6 +1,7 @@
 package com.hrms.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hrms.annotation.AuditLog;
 import com.hrms.annotation.RequireRole;
@@ -50,10 +51,24 @@ public class NoticeController {
     public Result<List<Map<String, Object>>> active() {
         try {
             String me = UserContext.get();
-            List<Notice> list = noticeMapper.selectList(
-                    new LambdaQueryWrapper<Notice>()
-                            .eq(Notice::getStatus, 1)
-                            .orderByDesc(Notice::getCreateTime));
+            LocalDateTime now = LocalDateTime.now();
+            LambdaQueryWrapper<Notice> wrapper = new LambdaQueryWrapper<Notice>()
+                    .eq(Notice::getStatus, 1)
+                    .and(w -> w.isNull(Notice::getEffectiveStart).or().le(Notice::getEffectiveStart, now))
+                    .and(w -> w.isNull(Notice::getEffectiveEnd).or().ge(Notice::getEffectiveEnd, now));
+            // 发布范围：管理员看全部；普通用户只看「全员」或包含自己部门的公告
+            if (!"admin".equals(UserContext.getRole())) {
+                Long deptId = UserContext.getDeptId();
+                if (deptId == null) {
+                    wrapper.and(w -> w.isNull(Notice::getScopeType).or().eq(Notice::getScopeType, 0));
+                } else {
+                    wrapper.and(w -> w.isNull(Notice::getScopeType)
+                            .or().eq(Notice::getScopeType, 0)
+                            .or(y -> y.eq(Notice::getScopeType, 1)
+                                    .apply("FIND_IN_SET({0}, dept_ids)", deptId)));
+                }
+            }
+            List<Notice> list = noticeMapper.selectList(wrapper.orderByDesc(Notice::getCreateTime));
             if (list.isEmpty()) {
                 return Result.success(new ArrayList<>());
             }
@@ -72,13 +87,21 @@ public class NoticeController {
                 row.put("title", n.getTitle());
                 row.put("content", n.getContent());
                 row.put("level", n.getLevel());
+                row.put("scopeType", n.getScopeType());
+                row.put("deptIds", n.getDeptIds());
+                row.put("effectiveStart", n.getEffectiveStart());
+                row.put("effectiveEnd", n.getEffectiveEnd());
+                row.put("pinned", n.getPinned() == null ? 0 : n.getPinned());
                 row.put("publisher", n.getPublisher());
                 row.put("createTime", n.getCreateTime());
                 row.put("isRead", readIds.contains(n.getId()) ? 1 : 0);
                 rows.add(row);
             }
-            // 重要公告排前面
+            // 置顶优先，其次重要公告，其余按发布时间（查询已按时间倒序）
             rows.sort((a, b) -> {
+                int ap = ((Number) a.get("pinned")).intValue();
+                int bp = ((Number) b.get("pinned")).intValue();
+                if (ap != bp) return bp - ap;
                 boolean ai = "important".equals(a.get("level"));
                 boolean bi = "important".equals(b.get("level"));
                 if (ai != bi) return ai ? -1 : 1;
@@ -163,6 +186,10 @@ public class NoticeController {
             if (notice.getStatus() == null) {
                 notice.setStatus(1);
             }
+            String scopeError = normalizeScope(notice);
+            if (scopeError != null) {
+                return Result.error(scopeError);
+            }
             notice.setPublisher(UserContext.getOrDefault("admin"));
             notice.setCreateTime(LocalDateTime.now());
             notice.setUpdateTime(LocalDateTime.now());
@@ -185,14 +212,32 @@ public class NoticeController {
             if (existing == null) {
                 return Result.error("公告不存在");
             }
-            Notice update = new Notice();
-            update.setId(existing.getId());
-            update.setTitle(notice.getTitle());
-            update.setContent(notice.getContent());
-            update.setLevel(notice.getLevel());
-            update.setStatus(notice.getStatus());
-            update.setUpdateTime(LocalDateTime.now());
-            noticeMapper.updateById(update);
+            // 上下线切换只传 id+status：不动正文/范围，避免清空字段
+            if (notice.getTitle() == null) {
+                noticeMapper.update(null, new LambdaUpdateWrapper<Notice>()
+                        .eq(Notice::getId, existing.getId())
+                        .set(Notice::getStatus, notice.getStatus())
+                        .set(Notice::getUpdateTime, LocalDateTime.now()));
+                return Result.success("更新成功", null);
+            }
+            String scopeError = normalizeScope(notice);
+            if (scopeError != null) {
+                return Result.error(scopeError);
+            }
+            // 用 UpdateWrapper 显式 set，允许把有效期/部门范围清空
+            LambdaUpdateWrapper<Notice> uw = new LambdaUpdateWrapper<Notice>()
+                    .eq(Notice::getId, existing.getId())
+                    .set(Notice::getTitle, notice.getTitle())
+                    .set(Notice::getContent, notice.getContent())
+                    .set(Notice::getLevel, notice.getLevel())
+                    .set(Notice::getStatus, notice.getStatus())
+                    .set(Notice::getScopeType, notice.getScopeType())
+                    .set(Notice::getDeptIds, notice.getDeptIds())
+                    .set(Notice::getEffectiveStart, notice.getEffectiveStart())
+                    .set(Notice::getEffectiveEnd, notice.getEffectiveEnd())
+                    .set(Notice::getPinned, notice.getPinned() == null ? 0 : notice.getPinned())
+                    .set(Notice::getUpdateTime, LocalDateTime.now());
+            noticeMapper.update(null, uw);
             return Result.success("更新成功", null);
         } catch (Exception e) {
             return Result.error(e.getMessage());
@@ -244,6 +289,34 @@ public class NoticeController {
         } catch (Exception e) {
             return Result.error(e.getMessage());
         }
+    }
+
+    /**
+     * 统一处理发布范围与时效：
+     * scopeType=1 必须至少指定一个部门；全员发布时清空部门，避免残留脏数据；
+     * 结束时间不能早于开始时间。
+     */
+    private String normalizeScope(Notice notice) {
+        if (notice.getScopeType() == null) {
+            notice.setScopeType(0);
+        }
+        if (notice.getPinned() == null) {
+            notice.setPinned(0);
+        }
+        if (notice.getScopeType() == 1) {
+            String ids = notice.getDeptIds() == null ? "" : notice.getDeptIds().replaceAll("\\s+", "");
+            notice.setDeptIds(ids);
+            if (ids.isEmpty()) {
+                return "指定部门发布时请至少选择一个部门";
+            }
+        } else {
+            notice.setDeptIds(null);
+        }
+        if (notice.getEffectiveStart() != null && notice.getEffectiveEnd() != null
+                && notice.getEffectiveEnd().isBefore(notice.getEffectiveStart())) {
+            return "生效结束时间不能早于开始时间";
+        }
+        return null;
     }
 
     /**

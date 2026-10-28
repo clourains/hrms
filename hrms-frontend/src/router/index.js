@@ -34,6 +34,12 @@ const routes = [
         meta: { title: '仪表盘', icon: 'Odometer' }
       },
       {
+        path: 'notice-center',
+        name: 'NoticeCenter',
+        component: () => import('@/views/notice/NoticeCenter.vue'),
+        meta: { title: '公告中心', icon: 'Notification' }
+      },
+      {
         path: 'employee',
         name: 'Employee',
         component: () => import('@/views/employee/EmployeeList.vue'),

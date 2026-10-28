@@ -3,7 +3,7 @@
     <!-- 页头 -->
     <PageHeader
       title="公告管理"
-      description="发布系统公告，发布后所有用户首页置顶可见；支持已读人数统计"
+      description="发布公告，按范围与有效期展示在「公告中心」和首页；支持置顶与已读统计"
       icon="Notification"
     >
       <template #actions>
@@ -48,6 +48,20 @@
             <el-tag :type="row.status === 1 ? 'success' : 'warning'" size="small">
               {{ row.status === 1 ? '已发布' : '已下线' }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="范围" width="100" align="center">
+          <template #default="{ row }">
+            {{ row.scopeType === 1 ? '指定部门' : '全员' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="有效期" width="170" align="center">
+          <template #default="{ row }">{{ effectiveText(row) }}</template>
+        </el-table-column>
+        <el-table-column label="置顶" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.pinned === 1" type="danger" size="small">置顶</el-tag>
+            <span v-else>-</span>
           </template>
         </el-table-column>
         <el-table-column prop="publisher" label="发布人" width="110" align="center" />
@@ -96,7 +110,33 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="内容" prop="content">
-          <el-input v-model="form.content" type="textarea" :rows="6" placeholder="公告正文" />
+          <el-input v-model="form.content" type="textarea" :rows="5" placeholder="公告正文" />
+        </el-form-item>
+        <el-form-item label="发布范围">
+          <el-radio-group v-model="form.scopeType">
+            <el-radio :value="0">全员</el-radio>
+            <el-radio :value="1">指定部门</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.scopeType === 1" label="可见部门">
+          <el-select v-model="deptIdsArray" multiple placeholder="请选择部门" style="width: 100%">
+            <el-option v-for="d in deptOptions" :key="d.id" :label="d.deptName" :value="d.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="有效期">
+          <el-date-picker
+            v-model="form.effectiveRange"
+            type="datetimerange"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            range-separator="至"
+            start-placeholder="开始（留空=立即）"
+            end-placeholder="结束（留空=长期）"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="置顶">
+          <el-switch v-model="form.pinned" :active-value="1" :inactive-value="0" />
+          <span class="form-hint">置顶公告在公告中心与首页排在最前</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -130,6 +170,7 @@ import {
   getNoticeListApi, createNoticeApi, updateNoticeApi,
   deleteNoticeApi, getNoticeReadStatsApi
 } from '@/api/notice'
+import { getDepartmentListApi } from '@/api/department'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -140,7 +181,9 @@ const dialogVisible = ref(false)
 const isEdit = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
-const form = reactive({ id: null, title: '', content: '', level: 'normal' })
+const form = reactive({ id: null, title: '', content: '', level: 'normal', scopeType: 0, pinned: 0, effectiveRange: [] })
+const deptIdsArray = ref([])
+const deptOptions = ref([])
 
 const formRules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
@@ -152,6 +195,16 @@ const statsLoading = ref(false)
 const stats = reactive({ totalUsers: 0, readCount: 0, readers: [] })
 
 const formatTime = (t) => (t ? String(t).replace('T', ' ').slice(0, 19) : '-')
+
+// 有效期展示：两端都空=长期有效；只填一端=单边生效
+const effectiveText = (row) => {
+  const s = row.effectiveStart ? String(row.effectiveStart).replace('T', ' ').slice(0, 16) : ''
+  const e = row.effectiveEnd ? String(row.effectiveEnd).replace('T', ' ').slice(0, 16) : ''
+  if (!s && !e) return '长期有效'
+  if (s && !e) return `${s} 起`
+  if (!s && e) return `至 ${e}`
+  return `${s} ~ ${e}`
+}
 
 const loadData = async () => {
   loading.value = true
@@ -206,21 +259,53 @@ const handleExport = async () => {
 
 const openCreateDialog = () => {
   isEdit.value = false
-  Object.assign(form, { id: null, title: '', content: '', level: 'normal' })
+  Object.assign(form, { id: null, title: '', content: '', level: 'normal', scopeType: 0, pinned: 0, effectiveRange: [] })
+  deptIdsArray.value = []
   dialogVisible.value = true
 }
 
 const openEditDialog = (row) => {
   isEdit.value = true
-  Object.assign(form, { id: row.id, title: row.title, content: row.content || '', level: row.level || 'normal' })
+  Object.assign(form, {
+    id: row.id,
+    title: row.title,
+    content: row.content || '',
+    level: row.level || 'normal',
+    scopeType: row.scopeType === 1 ? 1 : 0,
+    pinned: row.pinned === 1 ? 1 : 0,
+    effectiveRange: (row.effectiveStart || row.effectiveEnd)
+      ? [row.effectiveStart || '', row.effectiveEnd || ''].map(v => v ? String(v).replace('T', ' ').slice(0, 19) : null)
+      : []
+  })
+  deptIdsArray.value = row.deptIds ? String(row.deptIds).split(',').filter(Boolean).map(Number) : []
   dialogVisible.value = true
 }
 
 const handleSubmit = async () => {
   await formRef.value.validate()
+  if (form.scopeType === 1 && deptIdsArray.value.length === 0) {
+    ElMessage.warning('指定部门发布时请至少选择一个部门')
+    return
+  }
+  const range = form.effectiveRange || []
+  if (range[0] && range[1] && range[1] <= range[0]) {
+    ElMessage.warning('生效结束时间不能早于开始时间')
+    return
+  }
+  const payload = {
+    id: form.id,
+    title: form.title,
+    content: form.content,
+    level: form.level,
+    scopeType: form.scopeType,
+    deptIds: form.scopeType === 1 ? deptIdsArray.value.join(',') : null,
+    effectiveStart: range[0] || null,
+    effectiveEnd: range[1] || null,
+    pinned: form.pinned
+  }
   submitting.value = true
   try {
-    const res = isEdit.value ? await updateNoticeApi(form) : await createNoticeApi(form)
+    const res = isEdit.value ? await updateNoticeApi(payload) : await createNoticeApi(payload)
     if (res.code === 200) {
       ElMessage.success(isEdit.value ? '已保存' : '发布成功')
       dialogVisible.value = false
@@ -280,5 +365,8 @@ const handleDelete = async (row) => {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  getDepartmentListApi().then(res => { deptOptions.value = res.data || [] }).catch(() => {})
+})
 </script>

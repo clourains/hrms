@@ -9,6 +9,7 @@ import com.hrms.entity.Employee;
 import com.hrms.entity.LeaveQuota;
 import com.hrms.entity.Overtime;
 import com.hrms.entity.User;
+import com.hrms.mapper.AttendanceMapper;
 import com.hrms.mapper.DepartmentMapper;
 import com.hrms.mapper.EmployeeMapper;
 import com.hrms.mapper.LeaveQuotaMapper;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +46,9 @@ public class AttendanceController {
 
     @Autowired
     private AttendanceService attendanceService;
+
+    @Autowired
+    private AttendanceMapper attendanceMapper;
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -399,6 +404,84 @@ public class AttendanceController {
         row.put("usedDays", quota.getUsedDays());
         row.put("remainDays", quota.getTotalDays().subtract(quota.getUsedDays()));
         return row;
+    }
+
+    /**
+     * 团队出勤汇总（admin 看全员、manager 只看本部门）：
+     * 坐班人员靠打卡、业务人员靠外勤登记，两类都落在同一张考勤表里汇总。
+     */
+    @RequireRole({"admin", "manager"})
+    @GetMapping("/team-summary")
+    public Result<List<Map<String, Object>>> teamSummary(@RequestParam(required = false) String month,
+                                                         @RequestParam(required = false) Long deptId) {
+        try {
+            YearMonth ym;
+            try {
+                ym = (month == null || month.isBlank()) ? YearMonth.now() : YearMonth.parse(month.trim());
+            } catch (Exception e) {
+                return Result.error("月份格式应为 yyyy-MM");
+            }
+            Long scopeDept = deptId;
+            if (UserContext.isManager()) {
+                scopeDept = UserContext.getDeptId();
+                if (scopeDept == null) {
+                    return Result.error("当前账号未绑定部门，无法查看团队汇总");
+                }
+            }
+            List<Employee> employees = employeeMapper.selectList(new LambdaQueryWrapper<Employee>()
+                    .ne(Employee::getStatus, 0)
+                    .eq(scopeDept != null, Employee::getDeptId, scopeDept)
+                    .orderByAsc(Employee::getDeptId)
+                    .orderByAsc(Employee::getEmpNo));
+            if (employees.isEmpty()) {
+                return Result.success(new ArrayList<>());
+            }
+            List<Long> empIds = employees.stream().map(Employee::getId).toList();
+            List<Attendance> records = attendanceMapper.selectList(new LambdaQueryWrapper<Attendance>()
+                    .in(Attendance::getEmpId, empIds)
+                    .between(Attendance::getAttendDate, ym.atDay(1), ym.atEndOfMonth()));
+            // 顺序：[0]出勤 [1]迟到 [2]早退 [3]缺勤 [4]请假 [5]外勤
+            Map<Long, int[]> agg = new HashMap<>();
+            for (Attendance a : records) {
+                int[] c = agg.computeIfAbsent(a.getEmpId(), k -> new int[6]);
+                int s = a.getStatus() == null ? 0 : a.getStatus();
+                if (s == 6) {
+                    c[0]++;
+                    c[5]++;
+                } else if (s == 1 || s == 2 || s == 3 || s == 7) {
+                    c[0]++;
+                } else if (s == 4) {
+                    c[3]++;
+                } else if (s == 5) {
+                    c[4]++;
+                }
+                if (s == 2 || s == 7) c[1]++;
+                if (s == 3 || s == 7) c[2]++;
+            }
+            Map<Long, String> deptNames = new HashMap<>();
+            for (Department d : departmentMapper.selectList(null)) {
+                deptNames.put(d.getId(), d.getDeptName());
+            }
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Employee emp : employees) {
+                int[] c = agg.getOrDefault(emp.getId(), new int[6]);
+                Map<String, Object> row = new HashMap<>();
+                row.put("empId", emp.getId());
+                row.put("empNo", emp.getEmpNo());
+                row.put("name", emp.getName());
+                row.put("deptName", deptNames.getOrDefault(emp.getDeptId(), "未分配"));
+                row.put("attend", c[0]);
+                row.put("late", c[1]);
+                row.put("early", c[2]);
+                row.put("absent", c[3]);
+                row.put("leave", c[4]);
+                row.put("trip", c[5]);
+                rows.add(row);
+            }
+            return Result.success(rows);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     /**

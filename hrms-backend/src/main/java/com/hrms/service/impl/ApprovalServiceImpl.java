@@ -436,6 +436,8 @@ public class ApprovalServiceImpl implements ApprovalService {
                 applySalaryAdjustment(inst);
             } else if ("补卡".equals(inst.getBizType())) {
                 handleMakeupApproved(inst);
+            } else if ("外勤".equals(inst.getBizType())) {
+                handleFieldWorkApproved(inst);
             }
         } catch (Exception e) {
             // 业务联动失败不阻断审批主流程，但不能再静默吞掉：
@@ -645,6 +647,49 @@ public class ApprovalServiceImpl implements ApprovalService {
             }
             attendanceMapper.upsertNonCheckIn(empId, d, AttendanceStatus.LEAVE, remark);
         }
+    }
+
+    /** 外勤/出差审批通过：按起止日期逐日写考勤（status=6 出差），记入团队汇总与薪资口径 */
+    private void handleFieldWorkApproved(ApprovalInstance inst) {
+        JsonNode detail = parseJson(inst.getDetail());
+        LocalDate start = detail == null ? null : parseDate(detail.path("startDate").asText(""));
+        LocalDate end = detail == null ? null : parseDate(detail.path("endDate").asText(""));
+        if (start == null && end == null) {
+            throw new RuntimeException("外勤单缺少起止日期，无法写入考勤");
+        }
+        if (start == null) {
+            start = end;
+        }
+        if (end == null) {
+            end = start;
+        }
+        if (end.isBefore(start)) {
+            LocalDate tmp = start;
+            start = end;
+            end = tmp;
+        }
+        String location = detail == null ? "" : detail.path("location").asText("");
+        String purpose = detail == null ? "" : detail.path("reason").asText("");
+
+        Long empId = resolveEmpId(inst.getApplicant());
+        StringBuilder remark = new StringBuilder("外勤");
+        if (!location.isEmpty()) {
+            remark.append("·").append(location);
+        }
+        if (!purpose.isEmpty()) {
+            remark.append("：").append(purpose);
+        }
+        String text = remark.toString();
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            DayOfWeek w = d.getDayOfWeek();
+            if (w == DayOfWeek.SATURDAY || w == DayOfWeek.SUNDAY) {
+                continue;
+            }
+            attendanceMapper.upsertNonCheckIn(empId, d, AttendanceStatus.BUSINESS_TRIP, text);
+        }
+        sendMsg(inst.getApplicant(), "外勤登记已生效",
+                start + (start.equals(end) ? "" : " 至 " + end) + " 已按外出考勤记录，"
+                        + (location.isEmpty() ? "" : "地点：" + location + "。"), inst.getTitle());
     }
 
     private long countWorkDays(LocalDate start, LocalDate end) {
