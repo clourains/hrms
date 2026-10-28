@@ -1148,27 +1148,44 @@ const initBizShipmentMap = () => {
         coordinateSystem: 'geo',
         polyline: true,
         data: [{ coords: it.curve }],
-        lineStyle: { width: 0 },
+        lineStyle: { color: it.color, width: 0.6, opacity: 0.25 },
         effect: {
           show: true,
-          period: 3.6,
-          trailLength: 0.2,
+          period: 3.2,
+          trailLength: 0.5,
           symbol: 'circle',
-          symbolSize: 3,
+          symbolSize: 6,
           color: it.color
         },
         silent: true,
         zlevel: 2
       })),
       {
+        id: 'fromPorts',
+        type: 'scatter',
+        coordinateSystem: 'geo',
+        // 起运港去重后单独标点，多票同港只显示一个节点与名称
+        data: Array.from(
+          new Map(shipmentRoutes.map((it) => [it.portFrom, { value: it.p0, name: it.portFrom }])).values()
+        ),
+        symbol: 'circle',
+        symbolSize: 6,
+        itemStyle: { color: 'rgba(226, 232, 240, 0.95)', borderColor: 'rgba(56, 189, 248, 0.9)', borderWidth: 1.2 },
+        label: { show: true, formatter: '{b}', position: 'left', distance: 6, color: '#c7d7ea', fontSize: 10 },
+        tooltip: { formatter: (p) => `起运港：${p.name}` },
+        zlevel: 1
+      },
+      {
         id: 'ports',
         type: 'scatter',
         coordinateSystem: 'geo',
-        data: shipmentRoutes.map((it) => ({
-          value: it.p2,
-          name: it.portTo,
-          itemStyle: { color: it.color }
-        })),
+        data: Array.from(
+          new Map(shipmentRoutes.map((it) => [it.portTo, {
+            value: it.p2,
+            name: it.portTo,
+            itemStyle: { color: it.color }
+          }])).values()
+        ),
         symbolSize: 4,
         itemStyle: { color: 'rgba(56, 189, 248, 0.85)' },
         label: { show: true, formatter: '{b}', position: 'right', distance: 4, color: '#8fa6c2', fontSize: 9 },

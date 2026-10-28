@@ -8,6 +8,8 @@ import com.hrms.entity.Invoice;
 import com.hrms.entity.OfflineDeal;
 import com.hrms.entity.OrderItem;
 import com.hrms.entity.Product;
+import com.hrms.entity.Shipment;
+import com.hrms.entity.ShipmentTrack;
 import com.hrms.entity.Supplier;
 import com.hrms.entity.TradeOrder;
 import com.hrms.entity.Warehouse;
@@ -15,6 +17,8 @@ import com.hrms.mapper.CustomerMapper;
 import com.hrms.mapper.InvoiceMapper;
 import com.hrms.mapper.OfflineDealMapper;
 import com.hrms.mapper.ProductMapper;
+import com.hrms.mapper.ShipmentMapper;
+import com.hrms.mapper.ShipmentTrackMapper;
 import com.hrms.mapper.SupplierMapper;
 import com.hrms.mapper.TradeOrderMapper;
 import com.hrms.mapper.WarehouseMapper;
@@ -32,6 +36,8 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -58,6 +64,7 @@ public class DataImportServiceImpl implements DataImportService {
         MODULE_LABELS.put("order", "销售订单");
         MODULE_LABELS.put("invoice", "发票");
         MODULE_LABELS.put("offline-deal", "线下交易");
+        MODULE_LABELS.put("shipment", "发货单（运单）");
 
         MODULE_HEADERS.put("customer", Arrays.asList(
                 "客户编码", "公司名称", "联系人", "国家", "城市", "地址",
@@ -95,6 +102,13 @@ public class DataImportServiceImpl implements DataImportService {
         MODULE_SAMPLES.put("offline-deal", Arrays.asList(
                 "OD-IMP-001", "示例贸易有限公司", "美国", "样品采购", "USD", "1500", "2026-10-20",
                 "银行转账", "VOUCHER-001", "交易编号可留空，系统自动生成"));
+
+        MODULE_HEADERS.put("shipment", Arrays.asList(
+                "运单号", "承运商", "运输方式", "起运港", "目的港", "发货日期",
+                "关联订单号", "预计到港", "运费(USD)", "备注"));
+        MODULE_SAMPLES.put("shipment", Arrays.asList(
+                "1Z999AA10123456784", "UPS", "快递", "上海港", "美国纽约", "2026-10-20",
+                "SO-202605-001", "2026-10-28", "0", "导入后可在物流跟踪里同步 17TRACK 轨迹"));
     }
 
     @Autowired
@@ -136,6 +150,12 @@ public class DataImportServiceImpl implements DataImportService {
     @Autowired
     private OfflineDealMapper offlineDealMapper;
 
+    @Autowired
+    private ShipmentMapper shipmentMapper;
+
+    @Autowired
+    private ShipmentTrackMapper shipmentTrackMapper;
+
     @Override
     public String moduleLabel(String module) {
         String label = MODULE_LABELS.get(module);
@@ -173,6 +193,7 @@ public class DataImportServiceImpl implements DataImportService {
             case "order" -> importOrders(rows, result);
             case "invoice" -> rows.forEach(row -> importInvoice(row, result));
             case "offline-deal" -> rows.forEach(row -> importOfflineDeal(row, result));
+            case "shipment" -> rows.forEach(row -> importShipment(row, result));
             default -> throw new RuntimeException("不支持的导入模块：" + module);
         }
         return result;
@@ -427,6 +448,80 @@ public class DataImportServiceImpl implements DataImportService {
         } catch (Exception e) {
             result.addError(rowNo, message(e));
         }
+    }
+
+    /* ================= 发货单（17TRACK 运单） ================= */
+
+    /**
+     * 运单批量导入：有运单号即建发货单并进入「运输中」，同时落一条「已交运」节点，
+     * 之后由自动同步任务或手动同步补全 17TRACK 详细轨迹。运单号重复直接跳过。
+     */
+    private void importShipment(Map<String, String> row, ImportResult result) {
+        int rowNo = rowNo(row);
+        String trackingNo = text(row, "运单号");
+        if (!StringUtils.hasText(trackingNo)) {
+            result.addError(rowNo, "运单号不能为空");
+            return;
+        }
+        if (shipmentMapper.selectCount(new LambdaQueryWrapper<Shipment>()
+                .eq(Shipment::getTrackingNo, trackingNo)) > 0) {
+            result.addSkipped(1, rowNo, "运单号「" + trackingNo + "」已存在，已跳过");
+            return;
+        }
+        try {
+            Shipment shipment = new Shipment();
+            shipment.setTrackingNo(trackingNo);
+            shipment.setCarrier(text(row, "承运商"));
+            shipment.setTransportType(StringUtils.hasText(text(row, "运输方式")) ? text(row, "运输方式") : "快递");
+            shipment.setPortFrom(text(row, "起运港"));
+            shipment.setPortTo(text(row, "目的港"));
+            LocalDate shipDate = date(row, "发货日期");
+            shipment.setShipDate(shipDate != null ? shipDate : LocalDate.now());
+            shipment.setEta(date(row, "预计到港"));
+            shipment.setFreightCostUsd(decimal(row, "运费(USD)"));
+            shipment.setRemark(text(row, "备注"));
+
+            String orderNo = text(row, "关联订单号");
+            if (StringUtils.hasText(orderNo)) {
+                TradeOrder order = tradeOrderMapper.selectOne(new LambdaQueryWrapper<TradeOrder>()
+                        .eq(TradeOrder::getOrderNo, orderNo).last("LIMIT 1"));
+                if (order == null) {
+                    result.addError(rowNo, "订单号「" + orderNo + "」不存在，可清空该列后重新导入");
+                    return;
+                }
+                shipment.setOrderId(order.getId());
+            }
+
+            shipment.setStatus(2);
+            shipment.setShipmentNo(generateImportShipmentNo(rowNo));
+            shipment.setCreateTime(LocalDateTime.now());
+            shipment.setUpdateTime(LocalDateTime.now());
+            shipmentMapper.insert(shipment);
+
+            ShipmentTrack track = new ShipmentTrack();
+            track.setShipmentId(shipment.getId());
+            track.setStatus(2);
+            track.setNode("已交运");
+            track.setLocation(shipment.getPortFrom());
+            track.setContent("运单导入，等待同步 17TRACK 轨迹");
+            track.setTrackTime(LocalDateTime.now());
+            track.setOperator("Excel导入");
+            track.setCreateTime(LocalDateTime.now());
+            shipmentTrackMapper.insert(track);
+
+            result.setSuccess(result.getSuccess() + 1);
+        } catch (Exception e) {
+            result.addError(rowNo, message(e));
+        }
+    }
+
+    private String generateImportShipmentNo(int rowNo) {
+        String base = "SH" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+        String no = rowNo > 0 ? base + "-" + rowNo : base;
+        if (shipmentMapper.countByNoIncludeDeleted(no) > 0) {
+            no = no + "-" + (System.nanoTime() % 1000);
+        }
+        return no;
     }
 
     /* ================= 解析辅助 ================= */

@@ -91,6 +91,20 @@ public class OpenApiImportController {
         offline.put("voucher", "凭证");
         offline.put("remark", "备注");
         ALIASES.put("offline-deal", offline);
+
+        // 运单：外部系统（如 17TRACK 对接方）可直接推运单号建发货单
+        Map<String, String> shipment = new LinkedHashMap<>();
+        shipment.put("trackingNo", "运单号");
+        shipment.put("carrier", "承运商");
+        shipment.put("transportType", "运输方式");
+        shipment.put("portFrom", "起运港");
+        shipment.put("portTo", "目的港");
+        shipment.put("shipDate", "发货日期");
+        shipment.put("orderNo", "关联订单号");
+        shipment.put("eta", "预计到港");
+        shipment.put("freightCostUsd", "运费(USD)");
+        shipment.put("remark", "备注");
+        ALIASES.put("shipment", shipment);
     }
 
     @Autowired

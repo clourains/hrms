@@ -3,11 +3,13 @@ package com.hrms;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 智能人事管理系统启动类
  */
 @SpringBootApplication
+@EnableScheduling
 @MapperScan("com.hrms.mapper")
 public class HrmsApplication {
 

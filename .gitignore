@@ -28,6 +28,3 @@ logs/
 *.zip
 *.tmp
 .trae/
-
-# ---- 本地私密配置（第三方 API Key 等，禁止提交）----
-application-local.yml

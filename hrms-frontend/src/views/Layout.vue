@@ -370,7 +370,7 @@ watch(() => appStore.refreshKey, async () => {
 const menuGroups = [
   { type: 'item', path: '/home', title: '首页', icon: 'HomeFilled' },
   { type: 'item', path: '/dashboard', title: '仪表盘', icon: 'Odometer' },
-  // 公告中心：所有登录用户可见，发布入口仍在「系统管理 → 公告管理」
+  // 公告中心：所有登录用户可见，管理员在页面内直接发布/编辑
   { type: 'item', path: '/notice-center', title: '公告中心', icon: 'Notification' },
   {
     type: 'group',
@@ -385,19 +385,6 @@ const menuGroups = [
       { path: '/approval', title: '审批中心', icon: 'DocumentChecked' },
       { path: '/message', title: '消息中心', icon: 'ChatDotRound' },
       { path: '/reminder', title: '到期提醒', icon: 'Bell', adminOnly: true }
-    ]
-  },
-  {
-    type: 'group',
-    title: '系统管理',
-    icon: 'Setting',
-    adminOnly: true,
-    children: [
-      { path: '/user', title: '用户管理', icon: 'User' },
-      { path: '/notice', title: '公告管理', icon: 'Notification' },
-      { path: '/loginLog', title: '登录日志', icon: 'Key' },
-      { path: '/config', title: '参数配置', icon: 'Tools' },
-      { path: '/audit', title: '审计日志', icon: 'Document' }
     ]
   },
   {
@@ -428,6 +415,18 @@ const menuGroups = [
       { path: '/onboard', title: '入职登记', icon: 'Plus' },
       { path: '/exit/resign', title: '离职管理', icon: 'Right' },
       { path: '/exit/dismiss', title: '辞退管理', icon: 'Warning' }
+    ]
+  },
+  {
+    type: 'group',
+    title: '系统管理',
+    icon: 'Setting',
+    adminOnly: true,
+    children: [
+      { path: '/user', title: '用户管理', icon: 'User' },
+      { path: '/loginLog', title: '登录日志', icon: 'Key' },
+      { path: '/config', title: '参数配置', icon: 'Tools' },
+      { path: '/audit', title: '审计日志', icon: 'Document' }
     ]
   }
 ]

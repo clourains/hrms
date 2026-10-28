@@ -7,6 +7,7 @@
       icon="Van"
     >
       <template #actions>
+        <el-button :icon="Upload" @click="importRef.open()">批量导入运单</el-button>
         <el-button type="primary" :icon="Plus" @click="handleAdd">新增发货</el-button>
       </template>
     </PageHeader>
@@ -330,6 +331,14 @@
         </template>
       </div>
     </el-drawer>
+
+    <ImportDialog
+      ref="importRef"
+      module="shipment"
+      label="发货单（运单）"
+      tip="按运单号建发货单并进入「运输中」：运单号必填且重复会自动跳过；关联订单号可留空，填写时必须是已存在的订单号。导入后系统每 6 小时自动同步 17TRACK 轨迹"
+      @success="loadData"
+    />
   </div>
 </template>
 
@@ -337,8 +346,9 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as echarts from 'echarts'
-import { Search, Refresh, Plus, Edit, Delete, Location, Van, Download } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Edit, Delete, Location, Van, Download, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ImportDialog from '@/components/ImportDialog.vue'
 import worldGeo from '@/assets/geo/world.json'
 import { getCoord } from '@/utils/geoCoord'
 import {
@@ -357,6 +367,7 @@ const formatTime = (v) => (v ? String(v).replace('T', ' ').slice(0, 19) : '-')
 
 const loading = ref(false)
 const submitting = ref(false)
+const importRef = ref(null)
 const tableData = ref([])
 const dialogVisible = ref(false)
 const isEdit = ref(false)

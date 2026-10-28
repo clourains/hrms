@@ -17,6 +17,3 @@ export const updateNoticeApi = (data) => request.put('/notice', data)
 
 // 删除
 export const deleteNoticeApi = (id) => request.delete(`/notice/${id}`)
-
-// 已读统计
-export const getNoticeReadStatsApi = (id) => request.get(`/notice/readStats/${id}`)
