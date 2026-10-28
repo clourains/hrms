@@ -200,6 +200,13 @@ const routes = [
     ]
   },
   {
+    // 深度驾驶舱：独立全屏页面（不套 Layout），由仪表盘入口进入
+    path: '/cockpit',
+    name: 'Cockpit',
+    component: () => import('@/views/dashboard/Cockpit.vue'),
+    meta: { title: '深度驾驶舱', requiresAuth: true }
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     redirect: '/home'
