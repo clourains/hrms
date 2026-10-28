@@ -44,7 +44,10 @@
       <el-row :gutter="16" class="chart-row">
         <el-col :lg="8" :md="12" :xs="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">部门人员分布</span></div>
+            <div class="panel-header">
+              <span class="panel-title">部门人员分布</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('dept')" />
+            </div>
             <div ref="deptChartRef" class="chart-content"></div>
           </div>
         </el-col>
@@ -52,11 +55,14 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">员工结构分析</span>
-              <el-radio-group v-model="structureType" size="small">
-                <el-radio-button label="age">年龄</el-radio-button>
-                <el-radio-button label="education">学历</el-radio-button>
-                <el-radio-button label="gender">性别</el-radio-button>
-              </el-radio-group>
+              <div class="panel-actions">
+                <el-radio-group v-model="structureType" size="small">
+                  <el-radio-button label="age">年龄</el-radio-button>
+                  <el-radio-button label="education">学历</el-radio-button>
+                  <el-radio-button label="gender">性别</el-radio-button>
+                </el-radio-group>
+                <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('structure')" />
+              </div>
             </div>
             <div ref="structureChartRef" class="chart-content"></div>
           </div>
@@ -65,7 +71,10 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">人员流失率</span>
-              <el-tag type="warning" size="small">趋势预测</el-tag>
+              <div class="panel-actions">
+                <el-tag type="warning" size="small">趋势预测</el-tag>
+                <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('attrition')" />
+              </div>
             </div>
             <div ref="attritionChartRef" class="chart-content"></div>
           </div>
@@ -76,13 +85,19 @@
       <el-row :gutter="16" class="chart-row">
         <el-col :lg="12" :md="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">薪资分布分析</span></div>
+            <div class="panel-header">
+              <span class="panel-title">薪资分布分析</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('salary')" />
+            </div>
             <div ref="salaryChartRef" class="chart-content chart-large"></div>
           </div>
         </el-col>
         <el-col :lg="12" :md="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">绩效等级分布</span></div>
+            <div class="panel-header">
+              <span class="panel-title">绩效等级分布</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('performance')" />
+            </div>
             <div ref="performanceChartRef" class="chart-content chart-large"></div>
           </div>
         </el-col>
@@ -92,7 +107,10 @@
       <el-row :gutter="16" class="chart-row">
         <el-col :lg="8" :md="12" :xs="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">考勤统计分析</span></div>
+            <div class="panel-header">
+              <span class="panel-title">考勤统计分析</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('attendance')" />
+            </div>
             <div ref="attendanceChartRef" class="chart-content"></div>
           </div>
         </el-col>
@@ -100,7 +118,10 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">人才画像雷达</span>
-              <el-tag type="success" size="small">统计计算</el-tag>
+              <div class="panel-actions">
+                <el-tag type="success" size="small">统计计算</el-tag>
+                <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('radar')" />
+              </div>
             </div>
             <div ref="radarChartRef" class="chart-content"></div>
           </div>
@@ -135,11 +156,14 @@
           <div class="chart-panel">
             <div class="panel-header">
               <span class="panel-title">人员入职离职趋势</span>
-              <el-radio-group v-model="trendPeriod" size="small">
-                <el-radio-button label="year">近一年</el-radio-button>
-                <el-radio-button label="halfYear">近半年</el-radio-button>
-                <el-radio-button label="quarter">近季度</el-radio-button>
-              </el-radio-group>
+              <div class="panel-actions">
+                <el-radio-group v-model="trendPeriod" size="small">
+                  <el-radio-button label="year">近一年</el-radio-button>
+                  <el-radio-button label="halfYear">近半年</el-radio-button>
+                  <el-radio-button label="quarter">近季度</el-radio-button>
+                </el-radio-group>
+                <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('trend')" />
+              </div>
             </div>
             <div ref="trendChartRef" class="chart-content chart-large"></div>
           </div>
@@ -309,6 +333,17 @@
           </div>
         </template>
       </el-dialog>
+
+      <!-- 单图全屏查看：用源图表当前 option 在全屏弹窗中重建 -->
+      <el-dialog
+        v-model="zoomVisible"
+        :title="zoomTitle"
+        fullscreen
+        destroy-on-close
+        @closed="closeChartZoom"
+      >
+        <div ref="zoomChartRef" class="fullscreen-chart"></div>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -317,7 +352,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import { DataAnalysis, CaretTop, CaretBottom, User, UserFilled, Warning, TrendCharts, Money, Lightning, InfoFilled, Refresh, MagicStick, ArrowRight, Clock } from '@element-plus/icons-vue'
+import { DataAnalysis, CaretTop, CaretBottom, User, UserFilled, Warning, TrendCharts, Money, Lightning, InfoFilled, Refresh, MagicStick, ArrowRight, Clock, FullScreen } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getDashboardStatsApi, getEmployeeStructureApi, getAttendanceAnalysisApi, getSalaryAnalysisApi, getPerformanceAnalysisApi, getTalentPredictionApi, getAiInsightsApi, getTurnoverTrendApi } from '@/api/analytics'
 import { useAppStore } from '@/store/app'
@@ -370,6 +405,44 @@ let performanceChart = null
 let attendanceChart = null
 let radarChart = null
 let trendChart = null
+
+// 单图全屏放大：点击卡片右上角放大按钮后，用源图表当前 option 在全屏弹窗中重建该图
+const zoomVisible = ref(false)
+const zoomTitle = ref('')
+const zoomChartRef = ref(null)
+let zoomChart = null
+
+const chartRegistry = {
+  dept: { title: '部门人员分布', get: () => deptChart },
+  structure: { title: '员工结构分析', get: () => structureChart },
+  attrition: { title: '人员流失率', get: () => attritionChart },
+  salary: { title: '薪资分布分析', get: () => salaryChart },
+  performance: { title: '绩效等级分布', get: () => performanceChart },
+  attendance: { title: '考勤统计分析', get: () => attendanceChart },
+  radar: { title: '人才画像雷达', get: () => radarChart },
+  trend: { title: '人员入职离职趋势', get: () => trendChart }
+}
+
+const openChartZoom = async (key) => {
+  const item = chartRegistry[key]
+  const source = item && item.get()
+  if (!source) {
+    ElMessage.warning('图表尚未加载完成，请稍后再试')
+    return
+  }
+  zoomTitle.value = item.title
+  zoomVisible.value = true
+  await nextTick()
+  zoomChart?.dispose()
+  zoomChart = echarts.init(zoomChartRef.value, chartThemeName())
+  zoomChart.setOption(source.getOption())
+  zoomChart.resize()
+}
+
+const closeChartZoom = () => {
+  zoomChart?.dispose()
+  zoomChart = null
+}
 
 // 入职离职趋势数据（M1-5：真实统计接口，按入职/离职日期按月聚合）
 const TREND_PERIODS = { year: 12, halfYear: 6, quarter: 3 }
@@ -898,6 +971,16 @@ onUnmounted(() => {
 }
 
 .chart-content { width: 100%; height: 260px; padding: 10px; &.chart-large { height: 300px; } }
+
+.panel-actions { display: flex; align-items: center; gap: 8px; }
+
+.zoom-btn {
+  font-size: 16px;
+  color: #909399;
+  &:hover { color: #409EFF; }
+}
+
+.fullscreen-chart { width: 100%; height: calc(100vh - 140px); }
 
 .hiring-prediction { padding: 10px; }
 
