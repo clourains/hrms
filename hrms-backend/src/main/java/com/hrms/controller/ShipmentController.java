@@ -6,10 +6,12 @@ import com.hrms.dto.PageResult;
 import com.hrms.entity.Shipment;
 import com.hrms.entity.ShipmentTrack;
 import com.hrms.service.ShipmentService;
+import com.hrms.service.SeventeenTrackService;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +27,9 @@ public class ShipmentController {
 
     @Autowired
     private ShipmentService shipmentService;
+
+    @Autowired
+    private SeventeenTrackService seventeenTrackService;
 
     @PostMapping("/page")
     public Result<PageResult<Map<String, Object>>> page(@RequestBody BizQueryDTO queryDTO) {
@@ -42,6 +47,45 @@ public class ShipmentController {
     @GetMapping("/{id}/tracks")
     public Result<List<ShipmentTrack>> tracks(@PathVariable Long id) {
         return Result.success(shipmentService.listTracks(id));
+    }
+
+    /**
+     * 第三方实时轨迹（17TRACK）：用发货单运单号实时查询，不落库。
+     * 未配置 API Key / 运单号为空 / 第三方报错时返回明确错误信息。
+     */
+    @GetMapping("/{id}/liveTracks")
+    public Result<Map<String, Object>> liveTracks(@PathVariable Long id) {
+        Shipment shipment = shipmentService.getById(id);
+        if (shipment == null) {
+            return Result.error("发货单不存在");
+        }
+        try {
+            List<Map<String, Object>> nodes = seventeenTrackService.query(shipment.getTrackingNo());
+            Map<String, Object> data = new HashMap<>();
+            data.put("source", "17TRACK");
+            data.put("trackingNo", shipment.getTrackingNo());
+            data.put("nodes", nodes);
+            return Result.success(data);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 按任意运单号查 17TRACK 实时轨迹（不依赖发货单，便于用真实快递单号演示）
+     */
+    @GetMapping("/liveTrackByNo")
+    public Result<Map<String, Object>> liveTrackByNo(@RequestParam String trackingNo) {
+        try {
+            List<Map<String, Object>> nodes = seventeenTrackService.query(trackingNo);
+            Map<String, Object> data = new HashMap<>();
+            data.put("source", "17TRACK");
+            data.put("trackingNo", trackingNo);
+            data.put("nodes", nodes);
+            return Result.success(data);
+        } catch (Exception e) {
+            return Result.error(e.getMessage());
+        }
     }
 
     @PostMapping

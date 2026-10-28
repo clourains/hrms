@@ -196,37 +196,150 @@
       </template>
     </el-dialog>
 
-    <!-- 物流轨迹（P018） -->
-    <el-drawer v-model="trackVisible" :title="`物流轨迹 · ${trackShipmentNo}`" size="420px">
+    <!-- 物流轨迹（动态航线） -->
+    <el-drawer
+      v-model="trackVisible"
+      :title="`物流轨迹 · ${trackShipmentNo}`"
+      size="640px"
+      @closed="stopTrackAnim"
+    >
       <div v-loading="trackLoading">
-        <el-empty v-if="!trackLoading && tracks.length === 0" description="暂无轨迹节点" />
-        <el-timeline v-else>
-          <el-timeline-item
-            v-for="t in tracks"
-            :key="t.id"
-            :timestamp="formatTime(t.trackTime)"
-            :type="trackType(t.status)"
-            placement="top"
-          >
-            <div class="track-node">{{ t.node }}</div>
-            <div class="track-line" v-if="t.location">地点：{{ t.location }}</div>
-            <div class="track-line" v-if="t.content">{{ t.content }}</div>
-            <div class="track-line track-op">操作人：{{ t.operator || '-' }}</div>
-          </el-timeline-item>
-        </el-timeline>
+        <!-- 视图切换：简略版（航线条）/ 详细版（淘宝式物流详情） -->
+        <div class="track-toolbar">
+          <el-radio-group v-model="trackView" size="small">
+            <el-radio-button value="simple">简略版</el-radio-button>
+            <el-radio-button value="detail">详细版</el-radio-button>
+          </el-radio-group>
+          <div class="track-toolbar-right">
+            <el-tag v-if="trackSource === '17track'" size="small" type="success" effect="plain">17TRACK 实时</el-tag>
+            <span v-else class="track-toolbar-tip">本地轨迹</span>
+            <el-button
+              size="small"
+              :icon="Refresh"
+              :loading="liveLoading"
+              @click="handleSyncLive"
+            >同步实时轨迹</el-button>
+            <el-button
+              size="small"
+              :loading="liveLoading"
+              @click="handleQueryByNo"
+            >查其他单号</el-button>
+          </div>
+        </div>
+
+        <!-- ===== 简略版 ===== -->
+        <template v-if="trackView === 'simple'">
+          <!-- 动态航线地图 -->
+          <div class="track-map-box">
+            <div class="track-map-head">
+              <span class="track-route">
+                <el-icon><Location /></el-icon>
+                {{ trackRoute.from || '起运港' }} → {{ trackRoute.to || '目的港' }}
+              </span>
+              <span class="track-badge" :class="`s${trackStatus}`">
+                <i v-if="trackStatus === 2" class="live-dot"></i>
+                {{ SHIPMENT_STATUS[trackStatus] || '未知' }}
+              </span>
+            </div>
+            <div ref="trackMapRef" class="track-map"></div>
+            <div class="track-progress">
+              <el-progress
+                :percentage="Math.round(trackProgress * 100)"
+                :stroke-width="10"
+                :color="trackProgressColor"
+              />
+              <div class="track-meta">
+                <span v-if="trackRoute.fromCoord == null" class="track-warn">起运港未识别坐标，暂时无法绘制航线</span>
+                <span v-if="trackEta" class="track-eta">预计到达 {{ trackEta }}</span>
+                <span v-if="trackStatus === 2" class="track-live">
+                  <i class="live-dot"></i> 实时追踪中 · 每 15 秒自动刷新
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <el-empty v-if="!trackLoading && tracks.length === 0" description="暂无轨迹节点" />
+          <el-timeline v-else>
+            <el-timeline-item
+              v-for="t in tracks"
+              :key="t.id"
+              :timestamp="formatTime(t.trackTime)"
+              :type="trackType(t.status)"
+              placement="top"
+            >
+              <div class="track-node">{{ t.node }}</div>
+              <div class="track-line" v-if="t.location">地点：{{ t.location }}</div>
+              <div class="track-line" v-if="t.content">{{ t.content }}</div>
+              <div class="track-line track-op">操作人：{{ t.operator || '-' }}</div>
+            </el-timeline-item>
+          </el-timeline>
+        </template>
+
+        <!-- ===== 详细版（淘宝式物流详情） ===== -->
+        <template v-else>
+          <div class="tb-summary">
+            <div class="tb-summary-main">
+              <div class="tb-status" :class="`s${trackStatus}`">
+                <el-icon><Van /></el-icon>
+                {{ SHIPMENT_STATUS[trackStatus] || '未知' }}
+              </div>
+              <div class="tb-route">{{ trackRoute.from || '起运港' }} → {{ trackRoute.to || '目的港' }}</div>
+              <div class="tb-sub">
+                承运商 {{ trackCarrier || '-' }} · 运单号 {{ trackTrackingNo || '-' }}
+              </div>
+            </div>
+            <div class="tb-eta-box">
+              <div class="tb-eta-label">预计送达</div>
+              <div class="tb-eta-value">{{ trackEta || '待定' }}</div>
+            </div>
+          </div>
+
+          <el-empty v-if="!trackLoading && tracks.length === 0" description="暂无轨迹节点" />
+          <div v-else class="tb-list">
+            <div
+              v-for="(t, i) in tracksDesc"
+              :key="t.id"
+              class="tb-item"
+              :class="{ latest: i === 0 }"
+            >
+              <div class="tb-rail">
+                <span class="tb-dot" :class="{ active: i === 0 }"></span>
+                <span v-if="i < tracksDesc.length - 1" class="tb-line"></span>
+              </div>
+              <div class="tb-content">
+                <div class="tb-node">
+                  {{ t.node }}
+                  <el-tag v-if="i === 0" size="small" type="primary" effect="plain">最新</el-tag>
+                </div>
+                <div class="tb-desc" v-if="t.content">{{ t.content }}</div>
+                <div class="tb-meta">
+                  <span v-if="t.location" class="tb-loc">
+                    <el-icon><Location /></el-icon>{{ t.location }}
+                  </span>
+                  <span>{{ formatTime(t.trackTime) }}</span>
+                  <span v-if="t.operator">操作人：{{ t.operator }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
     </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Edit, Delete, Location } from '@element-plus/icons-vue'
+import * as echarts from 'echarts'
+import { Search, Refresh, Plus, Edit, Delete, Location, Van } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import worldGeo from '@/assets/geo/world.json'
+import { getCoord } from '@/utils/geoCoord'
 import {
   getShipmentPageApi, addShipmentApi, updateShipmentApi,
-  updateShipmentStatusApi, deleteShipmentApi, getOrderPageApi, getShipmentTracksApi
+  updateShipmentStatusApi, deleteShipmentApi, getOrderPageApi, getShipmentTracksApi,
+  getShipmentLiveTracksApi, queryLiveTrackByNoApi
 } from '@/api/trade'
 
 const statusMap = { 1: '待发货', 2: '运输中', 3: '清关中', 4: '已签收' }
@@ -278,9 +391,213 @@ const trackVisible = ref(false)
 const trackLoading = ref(false)
 const tracks = ref([])
 const trackShipmentNo = ref('')
+// 轨迹数据来源：local 本地轨迹 / trackingmore 第三方实时
+const trackSource = ref('local')
+const liveLoading = ref(false)
 
-const loadData = async () => {
-  loading.value = true
+// 轨迹视图：simple 航线图 / detail 淘宝式物流详情
+const trackView = ref('simple')
+// 最新节点在上（淘宝式倒序）
+const tracksDesc = computed(() => [...tracks.value].reverse())
+const trackCarrier = computed(() => trackShipment.value?.carrier || '')
+const trackTrackingNo = computed(() => trackShipment.value?.trackingNo || '')
+
+// ===== 动态航线地图 =====
+const SHIPMENT_STATUS = { 1: '待发货', 2: '运输中', 3: '已到达', 4: '已签收' }
+// 各状态在航线上的基准进度
+const BASE_PROGRESS = { 1: 0.03, 2: 0.18, 3: 0.95, 4: 1 }
+
+const trackMapRef = ref(null)
+const trackShipment = ref(null)
+const trackProgress = ref(0)
+let trackMap = null
+let trackMapRegistered = false
+let trackAnimTimer = null
+let trackPollTimer = null
+let trackCurveCache = null
+
+const trackStatus = computed(() => Number(trackShipment.value?.status || 1))
+const trackEta = computed(() => {
+  const eta = trackShipment.value?.eta
+  return eta ? String(eta).slice(0, 10) : ''
+})
+const trackRoute = computed(() => {
+  const s = trackShipment.value || {}
+  return {
+    from: s.portFrom,
+    to: s.portTo,
+    fromCoord: getCoord(s.portFrom),
+    toCoord: getCoord(s.portTo)
+  }
+})
+const trackProgressColor = computed(() => {
+  if (trackStatus.value === 4) return '#22c55e'
+  if (trackStatus.value === 3) return '#3b82f6'
+  return '#22d3ee'
+})
+
+// 二次贝塞尔采样：控制点沿法向偏移，形成跨洋弧线
+const buildCurve = (p0, p2, samples = 60) => {
+  const mid = [(p0[0] + p2[0]) / 2, (p0[1] + p2[1]) / 2]
+  const dx = p2[0] - p0[0]
+  const dy = p2[1] - p0[1]
+  const ctrl = [mid[0] - dy * 0.18, mid[1] + dx * 0.18]
+  const pts = []
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples
+    const mt = 1 - t
+    pts.push([
+      mt * mt * p0[0] + 2 * mt * t * ctrl[0] + t * t * p2[0],
+      mt * mt * p0[1] + 2 * mt * t * ctrl[1] + t * t * p2[1]
+    ])
+  }
+  return pts
+}
+
+const initTrackMap = () => {
+  if (!trackMapRef.value) return
+  if (!trackMapRegistered) {
+    echarts.registerMap('world', worldGeo)
+    trackMapRegistered = true
+  }
+  trackMap?.dispose()
+  trackMap = echarts.init(trackMapRef.value)
+  trackMap.setOption({
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(15, 23, 42, 0.92)',
+      borderColor: 'rgba(56, 189, 248, 0.4)',
+      textStyle: { color: '#e2e8f0', fontSize: 12 }
+    },
+    geo: {
+      map: 'world',
+      roam: true,
+      zoom: 1.05,
+      itemStyle: { areaColor: '#e8eef7', borderColor: '#c3cfe0', borderWidth: 0.6 },
+      emphasis: { itemStyle: { areaColor: '#d7e3f5' }, label: { show: false } },
+      silent: true
+    },
+    series: [
+      {
+        id: 'rest', type: 'lines', coordinateSystem: 'geo', polyline: true, data: [], silent: true,
+        lineStyle: { color: '#94a3b8', width: 2, type: 'dashed' }, zlevel: 1
+      },
+      {
+        id: 'passed', type: 'lines', coordinateSystem: 'geo', polyline: true, data: [], silent: true,
+        lineStyle: { color: '#22d3ee', width: 3, shadowBlur: 10, shadowColor: 'rgba(34, 211, 238, 0.65)' }, zlevel: 2
+      },
+      {
+        id: 'flow', type: 'lines', coordinateSystem: 'geo', polyline: true, data: [],
+        lineStyle: { width: 0 },
+        effect: { show: true, period: 3, trailLength: 0.25, symbol: 'circle', symbolSize: 4, color: '#38bdf8' },
+        silent: true, zlevel: 3
+      },
+      {
+        id: 'current', type: 'effectScatter', coordinateSystem: 'geo', data: [],
+        rippleEffect: { brushType: 'stroke', scale: 3.5 },
+        symbolSize: 12,
+        itemStyle: { color: '#22d3ee', shadowBlur: 12, shadowColor: '#22d3ee' },
+        label: { show: true, position: 'top', formatter: '当前位置', color: '#0284c7', fontSize: 10 },
+        zlevel: 4
+      },
+      {
+        id: 'ends', type: 'scatter', coordinateSystem: 'geo', data: [],
+        symbolSize: 9,
+        itemStyle: { color: '#64748b' },
+        label: { show: true, position: 'bottom', formatter: (p) => p.data.name, color: '#475569', fontSize: 10 },
+        zlevel: 4
+      }
+    ]
+  })
+  renderTrackMap()
+}
+
+// 按当前进度重绘：已走实线 + 未走虚线 + 流动光点 + 位置涟漪
+const renderTrackMap = () => {
+  if (!trackMap) return
+  const { fromCoord, toCoord } = trackRoute.value
+  if (!fromCoord || !toCoord) {
+    trackMap.clear()
+    return
+  }
+  if (!trackCurveCache) trackCurveCache = buildCurve(fromCoord, toCoord)
+  const pts = trackCurveCache
+  const total = pts.length - 1
+  const idx = Math.max(0, Math.min(total, Math.round(trackProgress.value * total)))
+  const passed = pts.slice(0, Math.max(2, idx + 1))
+  const rest = pts.slice(idx)
+  const cur = pts[idx]
+
+  trackMap.setOption({
+    series: [
+      { id: 'rest', data: [{ coords: rest }] },
+      { id: 'passed', data: [{ coords: passed }] },
+      { id: 'flow', data: [{ coords: pts }] },
+      { id: 'current', data: [{ value: [...cur, 1], name: '当前位置' }] },
+      {
+        id: 'ends',
+        data: [
+          { value: [...fromCoord, 1], name: trackRoute.value.from },
+          { value: [...toCoord, 1], name: trackRoute.value.to }
+        ]
+      }
+    ]
+  })
+}
+
+// 运输中：让当前位置沿航线持续前进；其余状态停在基准点
+const startTrackAnim = () => {
+  if (trackAnimTimer) {
+    clearInterval(trackAnimTimer)
+    trackAnimTimer = null
+  }
+  const status = trackStatus.value
+  trackProgress.value = BASE_PROGRESS[status] ?? 0.05
+  renderTrackMap()
+  if (status === 2) {
+    trackAnimTimer = setInterval(() => {
+      if (trackProgress.value >= 0.96) return
+      trackProgress.value = Math.min(0.96, trackProgress.value + 0.0022)
+      renderTrackMap()
+    }, 80)
+  }
+}
+
+// 仅释放地图与动画（保留轨迹轮询，供详细版继续接收新节点）
+const disposeTrackMap = () => {
+  if (trackAnimTimer) {
+    clearInterval(trackAnimTimer)
+    trackAnimTimer = null
+  }
+  trackMap?.dispose()
+  trackMap = null
+  trackCurveCache = null
+}
+
+const stopTrackAnim = () => {
+  if (trackPollTimer) {
+    clearInterval(trackPollTimer)
+    trackPollTimer = null
+  }
+  disposeTrackMap()
+}
+
+// 切换视图：回到简略版时重建地图并恢复动画，详细版时释放地图
+watch(trackView, async (v) => {
+  if (!trackVisible.value) return
+  if (v === 'simple') {
+    await nextTick()
+    initTrackMap()
+    startTrackAnim()
+  } else {
+    disposeTrackMap()
+  }
+})
+
+const handleTrackResize = () => trackMap?.resize()
+
+const loadData = async (silent = false) => {
+  if (!silent) loading.value = true
   try {
     const res = await getShipmentPageApi({
       ...searchForm,
@@ -293,10 +610,10 @@ const loadData = async () => {
     pagination.total = res.data.total
     if (tableData.value.length === 0 && pagination.pageNum > 1) {
       pagination.pageNum -= 1
-      await loadData()
+      await loadData(silent)
     }
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -389,6 +706,10 @@ const handleDelete = async (row) => {
 
 const handleOpenTracks = async (row) => {
   trackShipmentNo.value = row.shipment.shipmentNo
+  trackShipment.value = row.shipment
+  trackView.value = 'simple'
+  trackSource.value = 'local'
+  trackCurveCache = null
   trackVisible.value = true
   trackLoading.value = true
   try {
@@ -396,6 +717,77 @@ const handleOpenTracks = async (row) => {
     tracks.value = res.data || []
   } finally {
     trackLoading.value = false
+  }
+  await nextTick()
+  initTrackMap()
+  startTrackAnim()
+
+  // 运输中/待发货/已到达：每 15 秒自动拉取最新轨迹节点，节点更新后动画进度同步前进
+  if (Number(row.shipment.status) !== 4) {
+    trackPollTimer = setInterval(async () => {
+      try {
+        const res = await getShipmentTracksApi(row.shipment.id)
+        tracks.value = res.data || []
+      } catch (e) {
+        // 轮询失败静默处理，不打断当前动画
+      }
+    }, 15000)
+  }
+}
+
+// 同步第三方实时轨迹（17TRACK）：未配置 Key / 号码无效时后端返回明确错误
+const handleSyncLive = async () => {
+  if (!trackShipment.value?.id) {
+    return
+  }
+  if (!trackShipment.value?.trackingNo) {
+    ElMessage.warning('该发货单未填写运单号，无法查询实时轨迹')
+    return
+  }
+  liveLoading.value = true
+  try {
+    const res = await getShipmentLiveTracksApi(trackShipment.value.id)
+    const nodes = res.data?.nodes || []
+    tracks.value = nodes
+    trackSource.value = '17track'
+    ElMessage.success(`已同步 ${nodes.length} 条 17TRACK 实时轨迹`)
+  } catch (e) {
+    // 请求拦截器已弹出后端返回的错误信息
+  } finally {
+    liveLoading.value = false
+  }
+}
+
+// 按任意运单号查 17TRACK：便于用真实快递单号演示（不依赖当前发货单）
+const handleQueryByNo = async () => {
+  let trackingNo
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '输入要查询的快递单号（17TRACK 支持 DHL/UPS/FedEx/邮政等 3500+ 承运商）',
+      '17TRACK 实时查询',
+      {
+        inputPlaceholder: '例如 1Z999AA10123456784',
+        inputPattern: /\S+/,
+        inputErrorMessage: '请输入运单号',
+        confirmButtonText: '查询',
+        cancelButtonText: '取消'
+      }
+    )
+    trackingNo = String(value).trim()
+  } catch (e) {
+    return
+  }
+  liveLoading.value = true
+  try {
+    const res = await queryLiveTrackByNoApi(trackingNo)
+    const nodes = res.data?.nodes || []
+    tracks.value = nodes
+    trackSource.value = '17track'
+    ElMessage.success(`已获取 ${nodes.length} 条 17TRACK 实时轨迹`)
+  } catch (e) {
+    // 请求拦截器已弹出后端返回的错误信息
+  } finally {
+    liveLoading.value = false
   }
 }
 
@@ -410,9 +802,20 @@ const searchOrders = async (keyword) => {
   }
 }
 
+// 新订单/新发货单：列表每 30 秒静默刷新，新增单据无需手动刷新即可出现
+let listRefreshTimer = null
+
 onMounted(() => {
   loadData()
   searchOrders('')
+  window.addEventListener('resize', handleTrackResize)
+  listRefreshTimer = setInterval(() => loadData(true), 30000)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleTrackResize)
+  if (listRefreshTimer) clearInterval(listRefreshTimer)
+  stopTrackAnim()
 })
 </script>
 
@@ -420,4 +823,210 @@ onMounted(() => {
 .track-node { font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 4px; }
 .track-line { font-size: 13px; color: var(--el-text-color-regular); line-height: 20px; }
 .track-op { color: var(--el-text-color-secondary); }
+
+/* 动态航线地图 */
+.track-map-box {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fbff, #eef4fc);
+}
+.track-map-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.track-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.track-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+.track-badge.s2 { background: #dbeafe; color: #1d4ed8; }
+.track-badge.s3 { background: #dcfce7; color: #15803d; }
+.track-badge.s4 { background: #dcfce7; color: #15803d; }
+.track-map {
+  width: 100%;
+  height: 300px;
+}
+.track-progress { margin-top: 10px; }
+.track-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.track-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #0ea5e9;
+}
+.track-warn { color: #f59e0b; }
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  animation: livePulse 1.2s infinite;
+}
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); }
+}
+
+/* 视图切换栏 */
+.track-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.track-toolbar-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.track-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 淘宝式物流详情 */
+.tb-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: linear-gradient(135deg, #eef6ff, #f7fbff);
+}
+.tb-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0ea5e9;
+}
+.tb-status.s1 { color: #64748b; }
+.tb-status.s3, .tb-status.s4 { color: #16a34a; }
+.tb-route {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.tb-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.tb-eta-box {
+  text-align: right;
+  white-space: nowrap;
+}
+.tb-eta-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.tb-eta-value {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0ea5e9;
+}
+.tb-list {
+  padding: 4px 4px 0;
+}
+.tb-item {
+  display: flex;
+  gap: 12px;
+}
+.tb-rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 14px;
+  padding-top: 4px;
+}
+.tb-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+.tb-dot.active {
+  width: 12px;
+  height: 12px;
+  background: #0ea5e9;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
+  animation: livePulse 1.6s infinite;
+}
+.tb-line {
+  flex: 1;
+  width: 2px;
+  margin-top: 3px;
+  background: #e2e8f0;
+}
+.tb-content {
+  flex: 1;
+  padding-bottom: 18px;
+}
+.tb-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+}
+.tb-item.latest .tb-node {
+  font-size: 15px;
+  color: #0ea5e9;
+}
+.tb-desc {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+}
+.tb-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.tb-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
 </style>

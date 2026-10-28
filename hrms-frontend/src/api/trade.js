@@ -15,6 +15,8 @@ export const getWarehousePageApi = (data) => request.post('/warehouse/page', dat
 // onlyEnabled 不传 = 只取启用的仓库（下拉框用）；传 false = 全部（仓库管理页用）
 export const getWarehouseListApi = (onlyEnabled) =>
   request.get('/warehouse/list', onlyEnabled === undefined ? {} : { onlyEnabled })
+// 仓库容量与地点可视化：容量 + 当前库存占用 + 使用率
+export const getWarehouseOverviewApi = () => request.get('/warehouse/overview')
 export const addWarehouseApi = (data) => request.post('/warehouse', data)
 export const updateWarehouseApi = (data) => request.put('/warehouse', data)
 export const deleteWarehouseApi = (id) => request.delete(`/warehouse/${id}`)
@@ -67,6 +69,12 @@ export const deleteOrderApi = (id) => request.delete(`/order/${id}`)
 // ========== 物流发货 ==========
 export const getShipmentPageApi = (data) => request.post('/shipment/page', data)
 export const getShipmentTracksApi = (id) => request.get(`/shipment/${id}/tracks`)
+
+// 第三方实时轨迹（17TRACK）：按发货单运单号实时查询
+export const getShipmentLiveTracksApi = (id) => request.get(`/shipment/${id}/liveTracks`)
+
+// 按任意运单号查询 17TRACK 实时轨迹
+export const queryLiveTrackByNoApi = (trackingNo) => request.get('/shipment/liveTrackByNo', { trackingNo })
 export const addShipmentApi = (data) => request.post('/shipment', data)
 export const updateShipmentApi = (data) => request.put('/shipment', data)
 export const updateShipmentStatusApi = (id, status) => request.put(`/shipment/status/${id}/${status}`)

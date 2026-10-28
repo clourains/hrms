@@ -3,13 +3,19 @@ package com.hrms.controller;
 import com.hrms.annotation.RequireRole;
 import com.hrms.dto.BizQueryDTO;
 import com.hrms.dto.PageResult;
+import com.hrms.entity.Inventory;
 import com.hrms.entity.Warehouse;
+import com.hrms.mapper.InventoryMapper;
 import com.hrms.service.WarehouseService;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 仓库Controller
@@ -23,6 +29,51 @@ public class WarehouseController {
 
     @Autowired
     private WarehouseService warehouseService;
+
+    @Autowired
+    private InventoryMapper inventoryMapper;
+
+    /**
+     * 仓库容量与地点可视化：返回每个仓库的容量、当前库存占用件数与使用率
+     */
+    @GetMapping("/overview")
+    public Result<List<Map<String, Object>>> overview() {
+        List<Warehouse> warehouses = warehouseService.listAll(false);
+        List<Inventory> inventories = inventoryMapper.selectList(null);
+
+        // 按仓库汇总库存（在库 + 锁定）
+        Map<Long, Integer> stockMap = new HashMap<>();
+        for (Inventory inv : inventories) {
+            if (inv.getWarehouseId() == null) {
+                continue;
+            }
+            int qty = (inv.getQuantity() == null ? 0 : inv.getQuantity())
+                    + (inv.getLockedQuantity() == null ? 0 : inv.getLockedQuantity());
+            stockMap.merge(inv.getWarehouseId(), qty, Integer::sum);
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Warehouse w : warehouses) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", w.getId());
+            item.put("warehouseCode", w.getWarehouseCode());
+            item.put("warehouseName", w.getWarehouseName());
+            item.put("type", w.getType());
+            item.put("country", w.getCountry());
+            item.put("city", w.getCity());
+            item.put("address", w.getAddress());
+            item.put("manager", w.getManager());
+            item.put("capacity", w.getCapacity());
+            item.put("status", w.getStatus());
+
+            int stock = stockMap.getOrDefault(w.getId(), 0);
+            int cap = w.getCapacity() == null ? 0 : w.getCapacity();
+            item.put("stockQty", stock);
+            item.put("usageRate", cap > 0 ? Math.round(stock * 1000.0 / cap) / 10.0 : 0.0);
+            result.add(item);
+        }
+        return Result.success(result);
+    }
 
     @PostMapping("/page")
     public Result<PageResult<Warehouse>> page(@RequestBody BizQueryDTO queryDTO) {

@@ -36,6 +36,50 @@
             </el-form>
           </div>
 
+          <!-- 容量与地点可视化 -->
+          <div class="wh-visual">
+            <div class="wh-visual-head">
+              <span class="wh-visual-title">仓储容量与全球分布</span>
+              <span class="wh-visual-sub">
+                共 {{ whOverview.length }} 个仓库 · 总容量 {{ totalCapacity.toLocaleString() }} 件 ·
+                已用 {{ totalStock.toLocaleString() }} 件（整体使用率 {{ overallUsage }}%）
+                <em v-if="overCapacityCount" class="wh-cap-warn">· {{ overCapacityCount }} 个仓库库存已超出登记容量，建议核对容量配置</em>
+              </span>
+            </div>
+            <el-row :gutter="16">
+              <el-col :xs="24" :lg="12">
+                <div class="wh-cap-list">
+                  <div v-for="w in whOverview" :key="w.id" class="wh-cap-item">
+                    <div class="wh-cap-top">
+                      <span class="wh-cap-name">
+                        <el-tag :type="w.type === 2 ? 'warning' : 'primary'" size="small" effect="plain">
+                          {{ w.type === 2 ? '海外仓' : '国内仓' }}
+                        </el-tag>
+                        <span class="wh-cap-label">{{ w.warehouseName }}</span>
+                        <span class="wh-cap-loc">{{ w.country }} · {{ w.city }}</span>
+                      </span>
+                      <span class="wh-cap-num" :class="{ danger: Number(w.usageRate) >= 100 }">
+                        {{ Number(w.stockQty || 0).toLocaleString() }} / {{ w.capacity ? Number(w.capacity).toLocaleString() : '—' }}
+                        <b>{{ w.usageRate }}%</b>
+                        <el-tag v-if="Number(w.usageRate) > 100" type="danger" size="small" effect="plain">超容</el-tag>
+                      </span>
+                    </div>
+                    <el-progress
+                      :percentage="Math.min(100, Number(w.usageRate) || 0)"
+                      :stroke-width="9"
+                      :color="usageColor(w.usageRate)"
+                      :show-text="false"
+                    />
+                  </div>
+                  <el-empty v-if="!whOverview.length" description="暂无仓库数据" :image-size="60" />
+                </div>
+              </el-col>
+              <el-col :xs="24" :lg="12">
+                <div ref="whMapRef" class="wh-map"></div>
+              </el-col>
+            </el-row>
+          </div>
+
           <el-table v-loading="whLoading" :data="whList" border stripe @sort-change="handleWhSort">
             <el-table-column prop="warehouseCode" label="仓库编码" width="120" sortable="custom" />
             <el-table-column prop="warehouseName" label="仓库名称" min-width="150" sortable="custom" />
@@ -491,18 +535,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import * as echarts from 'echarts'
 import { Search, Refresh, Plus, Edit, EditPen, Delete, Box, Sort, Tickets } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
+import worldGeo from '@/assets/geo/world.json'
+import { getCoord } from '@/utils/geoCoord'
 import {
   getWarehousePageApi, getWarehouseListApi, addWarehouseApi, updateWarehouseApi, deleteWarehouseApi,
   getInventoryPageApi, getInventoryLogsApi, changeStockApi, getProductListApi,
   updateWarningQuantityApi, transferStockApi,
   getStockCheckPageApi, getStockCheckDetailApi, getStockCheckRowsApi,
   createStockCheckApi, updateStockCheckApi, confirmStockCheckApi, cancelStockCheckApi,
-  getInventoryWarningCountApi
+  getInventoryWarningCountApi, getWarehouseOverviewApi
 } from '@/api/trade'
 
 const activeTab = ref('warehouse')
@@ -535,6 +582,122 @@ const changeTypeText = (t) => ({ 1: '入库', 2: '出库', 3: '锁定', 4: '解�
 const changeTypeTag = (t) => ({ 1: 'success', 2: 'danger', 3: 'warning', 4: 'info' }[t] || 'info')
 const changeColor = (t) => ({ 1: 'var(--el-color-success)', 2: 'var(--el-color-danger)', 3: 'var(--el-color-warning)', 4: 'var(--el-text-color-secondary)' }[t] || 'var(--el-text-color-primary)')
 const changePrefix = (t) => (t === 2 || t === 4 ? '-' : '+')
+
+// ========== 仓库容量与地点可视化 ==========
+const whOverview = ref([])
+const whMapRef = ref(null)
+let whMap = null
+let whMapRegistered = false
+let lastWhKey = ''
+let whRefreshTimer = null
+
+const totalCapacity = computed(() => whOverview.value.reduce((s, w) => s + Number(w.capacity || 0), 0))
+const totalStock = computed(() => whOverview.value.reduce((s, w) => s + Number(w.stockQty || 0), 0))
+const overallUsage = computed(() => {
+  if (!totalCapacity.value) return 0
+  return Math.round((totalStock.value / totalCapacity.value) * 1000) / 10
+})
+
+const overCapacityCount = computed(() => whOverview.value.filter((w) => Number(w.usageRate) > 100).length)
+
+const usageColor = (rate) => {
+  const r = Number(rate) || 0
+  if (r >= 90) return '#ef4444'
+  if (r >= 70) return '#f59e0b'
+  return '#22c55e'
+}
+
+const initWhMap = () => {
+  if (!whMapRef.value) return
+  if (!whMapRegistered) {
+    echarts.registerMap('world', worldGeo)
+    whMapRegistered = true
+  }
+  whMap?.dispose()
+  whMap = echarts.init(whMapRef.value)
+
+  const points = whOverview.value
+    .map((w) => {
+      const coord = getCoord(w.city, w.country)
+      if (!coord) return null
+      return {
+        name: w.warehouseName,
+        value: [...coord, Number(w.stockQty || 0)],
+        capacity: Number(w.capacity || 0),
+        usageRate: w.usageRate,
+        city: w.city,
+        country: w.country,
+        type: w.type
+      }
+    })
+    .filter(Boolean)
+
+  whMap.setOption({
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(15, 23, 42, 0.92)',
+      borderColor: 'rgba(56, 189, 248, 0.4)',
+      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      formatter: (p) => {
+        if (p.seriesType !== 'scatter') return p.name
+        const d = p.data
+        return `<b>${d.name}</b><br/>${d.country} · ${d.city}<br/>`
+          + `容量：${d.capacity.toLocaleString()} 件<br/>`
+          + `库存：${Number(d.value[2]).toLocaleString()} 件<br/>`
+          + `使用率：${d.usageRate}%`
+      }
+    },
+    geo: {
+      map: 'world',
+      roam: true,
+      zoom: 1.15,
+      itemStyle: { areaColor: '#e8eef7', borderColor: '#c3cfe0', borderWidth: 0.6 },
+      emphasis: { itemStyle: { areaColor: '#d7e3f5' }, label: { show: false } }
+    },
+    series: [{
+      name: '仓库',
+      type: 'scatter',
+      coordinateSystem: 'geo',
+      data: points,
+      symbolSize: (val, params) => {
+        const cap = params?.data?.capacity || 0
+        return Math.max(10, Math.min(26, 8 + Math.sqrt(cap) / 6))
+      },
+      itemStyle: {
+        color: (p) => (p.data.type === 2 ? '#f59e0b' : '#2563eb'),
+        shadowBlur: 8,
+        shadowColor: 'rgba(37, 99, 235, 0.45)'
+      },
+      label: {
+        show: true,
+        position: 'right',
+        formatter: (p) => p.data.name,
+        color: '#475569',
+        fontSize: 10
+      },
+      emphasis: { scale: 1.3 }
+    }]
+  })
+}
+
+const loadWhOverview = async (silent = false) => {
+  try {
+    const res = await getWarehouseOverviewApi()
+    const list = Array.isArray(res.data) ? res.data : []
+    const key = list.map((w) => `${w.id}:${w.stockQty}:${w.capacity}`).join(',')
+    whOverview.value = list
+    // 静默刷新时仅在容量/库存发生变化时重绘，避免打断用户正在查看的地图缩放
+    if (!silent || key !== lastWhKey) {
+      lastWhKey = key
+      await nextTick()
+      initWhMap()
+    }
+  } catch (e) {
+    whOverview.value = []
+  }
+}
+
+const handleWhResize = () => whMap?.resize()
 
 // ========== 仓库管理（后端分页 + 排序） ==========
 const whLoading = ref(false)
@@ -1073,7 +1236,18 @@ onMounted(() => {
   loadProductOptions()
   loadWarehouseOptions()
   loadLowStockCount()
+  loadWhOverview()
   applyTabFromQuery()
+  window.addEventListener('resize', handleWhResize)
+  // 订单/出入库变化后容量数据自动更新
+  whRefreshTimer = setInterval(() => loadWhOverview(true), 60000)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleWhResize)
+  if (whRefreshTimer) clearInterval(whRefreshTimer)
+  whMap?.dispose()
+  whMap = null
 })
 </script>
 
@@ -1110,4 +1284,77 @@ onMounted(() => {
   line-height: 1.2;
 }
 .low-hint:hover { color: #c45656; border-bottom-color: #c45656; }
+
+/* 仓库容量与地点可视化 */
+.wh-visual {
+  margin-bottom: 16px;
+  padding: 14px 16px 4px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fbff, #f3f7fd);
+}
+.wh-visual-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.wh-visual-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.wh-visual-sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.wh-cap-warn {
+  font-style: normal;
+  color: #f59e0b;
+}
+.wh-cap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 12px;
+}
+.wh-cap-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.wh-cap-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.wh-cap-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+.wh-cap-loc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.wh-cap-num {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
+}
+.wh-cap-num b { margin-left: 6px; color: #22c55e; }
+.wh-cap-num.danger b { color: #ef4444; }
+.wh-map {
+  width: 100%;
+  height: 320px;
+}
+@media (max-width: 992px) {
+  .wh-map { height: 260px; }
+}
 </style>
