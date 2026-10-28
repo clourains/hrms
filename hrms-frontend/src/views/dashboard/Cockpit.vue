@@ -240,6 +240,114 @@
       </div>
     </section>
 
+    <!-- 业务：智能洞察（规则推算 / AI 生成） -->
+    <section v-if="viewMode === 'business'" class="cp-ai-insight">
+      <div class="cp-panel">
+        <div class="panel-head">
+          <span class="panel-name">业务智能洞察</span>
+          <div class="bi-head-right">
+            <span class="bi-source" :class="bizInsights.source === 'model' ? 'model' : 'rule'">
+              {{ bizInsights.source === 'model' ? 'AI 生成' : '规则推算' }}
+            </span>
+            <span class="bi-time">{{ bizInsights.generatedAt || '--' }}</span>
+            <el-tooltip content="未配置 AI Key" placement="top" :disabled="bizInsights.aiEnabled !== false">
+              <span class="bi-tip-wrap">
+                <el-button
+                  link
+                  size="small"
+                  class="bi-link"
+                  :icon="MagicStick"
+                  :loading="bizAiLoading"
+                  :disabled="bizInsights.aiEnabled === false"
+                  @click="generateBizInsightsByAi"
+                >{{ bizAiLoading ? 'AI 分析中…' : 'AI 生成' }}</el-button>
+              </span>
+            </el-tooltip>
+            <el-button link size="small" class="bi-link" :icon="Refresh" :loading="bizInsightLoading" @click="refreshBizInsights">刷新</el-button>
+            <el-button link size="small" class="bi-link" @click="insightsAllVisible = true">查看全部</el-button>
+          </div>
+        </div>
+
+        <div class="bi-grid">
+          <!-- 销售预测 -->
+          <div class="bi-card">
+            <div class="bi-card-head">
+              <span class="bi-card-title">销售预测</span>
+              <span class="bi-card-tag">未来 3 个月 · USD</span>
+            </div>
+            <template v-if="forecastReady">
+              <div class="bi-kv">
+                <span class="bi-kv-label">合计</span>
+                <span class="bi-kv-value">${{ fmtCompact(forecastTotal) }}</span>
+                <span class="bi-kv-label">环比</span>
+                <span class="bi-kv-value" :class="['bi-growth', forecastGrowth < 0 ? 'down' : 'up']">{{ growthText }}</span>
+              </div>
+              <div ref="bizForecastChartRef" class="bi-chart"></div>
+              <div v-if="bizInsights.forecast?.comment" class="bi-comment">
+                {{ bizInsights.forecast.comment }}
+              </div>
+            </template>
+            <div v-else class="bi-empty">暂无相关数据</div>
+          </div>
+
+          <!-- 客户流失预警 -->
+          <div class="bi-card">
+            <div class="bi-card-head">
+              <span class="bi-card-title">客户流失预警</span>
+              <span class="bi-card-tag">超 90 天未下单</span>
+            </div>
+            <div v-if="customerRiskTop.length" class="bi-table cols-4">
+              <div class="bi-th"><span>客户</span><span>国家</span><span>未下单</span><span>等级</span></div>
+              <div v-for="(c, i) in customerRiskTop" :key="i" class="bi-tr">
+                <span class="bi-ellipsis" :title="c.customerName">{{ c.customerName }}</span>
+                <span class="bi-ellipsis">{{ c.country || '--' }}</span>
+                <span>{{ c.daysSince }} 天</span>
+                <span :class="['bi-level', c.level]">{{ c.level === 'high' ? '高' : '中' }}</span>
+              </div>
+            </div>
+            <div v-else class="bi-empty">暂无相关数据</div>
+          </div>
+
+          <!-- 库存补货 -->
+          <div class="bi-card">
+            <div class="bi-card-head">
+              <span class="bi-card-title">库存补货建议</span>
+              <span class="bi-card-tag">可售 &lt; 30 天</span>
+            </div>
+            <div v-if="restockTop.length" class="bi-table cols-5">
+              <div class="bi-th"><span>产品</span><span>仓库</span><span>库存</span><span>可售</span><span>补货</span></div>
+              <div v-for="(r, i) in restockTop" :key="i" class="bi-tr">
+                <span class="bi-ellipsis" :title="`${r.productName} ${r.sku}`">{{ r.productName }}</span>
+                <span class="bi-ellipsis" :title="r.warehouse">{{ r.warehouse }}</span>
+                <span>{{ r.stock }}</span>
+                <span>{{ r.daysOfSupply }} 天</span>
+                <span class="bi-strong">{{ r.suggestedQty }}</span>
+              </div>
+            </div>
+            <div v-else class="bi-empty">暂无相关数据</div>
+          </div>
+
+          <!-- 物流异常 -->
+          <div class="bi-card">
+            <div class="bi-card-head">
+              <span class="bi-card-title">物流异常检测</span>
+              <span class="bi-card-tag">超期 / 轨迹停滞</span>
+            </div>
+            <div v-if="logisticsTop.length" class="bi-table cols-4">
+              <div class="bi-th"><span>发货单</span><span>承运商</span><span>超期</span><span>停滞</span></div>
+              <div v-for="(a, i) in logisticsTop" :key="i" class="bi-tr">
+                <span class="bi-ellipsis" :title="a.shipmentNo">{{ a.shipmentNo }}</span>
+                <span class="bi-ellipsis" :title="a.carrier">{{ a.carrier || '--' }}</span>
+                <span>{{ a.daysOverdue > 0 ? a.daysOverdue + ' 天' : '—' }}</span>
+                <span>{{ a.daysSinceTrack != null && a.daysSinceTrack > 7 ? a.daysSinceTrack + ' 天' : '—' }}</span>
+              </div>
+            </div>
+            <div v-else class="bi-empty">暂无相关数据</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- 底部：实时数据流 -->
     <section class="cp-stream">
       <div class="stream-head">
@@ -319,6 +427,35 @@
         <el-button @click="streamAllVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 业务智能洞察：全部条目 -->
+    <el-dialog
+      v-model="insightsAllVisible"
+      title="业务智能洞察 · 全部条目"
+      width="740px"
+      class="bi-dialog"
+      append-to-body
+    >
+      <div class="bi-insight-list">
+        <div
+          v-for="(it, i) in bizInsightList"
+          :key="i"
+          class="bi-insight-item"
+          :class="'type-' + it.type"
+        >
+          <div class="bii-head">
+            <span class="bii-title">{{ it.title }}</span>
+            <span class="bii-type">{{ insightTypeText(it.type) }}</span>
+          </div>
+          <div class="bii-desc">{{ it.description }}</div>
+          <div class="bii-tip">{{ it.suggestion }}</div>
+        </div>
+        <div v-if="!bizInsightList.length" class="bi-empty">暂无相关数据</div>
+      </div>
+      <template #footer>
+        <el-button @click="insightsAllVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -329,12 +466,12 @@ import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
   DataBoard, Refresh, FullScreen, Back, User, UserFilled, Clock, Close,
-  TrendCharts, Money, Warning, Tickets, Box, ShoppingCart
+  TrendCharts, Money, Warning, Tickets, Box, ShoppingCart, MagicStick
 } from '@element-plus/icons-vue'
 import {
   getDashboardStatsApi, getEmployeeStructureApi, getAttendanceAnalysisApi,
   getSalaryAnalysisApi, getPerformanceAnalysisApi, getTalentPredictionApi,
-  getTurnoverTrendApi, getRecentActivitiesApi, getAiInsightsApi
+  getTurnoverTrendApi, getRecentActivitiesApi, getAiInsightsApi, getBusinessInsightsApi
 } from '@/api/analytics'
 import {
   getBusinessOverviewApi, getMonthlySalesApi, getTopCustomersApi,
@@ -372,6 +509,12 @@ const bizCountries = ref([])
 const bizInventory = ref([])
 const bizProfit = ref({ byCustomer: [], byProduct: [] })
 const warningCount = ref(0)
+
+// 业务智能洞察（规则推算 + AI 生成）
+const bizInsights = ref({})
+const bizInsightLoading = ref(false)
+const bizAiLoading = ref(false)
+const insightsAllVisible = ref(false)
 
 // 数字滚动动画：驾驶舱的数字必须"动起来"才有数据流的感觉
 const animateValue = ref({ total: 0, active: 0 })
@@ -487,6 +630,19 @@ const bizKpis = computed(() => {
 
 const currentKpis = computed(() => (viewMode.value === 'hr' ? kpis.value : bizKpis.value))
 
+// ===== 业务智能洞察（规则版，不调用大模型） =====
+const forecastReady = computed(() => (bizInsights.value.forecast?.values || []).length > 0)
+const forecastTotal = computed(() => (bizInsights.value.forecast?.values || [])
+  .reduce((sum, v) => sum + (Number(v) || 0), 0))
+const forecastGrowth = computed(() => Number(bizInsights.value.forecast?.growthRate) || 0)
+const growthText = computed(() => `${forecastGrowth.value > 0 ? '+' : ''}${forecastGrowth.value.toFixed(1)}%`)
+const customerRiskTop = computed(() => (bizInsights.value.customerRisk || []).slice(0, 5))
+const restockTop = computed(() => (bizInsights.value.restock || []).slice(0, 5))
+const logisticsTop = computed(() => (bizInsights.value.logisticsAlerts || []).slice(0, 5))
+const bizInsightList = computed(() => bizInsights.value.insights || [])
+
+const insightTypeText = (type) => ({ warning: '预警', success: '良好', info: '提示' }[type] || '提示')
+
 const switchView = (mode) => {
   if (viewMode.value !== mode) viewMode.value = mode
 }
@@ -537,6 +693,7 @@ const bizProductChartRef = ref(null)
 const bizInventoryChartRef = ref(null)
 const bizProfitChartRef = ref(null)
 const bizShipmentMapRef = ref(null)
+const bizForecastChartRef = ref(null)
 
 let deptChart = null
 let salaryChart = null
@@ -553,6 +710,7 @@ let bizProductChart = null
 let bizInventoryChart = null
 let bizProfitChart = null
 let bizShipmentMap = null
+let bizForecastChart = null
 
 // 业务物流航线数据
 const bizShipments = ref([])
@@ -785,6 +943,62 @@ const initTrendChart = () => {
           { offset: 0, color: 'rgba(248, 113, 113, 0.28)' },
           { offset: 1, color: 'rgba(248, 113, 113, 0.02)' }
         ]) }
+      }
+    ]
+  })
+}
+
+// 销售预测：历史 6 个月（真实订单）+ 未来 3 个月（规则回归预测）
+const initBizForecastChart = () => {
+  if (!bizForecastChartRef.value) return
+  bizForecastChart?.dispose()
+  bizForecastChart = echarts.init(bizForecastChartRef.value)
+  const forecast = bizInsights.value.forecast || {}
+  const fMonths = forecast.months || []
+  const fValues = forecast.values || []
+  if (!fMonths.length) return
+
+  const histMonths = (bizTrend.value.months || []).slice(-6)
+  const histSales = (bizTrend.value.sales || []).slice(-6).map(v => Number(v) || 0)
+  const labels = [...histMonths, ...fMonths]
+  const histData = [...histSales, ...fMonths.map(() => null)]
+  const predData = [...histMonths.map(() => null), ...fValues.map(v => Number(v) || 0)]
+  // 让预测线从最后一个真实月份起笔，视觉上连续
+  if (histSales.length) predData[histSales.length - 1] = histSales[histSales.length - 1]
+
+  bizForecastChart.setOption({
+    ...baseOption,
+    grid: { left: 2, right: 10, top: 14, bottom: 0, containLabel: true },
+    legend: {
+      data: ['历史', '预测'], top: 0, right: 0,
+      itemWidth: 9, itemHeight: 9, textStyle: { color: '#7b8ca6', fontSize: 9 }
+    },
+    xAxis: {
+      type: 'category', data: labels,
+      axisLine: { lineStyle: { color: AXIS.line } }, axisTick: { show: false },
+      axisLabel: { color: AXIS.label, fontSize: 9, hideOverlap: true, formatter: (v) => String(v).slice(2) }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: { color: AXIS.label, fontSize: 9, formatter: (v) => (v >= 10000 ? (v / 10000) + '万' : v) },
+      splitLine: { lineStyle: { color: AXIS.line } }
+    },
+    series: [
+      {
+        name: '历史', type: 'bar', barWidth: '46%', data: histData,
+        itemStyle: {
+          borderRadius: [3, 3, 0, 0],
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#38bdf8' },
+            { offset: 1, color: 'rgba(56, 189, 248, 0.12)' }
+          ])
+        }
+      },
+      {
+        name: '预测', type: 'line', smooth: true, symbol: 'circle', symbolSize: 4,
+        data: predData,
+        itemStyle: { color: '#fbbf24' },
+        lineStyle: { color: '#fbbf24', width: 2, type: 'dashed' }
       }
     ]
   })
@@ -1368,6 +1582,7 @@ const initBizCharts = () => {
   initBizInventoryChart()
   initBizProfitChart()
   initBizShipmentMap()
+  initBizForecastChart()
 }
 
 // 按当前视图初始化对应的一组图表
@@ -1381,7 +1596,7 @@ const loadAll = async (silent = false) => {
   if (!silent) loading.value = true
   try {
     const [s, st, att, sal, perf, pred, trd, acts, ai, biz,
-      bTrend, bCust, bProd, bCountry, bInv, bProfit, bWarn, bShip] = await Promise.all([
+      bTrend, bCust, bProd, bCountry, bInv, bProfit, bWarn, bShip, bInsight] = await Promise.all([
       getDashboardStatsApi(),
       getEmployeeStructureApi(),
       getAttendanceAnalysisApi(),
@@ -1400,7 +1615,9 @@ const loadAll = async (silent = false) => {
       getProfitRankingApi().catch(() => null),
       getInventoryWarningCountApi().catch(() => null),
       // 只取已同步真实轨迹的发货单，没有节点的单不出现在地图上；搜索时按关键字过滤
-      getShipmentMapRoutesApi(routeFiltering.value ? routeKeyword.value.trim() : '').catch(() => null)
+      getShipmentMapRoutesApi(routeFiltering.value ? routeKeyword.value.trim() : '').catch(() => null),
+      // 业务智能洞察：规则计算，失败时面板展示「暂无相关数据」
+      getBusinessInsightsApi().catch(() => null)
     ])
 
     stats.value = s.data || {}
@@ -1411,6 +1628,7 @@ const loadAll = async (silent = false) => {
     prediction.value = pred.data || {}
     trend.value = trd.data || []
     business.value = (biz && biz.data) || {}
+    bizInsights.value = (bInsight && bInsight.data) || {}
 
     // 业务视图数据
     if (bTrend && bTrend.data) bizTrend.value = bTrend.data
@@ -1460,6 +1678,44 @@ const loadAll = async (silent = false) => {
 }
 
 const refreshAll = () => loadAll()
+
+// 单独刷新业务智能洞察：默认通道，有 24h 内的 AI 结果会直接回放；失败保留旧数据并提示
+const refreshBizInsights = async () => {
+  bizInsightLoading.value = true
+  try {
+    const res = await getBusinessInsightsApi()
+    bizInsights.value = res.data || {}
+    await nextTick()
+    if (viewMode.value === 'business') initBizForecastChart()
+    handleResize()
+  } catch (e) {
+    ElMessage.error('业务洞察刷新失败，请稍后重试')
+  } finally {
+    bizInsightLoading.value = false
+  }
+}
+
+// AI 生成：强制调用模型重算；后端失败会回退规则结果，前端保留旧数据
+const generateBizInsightsByAi = async () => {
+  if (bizInsights.value.aiEnabled === false) return
+  bizAiLoading.value = true
+  try {
+    const res = await getBusinessInsightsApi(true)
+    bizInsights.value = res.data || {}
+    await nextTick()
+    if (viewMode.value === 'business') initBizForecastChart()
+    handleResize()
+    if (res.data?.source === 'model') {
+      ElMessage.success('AI 洞察已更新')
+    } else {
+      ElMessage.warning('AI 生成失败，已回退规则结果')
+    }
+  } catch (e) {
+    ElMessage.error('AI 生成失败，已回退规则结果')
+  } finally {
+    bizAiLoading.value = false
+  }
+}
 
 // ===== 时钟 / 轮播 / 定时刷新 =====
 let clockTimer = null
@@ -1519,6 +1775,7 @@ const handleResize = () => {
   bizInventoryChart?.resize()
   bizProfitChart?.resize()
   bizShipmentMap?.resize()
+  bizForecastChart?.resize()
 }
 
 // 视图切换后，DOM 重建，需重新初始化当前视图的图表
@@ -1530,6 +1787,9 @@ watch(viewMode, async (mode) => {
     // 离开业务视图时销毁地图实例，回来时按最新真实轨迹重建
     bizShipmentMap?.dispose()
     bizShipmentMap = null
+    // 业务洞察面板随视图卸载，图表实例一并销毁，回到业务视图时重建
+    bizForecastChart?.dispose()
+    bizForecastChart = null
     initHrCharts()
   } else {
     // 等业务视图布局完成（容器有宽度）后再初始化，避免 canvas 宽度为 0
@@ -1561,6 +1821,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   Object.values(rafIds).forEach(id => cancelAnimationFrame(id))
   bizShipmentMap?.dispose()
+  bizForecastChart?.dispose()
   deptChart?.dispose()
   salaryChart?.dispose()
   gaugeChart?.dispose()
@@ -2389,6 +2650,317 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
+/* ===== 业务智能洞察（规则版） ===== */
+.cp-ai-insight {
+  flex: 0 0 auto;
+
+  .cp-panel {
+    min-height: 0;
+    padding-bottom: 10px;
+  }
+}
+
+.bi-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.bi-source {
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #22d3ee;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.08);
+
+  &.model {
+    color: #c084fc;
+    border-color: rgba(192, 132, 252, 0.45);
+    background: rgba(192, 132, 252, 0.1);
+  }
+}
+
+.bi-tip-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.bi-comment {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #94a3b8;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.bi-time {
+  font-size: 10px;
+  color: #5b6b82;
+}
+
+.bi-link {
+  font-size: 11px;
+  color: #7dd3fc;
+
+  &:hover {
+    color: #22d3ee;
+  }
+}
+
+.bi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.bi-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 150px;
+  padding: 8px 10px 6px;
+  border-radius: 7px;
+  border: 1px solid rgba(56, 189, 248, 0.14);
+  background: rgba(9, 20, 37, 0.72);
+}
+
+.bi-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.bi-card-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+  letter-spacing: 0.5px;
+
+  &::before {
+    content: '';
+    display: inline-block;
+    width: 2px;
+    height: 9px;
+    margin-right: 6px;
+    vertical-align: middle;
+    background: #38bdf8;
+  }
+}
+
+.bi-card-tag {
+  font-size: 9.5px;
+  color: #5b6b82;
+  white-space: nowrap;
+}
+
+.bi-kv {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.bi-kv-label {
+  font-size: 9.5px;
+  color: #64748b;
+}
+
+.bi-kv-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.bi-growth.up {
+  color: #34d399;
+}
+
+.bi-growth.down {
+  color: #f87171;
+}
+
+.bi-chart {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 88px;
+}
+
+.bi-table {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 10px;
+
+  &.cols-4 {
+    .bi-th, .bi-tr { grid-template-columns: 1.7fr 0.8fr 0.8fr 0.5fr; }
+  }
+
+  &.cols-5 {
+    .bi-th, .bi-tr { grid-template-columns: 1.5fr 1fr 0.6fr 0.7fr 0.5fr; }
+  }
+}
+
+.bi-th,
+.bi-tr {
+  display: grid;
+  gap: 6px;
+  align-items: center;
+}
+
+.bi-th {
+  padding-bottom: 2px;
+  font-size: 9.5px;
+  color: #5b6b82;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+}
+
+.bi-tr {
+  padding: 3px 0;
+  color: #a5b8cf;
+  border-bottom: 1px dashed rgba(56, 189, 248, 0.07);
+}
+
+.bi-ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bi-strong {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.bi-level {
+  justify-self: start;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 15px;
+
+  &.high {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+  }
+
+  &.medium {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid rgba(251, 191, 36, 0.28);
+  }
+}
+
+.bi-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 90px;
+  font-size: 10.5px;
+  color: #5b6b82;
+}
+
+:global(.bi-dialog) {
+  background: linear-gradient(160deg, rgba(12, 27, 49, 0.98), rgba(6, 14, 28, 0.98));
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px;
+
+  .el-dialog__header {
+    border-bottom: 1px solid rgba(56, 189, 248, 0.14);
+  }
+
+  .el-dialog__title {
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #e2e8f0;
+  }
+
+  .el-dialog__headerbtn .el-dialog__close {
+    color: #7b8ca6;
+  }
+
+  .el-dialog__footer {
+    padding-top: 6px;
+  }
+}
+
+.bi-insight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.bi-insight-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  border-left: 3px solid #38bdf8;
+  background: rgba(10, 22, 40, 0.75);
+
+  &.type-warning { border-left-color: #f87171; }
+  &.type-success { border-left-color: #34d399; }
+
+  &.type-warning .bii-type {
+    color: #fca5a5;
+    background: rgba(248, 113, 113, 0.12);
+  }
+
+  &.type-success .bii-type {
+    color: #6ee7b7;
+    background: rgba(52, 211, 153, 0.12);
+  }
+}
+
+.bii-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.bii-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.bii-type {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.bii-desc {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: #a5b8cf;
+}
+
+.bii-tip {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #7dd3fc;
+}
+
 /* 窄屏兜底：不隐藏任何数据列，改为纵向堆叠 + 页面滚动，保证图表都有尺寸 */
 @media (max-width: 1500px) {
   .cp-kpi-row { grid-template-columns: repeat(3, 1fr); }
@@ -2397,6 +2969,7 @@ onBeforeUnmount(() => {
     grid-auto-rows: minmax(220px, auto);
   }
   .cp-col-right { grid-column: 1 / -1; flex-direction: row; }
+  .bi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1000px) {
@@ -2412,5 +2985,6 @@ onBeforeUnmount(() => {
     padding-top: 8px;
   }
   .cp-insight { display: none; }
+  .bi-grid { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

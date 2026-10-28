@@ -76,3 +76,12 @@ export const getTrainingAnalysisApi = () => {
 export const getRecentActivitiesApi = (limit = 6) => {
   return request.get('/analytics/recent-activities', { limit })
 }
+
+// ==================== 业务智能洞察 ====================
+
+// 销售预测 / 客户流失预警 / 库存补货建议 / 物流异常检测 / 洞察列表
+// generate=false：规则推算（存在 24h 内的 AI 结果时后端直接回放）
+// generate=true：强制调用模型重算，失败时后端回退规则结果
+export const getBusinessInsightsApi = (generate = false) => {
+  return request.get('/analytics/business-insights', { generate })
+}

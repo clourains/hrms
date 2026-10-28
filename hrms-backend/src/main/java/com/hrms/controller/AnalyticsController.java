@@ -2,8 +2,10 @@ package com.hrms.controller;
 
 import com.hrms.annotation.RequireRole;
 import com.hrms.dto.AnalyticsDTO.*;
+import com.hrms.dto.BusinessInsightDTO.BusinessInsights;
 import com.hrms.service.AiInsightService;
 import com.hrms.service.AnalyticsService;
+import com.hrms.service.BusinessInsightService;
 import com.hrms.util.Result;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +26,9 @@ public class AnalyticsController {
 
     @Autowired
     private AiInsightService aiInsightService;
+
+    @Autowired
+    private BusinessInsightService businessInsightService;
 
     /**
      * 获取仪表盘统计数据
@@ -87,6 +92,18 @@ public class AnalyticsController {
     public Result<Map<String, Object>> getAiInsights(
             @RequestParam(defaultValue = "false") boolean generate) {
         return Result.success(aiInsightService.getInsights(generate));
+    }
+
+    /**
+     * 业务智能洞察：销售预测、客户流失预警、库存补货建议、物流异常检测与洞察列表。
+     *
+     * generate=false（默认）：规则计算；若存在 24 小时内的 AI 结果（Redis）直接回放，source=model；
+     * generate=true：强制调用模型重算，模型不可用/超时/校验失败时回退规则结果并保持 200。
+     */
+    @GetMapping("/business-insights")
+    public Result<BusinessInsights> getBusinessInsights(
+            @RequestParam(defaultValue = "false") boolean generate) {
+        return Result.success(businessInsightService.getBusinessInsights(generate));
     }
 
     /**
