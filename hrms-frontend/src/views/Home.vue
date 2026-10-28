@@ -114,11 +114,17 @@
           <!-- P8-B 可视化图表 -->
           <div v-if="structure" class="charts-row">
             <div class="chart-card">
-              <div class="chart-title">部门人数 Top 5</div>
+              <div class="chart-title">
+                <span>部门人数 Top 5</span>
+                <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('dept')" />
+              </div>
               <div ref="deptChartRef" class="chart-canvas" />
             </div>
             <div class="chart-card">
-              <div class="chart-title">性别分布</div>
+              <div class="chart-title">
+                <span>性别分布</span>
+                <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('gender')" />
+              </div>
               <div ref="genderChartRef" class="chart-canvas" />
             </div>
           </div>
@@ -135,6 +141,18 @@
       <el-button type="primary" @click="noticeDialogVisible = false">我知道了</el-button>
     </template>
   </el-dialog>
+
+  <!-- 单图全屏查看（深色背景与首页主题一致，保证图表文字可见） -->
+  <el-dialog
+    v-model="zoomVisible"
+    :title="zoomTitle"
+    fullscreen
+    destroy-on-close
+    class="home-zoom-dialog"
+    @closed="closeChartZoom"
+  >
+    <div ref="zoomChartRef" class="fullscreen-chart"></div>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -144,6 +162,7 @@ import { useUserStore } from '@/store/user'
 import { getActiveNoticesApi, readNoticeApi } from '@/api/notice'
 import { getDashboardStatsApi, getEmployeeStructureApi } from '@/api/analytics'
 import * as echarts from 'echarts'
+import { FullScreen } from '@element-plus/icons-vue'
 import FlowBackground from '@/components/FlowBackground.vue'
 import logoMark from '@/assets/logo-mark.png'
 
@@ -162,6 +181,35 @@ const deptChartRef = ref(null)
 const genderChartRef = ref(null)
 let deptChart = null
 let genderChart = null
+
+// 单图全屏放大：点击图表卡片右上角放大按钮后，用源图表当前 option 在全屏弹窗中重建该图
+const zoomVisible = ref(false)
+const zoomTitle = ref('')
+const zoomChartRef = ref(null)
+let zoomChart = null
+
+const chartRegistry = {
+  dept: { title: '部门人数 Top 5', get: () => deptChart },
+  gender: { title: '性别分布', get: () => genderChart }
+}
+
+const openChartZoom = async (key) => {
+  const item = chartRegistry[key]
+  const source = item && item.get()
+  if (!source) return
+  zoomTitle.value = item.title
+  zoomVisible.value = true
+  await nextTick()
+  zoomChart?.dispose()
+  zoomChart = echarts.init(zoomChartRef.value)
+  zoomChart.setOption(source.getOption())
+  zoomChart.resize()
+}
+
+const closeChartZoom = () => {
+  zoomChart?.dispose()
+  zoomChart = null
+}
 
 // Tab：默认概览态（公告 + 快捷入口），详细数据态才出统计卡和图表
 const activeTab = ref('overview')
@@ -512,6 +560,20 @@ const go = (path) => {
   height: 220px;
 }
 
+.chart-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.zoom-btn {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.55);
+  &:hover { color: #fff; }
+}
+
+.fullscreen-chart { width: 100%; height: calc(100vh - 140px); }
+
 /* 公告栏（P6-1）：深色主题下的毛玻璃卡片 */
 .notice-board {
   margin-top: 24px;
@@ -651,4 +713,11 @@ const go = (path) => {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.5);
 }
+</style>
+
+<!-- 全屏弹窗被 teleport 到 body，scoped 选择器命中不到，需非 scoped 全局样式 -->
+<style>
+.home-zoom-dialog { background: #16213a; }
+.home-zoom-dialog .el-dialog__title { color: rgba(255, 255, 255, 0.85); }
+.home-zoom-dialog .el-dialog__headerbtn .el-dialog__close { color: rgba(255, 255, 255, 0.65); }
 </style>

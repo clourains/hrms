@@ -38,7 +38,10 @@
       <el-row :gutter="16" class="chart-row">
         <el-col :span="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">近12个月销售趋势</span></div>
+            <div class="panel-header">
+              <span class="panel-title">近12个月销售趋势</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('monthly')" />
+            </div>
             <div ref="monthlyChartRef" class="chart-content chart-large"></div>
           </div>
         </el-col>
@@ -48,19 +51,28 @@
       <el-row :gutter="16" class="chart-row">
         <el-col :lg="8" :md="12" :xs="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">客户销售额 TOP10</span></div>
+            <div class="panel-header">
+              <span class="panel-title">客户销售额 TOP10</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('customer')" />
+            </div>
             <div ref="customerChartRef" class="chart-content"></div>
           </div>
         </el-col>
         <el-col :lg="8" :md="12" :xs="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">产品销售额 TOP10</span></div>
+            <div class="panel-header">
+              <span class="panel-title">产品销售额 TOP10</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('product')" />
+            </div>
             <div ref="productChartRef" class="chart-content"></div>
           </div>
         </el-col>
         <el-col :lg="8" :md="24" :xs="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">销售国家分布</span></div>
+            <div class="panel-header">
+              <span class="panel-title">销售国家分布</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('country')" />
+            </div>
             <div ref="countryChartRef" class="chart-content"></div>
           </div>
         </el-col>
@@ -70,7 +82,10 @@
       <el-row :gutter="16" class="chart-row">
         <el-col :lg="12" :md="24">
           <div class="chart-panel">
-            <div class="panel-header"><span class="panel-title">各仓库库存价值 (CNY)</span></div>
+            <div class="panel-header">
+              <span class="panel-title">各仓库库存价值 (CNY)</span>
+              <el-button link :icon="FullScreen" class="zoom-btn" title="全屏查看" @click="openChartZoom('inventory')" />
+            </div>
             <div ref="inventoryChartRef" class="chart-content"></div>
           </div>
         </el-col>
@@ -143,6 +158,17 @@
           </div>
         </el-col>
       </el-row>
+
+      <!-- 单图全屏查看 -->
+      <el-dialog
+        v-model="zoomVisible"
+        :title="zoomTitle"
+        fullscreen
+        destroy-on-close
+        @closed="closeChartZoom"
+      >
+        <div ref="zoomChartRef" class="fullscreen-chart"></div>
+      </el-dialog>
     </template>
   </div>
 </template>
@@ -151,7 +177,7 @@
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useAppStore } from '@/store/app'
-import { DataAnalysis, Refresh, Money, TrendCharts, Tickets, User, Wallet, Box, Coin, ShoppingCart } from '@element-plus/icons-vue'
+import { DataAnalysis, Refresh, Money, TrendCharts, Tickets, User, Wallet, Box, Coin, ShoppingCart, FullScreen } from '@element-plus/icons-vue'
 import {
   getBusinessOverviewApi, getMonthlySalesApi, getTopCustomersApi,
   getTopProductsApi, getCountryDistributionApi, getInventoryValueApi, getProfitRankingApi
@@ -179,6 +205,38 @@ let customerChart = null
 let productChart = null
 let countryChart = null
 let inventoryChart = null
+
+// 单图全屏放大：点击卡片右上角放大按钮后，用源图表当前 option 在全屏弹窗中重建该图
+const zoomVisible = ref(false)
+const zoomTitle = ref('')
+const zoomChartRef = ref(null)
+let zoomChart = null
+
+const chartRegistry = {
+  monthly: { title: '近12个月销售趋势', get: () => monthlyChart },
+  customer: { title: '客户销售额 TOP10', get: () => customerChart },
+  product: { title: '产品销售额 TOP10', get: () => productChart },
+  country: { title: '销售国家分布', get: () => countryChart },
+  inventory: { title: '各仓库库存价值 (CNY)', get: () => inventoryChart }
+}
+
+const openChartZoom = async (key) => {
+  const item = chartRegistry[key]
+  const source = item && item.get()
+  if (!source) return
+  zoomTitle.value = item.title
+  zoomVisible.value = true
+  await nextTick()
+  zoomChart?.dispose()
+  zoomChart = echarts.init(zoomChartRef.value, chartThemeName())
+  zoomChart.setOption(source.getOption())
+  zoomChart.resize()
+}
+
+const closeChartZoom = () => {
+  zoomChart?.dispose()
+  zoomChart = null
+}
 
 const coreMetrics = ref([
   { title: '总销售额', value: '--', icon: 'Money', color: '#409EFF', footer: '全部订单累计 (USD)' },
@@ -463,6 +521,14 @@ onUnmounted(() => {
 }
 
 .chart-content { width: 100%; height: 280px; padding: 10px; &.chart-large { height: 320px; } }
+
+.zoom-btn {
+  font-size: 16px;
+  color: #909399;
+  &:hover { color: #409EFF; }
+}
+
+.fullscreen-chart { width: 100%; height: calc(100vh - 140px); }
 
 // 毛利排行：右侧小字说明口径，表格紧凑一点
 .panel-tip { font-size: 12px; color: #909399; }
