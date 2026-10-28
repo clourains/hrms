@@ -100,28 +100,46 @@
               <div class="notice-head">
                 <span>站内消息</span>
                 <div>
-                  <el-button link type="primary" @click="msgReadAll">全部已读</el-button>
+                  <el-button link type="primary" :disabled="msgUnread === 0" @click="msgReadAll">全部已读</el-button>
                   <el-button link type="primary" @click="goMessageCenter">查看全部</el-button>
                 </div>
               </div>
-              <el-empty v-if="msgList.length === 0" description="暂无消息" :image-size="56" />
+              <div class="msg-filter">
+                <span
+                  class="msg-filter-item"
+                  :class="{ active: msgFilter === 'all' }"
+                  @click="msgFilter = 'all'"
+                >全部 {{ msgList.length }}</span>
+                <span
+                  class="msg-filter-item"
+                  :class="{ active: msgFilter === 'unread' }"
+                  @click="msgFilter = 'unread'"
+                >未读 {{ msgUnread }}</span>
+              </div>
+              <el-empty
+                v-if="visibleMsgList.length === 0"
+                :description="msgFilter === 'unread' ? '暂无未读消息' : '暂无消息'"
+                :image-size="56"
+              />
               <div v-else class="notice-list">
                 <div
-                  v-for="m in msgList"
+                  v-for="m in visibleMsgList"
                   :key="m.id"
                   class="notice-item"
-                  :class="{ 'msg-unread': m.isRead === 0 }"
+                  :class="m.isRead === 0 ? 'msg-unread' : 'msg-read'"
                   @click="openMessage(m)"
                 >
                   <div class="notice-title">
+                    <span v-if="m.isRead === 0" class="msg-dot" aria-hidden="true"></span>
                     <el-tag
-                      :type="m.msgType === '审批' ? 'warning' : (m.msgType === '提醒' ? 'danger' : 'primary')"
+                      :type="m.isRead === 1 ? 'info' : (m.msgType === '审批' ? 'warning' : (m.msgType === '提醒' ? 'danger' : 'primary'))"
                       size="small"
                       effect="plain"
                     >
                       {{ m.msgType }}
                     </el-tag>
                     <span class="msg-pop-title">{{ m.title }}</span>
+                    <span v-if="m.isRead === 1" class="msg-read-mark">已读</span>
                   </div>
                   <div class="msg-pop-content">{{ m.content }}</div>
                   <div class="msg-pop-time">{{ formatMsgTime(m.createTime) }}</div>
@@ -641,6 +659,28 @@ watch(() => route.path, () => {
 const msgVisible = ref(false)
 const msgUnread = ref(0)
 const msgList = ref([])
+// 铃铛面板筛选：all=全部 / unread=仅未读
+const msgFilter = ref('all')
+
+// 面板展示列表：未读整体排在前面、已读整体排在后面，两组内部各自按时间 新 → 旧，最后截断 8 条。
+// 顺序不能反：若先截断 8 条再筛选，未读消息可能被已读挤掉，切到「未读」会错显示成空。
+const visibleMsgList = computed(() => {
+  const rows = [...msgList.value].sort((a, b) => {
+    // 1) 未读优先：isRead=0 整组在前，isRead=1 整组在后
+    const ga = Number(a.isRead) === 0 ? 0 : 1
+    const gb = Number(b.isRead) === 0 ? 0 : 1
+    if (ga !== gb) return ga - gb
+    // 2) 同组内按创建时间 新 → 旧
+    const ta = String(a.createTime || '')
+    const tb = String(b.createTime || '')
+    if (ta !== tb) return tb.localeCompare(ta)
+    return Number(b.id || 0) - Number(a.id || 0) // 同一时刻按 id 倒序
+  })
+  const filtered = msgFilter.value === 'unread'
+    ? rows.filter(m => Number(m.isRead) === 0)
+    : rows
+  return filtered.slice(0, 8)
+})
 
 const formatMsgTime = (value) => {
   if (!value) return ''
@@ -663,7 +703,8 @@ const refreshMsgCount = async () => {
 const loadRecentMessages = async () => {
   try {
     const res = await getMessageInboxApi({})
-    msgList.value = (res.data || []).slice(0, 8)
+    // 这里不做截断，交给 visibleMsgList 先筛选、排序后再取前 8 条
+    msgList.value = res.data || []
   } catch (e) {
     msgList.value = []
   }
@@ -1026,14 +1067,79 @@ const handleCommand = async (command) => {
 
   &:hover { background-color: var(--el-fill-color-light); }
 }
-.notice-title { font-size: 13px; color: var(--el-text-color-primary); font-weight: 500; }
+.notice-title { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--el-text-color-primary); font-weight: 500; }
 .notice-sku { color: var(--el-text-color-secondary); font-weight: 400; margin-left: 6px; font-size: 12px; }
 .notice-sub { font-size: 12px; color: var(--el-color-danger); margin-top: 2px; }
 .notice-more { text-align: center; font-size: 12px; color: var(--el-color-primary); padding: 8px 0; cursor: pointer; }
 
 /* 站内消息弹层（P2-1） */
-.msg-unread { background-color: var(--el-color-primary-light-9); }
-.msg-pop-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 全部 / 未读 切换 */
+.msg-filter {
+  display: flex;
+  gap: 16px;
+  padding: 0 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.msg-filter-item {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  padding: 6px 0;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+
+  &:hover { color: var(--el-color-primary); }
+  &.active {
+    color: var(--el-color-primary);
+    border-bottom-color: var(--el-color-primary);
+    font-weight: 500;
+  }
+}
+
+/* 未读：浅色底 + 红色未读点 + 标题加粗 */
+.msg-unread {
+  background-color: var(--el-color-primary-light-9);
+
+  &:hover { background-color: var(--el-color-primary-light-8); }
+  .msg-pop-title { font-weight: 600; }
+}
+
+/* 已读：整体灰化，与未读形成明显区分 */
+.msg-read {
+  background-color: transparent;
+
+  .msg-pop-title { color: var(--el-text-color-secondary); font-weight: 400; }
+  .msg-pop-content { color: var(--el-text-color-placeholder); }
+  .msg-pop-time { color: var(--el-text-color-placeholder); }
+
+  &:hover { background-color: var(--el-fill-color-lighter); }
+}
+
+.msg-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--el-color-danger);
+  flex: 0 0 auto;
+}
+.msg-read-mark {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 4px;
+  color: var(--el-text-color-placeholder);
+  border: 1px solid var(--el-border-color);
+  border-radius: 3px;
+}
+.msg-pop-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .msg-pop-content {
   font-size: 12px;
   color: var(--el-text-color-regular);

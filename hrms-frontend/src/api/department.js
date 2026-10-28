@@ -29,13 +29,3 @@ export const updateDepartmentApi = (data) => {
 export const deleteDepartmentApi = (id) => {
   return request.delete(`/department/${id}`)
 }
-
-// 获取部门下拉选项
-export const getDepartmentOptionsApi = () => {
-  return request.get('/department/options')
-}
-
-// 获取部门员工数量统计
-export const getDepartmentStatsApi = () => {
-  return request.get('/department/stats')
-}

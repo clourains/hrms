@@ -44,8 +44,3 @@ export const importEmployeeApi = (formData) => {
 export const exportEmployeeApi = (params) => {
   return request.download('/employee/export', params)
 }
-
-// 获取员工下拉选项
-export const getEmployeeOptionsApi = (params) => {
-  return request.get('/employee/options', params)
-}

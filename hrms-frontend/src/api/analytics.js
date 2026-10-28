@@ -44,14 +44,18 @@ export const getTalentPredictionApi = () => {
 
 // ==================== AI洞察 ====================
 
-// 获取AI智能洞察
-export const getAiInsightsApi = () => {
-  return request.get('/analytics/ai-insights')
+// 获取智能洞察
+// generate=false：规则引擎计算（本地、免费、毫秒级）
+// generate=true：调用大模型生成（用户主动触发，结果后端缓存 10 分钟）
+export const getAiInsightsApi = (generate = false) => {
+  return request.get('/analytics/ai-insights', { generate })
 }
 
 // 入职离职趋势（真实统计，months=3/6/12）
+// 注意：request.get 的第二个参数就是 query 参数本体，不要再包一层 { params: ... }，
+// 否则会发成 ?params[months]=6，后端收不到而永远吃默认值 12。
 export const getTurnoverTrendApi = (months = 12) => {
-  return request.get('/analytics/turnover-trend', { params: { months } })
+  return request.get('/analytics/turnover-trend', { months })
 }
 
 // ==================== 招聘分析 ====================
@@ -66,4 +70,9 @@ export const getRecruitmentAnalysisApi = () => {
 // 获取培训分析
 export const getTrainingAnalysisApi = () => {
   return request.get('/analytics/training')
+}
+
+// 首页最新动态：真实的入职、离职、审批记录，按发生时间倒序
+export const getRecentActivitiesApi = (limit = 6) => {
+  return request.get('/analytics/recent-activities', { limit })
 }

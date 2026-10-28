@@ -221,7 +221,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Edit, Delete, ArrowDown } from '@element-plus/icons-vue'
 import {
@@ -235,6 +235,7 @@ import {
 import { getDepartmentListApi } from '@/api/department'
 
 const router = useRouter()
+const route = useRoute()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -410,6 +411,13 @@ const goCandidates = (row) => {
 }
 
 onMounted(async () => {
+  // 智能洞察跳转：?deptId=x&status=y 自动带入部门与需求状态筛选
+  if (route.query.deptId) {
+    searchForm.deptId = Number(route.query.deptId)
+  }
+  if (route.query.status) {
+    searchForm.status = Number(route.query.status)
+  }
   await loadDepts()
   await Promise.all([loadData(), loadStats()])
 })

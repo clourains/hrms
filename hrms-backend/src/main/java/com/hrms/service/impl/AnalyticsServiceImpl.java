@@ -4,6 +4,7 @@ import com.hrms.dto.AnalyticsDTO.*;
 import com.hrms.entity.*;
 import com.hrms.mapper.*;
 import com.hrms.service.AnalyticsService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -11,6 +12,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -20,8 +22,12 @@ import java.util.stream.Collectors;
 /**
  * 智能分析服务实现类
  */
+@Slf4j
 @Service
 public class AnalyticsServiceImpl implements AnalyticsService {
+
+    /** 部门离职预警的最小样本量：人数不足 5 人的部门不参与比较，避免「3 人走 1 人 = 33%」这种噪声 */
+    private static final int MIN_DEPT_FOR_ALERT = 5;
 
     @Autowired
     private EmployeeMapper employeeMapper;
@@ -43,6 +49,12 @@ public class AnalyticsServiceImpl implements AnalyticsService {
 
     @Autowired
     private LoginLogMapper loginLogMapper;
+
+    @Autowired
+    private JobRequisitionMapper jobRequisitionMapper;
+
+    @Autowired
+    private ApprovalInstanceMapper approvalInstanceMapper;
 
     /**
      * 入职离职趋势（M1-5）：按入职日期/离职日期真实按月聚合。
@@ -597,9 +609,15 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             perfMap.putIfAbsent(p.getEmpId(), p);
         }
 
-        // 预测离职率 - 基于真实数据计算：离职人数 / 总人数
-        long resignedCount = employees.stream().filter(e -> e.getStatus() != null && e.getStatus() == 0).count();
-        double attritionRate = employees.isEmpty() ? 0 : round(resignedCount * 100.0 / employees.size(), 2);
+        // 近 6 个月滚动离职率 = 近 6 个月离职人数 ÷ 当前在职人数
+        // 口径说明：原实现用「累计离职人数 ÷ 员工总数」，那是存量比率（历史沉淀），
+        // 不能反映近期趋势，也与字段名 predictedAttritionRate 不符，故改为滚动口径。
+        LocalDate sixMonthsAgo = LocalDate.now().minusMonths(6);
+        long recentResigned = employees.stream()
+                .filter(e -> e.getLeaveDate() != null && !e.getLeaveDate().isBefore(sixMonthsAgo))
+                .count();
+        double attritionRate = activeEmps.isEmpty() ? 0
+                : round(recentResigned * 100.0 / activeEmps.size(), 2);
         prediction.setPredictedAttritionRate(attritionRate);
 
         // 高风险员工 - 基于工龄、绩效、薪资等因素计算风险评分
@@ -660,42 +678,83 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         }
         prediction.setPromotionCandidates(promotions);
 
-        // 招聘需求预测 - 基于部门人数和编制计算
+        // 招聘需求：取「在招需求」的真实缺口 = 需求人数 headcount - 已招人数 hiredCount
+        // 口径说明：原实现用 ceil(现有部门人数 × 10%)、不足 3 人给 1，与编制、
+        // 在招计划都无关，属拍脑袋估算；现改为读招聘需求表，可追溯到具体需求单。
         List<Department> departments = departmentMapper.selectList(null);
         Map<Long, List<Employee>> deptEmpMap = activeEmps.stream()
                 .filter(e -> e.getDeptId() != null)
                 .collect(Collectors.groupingBy(Employee::getDeptId));
+
+        Map<Long, int[]> gapByDept = new HashMap<>();   // deptId -> [缺口人数, 在招需求单数]
+        try {
+            List<JobRequisition> openReqs = jobRequisitionMapper.selectList(
+                    new LambdaQueryWrapper<JobRequisition>().eq(JobRequisition::getStatus, 1));
+            for (JobRequisition r : openReqs) {
+                if (r.getDeptId() == null) continue;
+                int need = r.getHeadcount() == null ? 0 : r.getHeadcount();
+                int hired = r.getHiredCount() == null ? 0 : r.getHiredCount();
+                int gap = Math.max(0, need - hired);
+                if (gap <= 0) continue;
+                int[] acc = gapByDept.computeIfAbsent(r.getDeptId(), k -> new int[2]);
+                acc[0] += gap;
+                acc[1] += 1;
+            }
+        } catch (Exception e) {
+            log.warn("取在招需求失败：{}", e.getMessage());
+        }
+
         List<Map<String, Object>> recruitment = new ArrayList<>();
         for (Department dept : departments) {
             if (dept.getParentId() != null && dept.getParentId() == 0) continue;
             List<Employee> deptEmps = deptEmpMap.getOrDefault(dept.getId(), Collections.emptyList());
             int currentCount = deptEmps.size();
-            int predictedNeed = Math.max(0, (int) Math.ceil(currentCount * 0.1));
-            if (predictedNeed == 0 && currentCount < 3) predictedNeed = 1;
+            int[] acc = gapByDept.get(dept.getId());
+            int predictedNeed = acc == null ? 0 : acc[0];
+            int reqCount = acc == null ? 0 : acc[1];
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("position", dept.getDeptName());
             map.put("currentCount", currentCount);
             map.put("predictedDemand", predictedNeed);
-            map.put("priority", predictedNeed >= 3 ? "高" : predictedNeed >= 1 ? "中" : "低");
+            map.put("openRequisitions", reqCount);
+            map.put("priority", predictedNeed >= 3 ? "高" : predictedNeed >= 1 ? "中" : "无");
+            map.put("basis", predictedNeed > 0 ? "在招需求缺口" : "无在招需求");
             recruitment.add(map);
         }
+        // 缺口大的排前面，无需求的沉底
+        recruitment.sort((a, b) -> Integer.compare(
+                (Integer) b.get("predictedDemand"), (Integer) a.get("predictedDemand")));
         prediction.setRecruitmentDemand(recruitment);
 
-        // 未来人员预测（未来12个月）- 基于入职率和和离职率推算
+        // 未来人员预测（未来 12 个月）：依据近 12 个月真实入离职均值外推
+        // 口径说明：原实现含 `i * 1.5`（硬编码每月新增 1.5 人）与 `attritions + (i<3 ? 2 : 1)`，
+        // 与任何数据无关，等于凭空造出上升趋势；现改为「当前在职 + 累计入职 - 累计离职」，
+        // 入离职均取近 12 个月真实记录，累计值用整数分摊保证 12 个月合计等于年真实值。
         List<Map<String, Object>> futureHeadcount = new ArrayList<>();
-        int currentCount = activeEmps.size();
-        double monthlyAttritionRate = attritionRate / 12.0;
-        for (int i = 0; i < 12; i++) {
+        LocalDate oneYearAgo = LocalDate.now().minusMonths(12);
+        long hiresLastYear = employees.stream()
+                .filter(e -> e.getEntryDate() != null
+                        && !e.getEntryDate().isBefore(oneYearAgo)
+                        && !e.getEntryDate().isAfter(LocalDate.now()))
+                .count();
+        long leavesLastYear = employees.stream()
+                .filter(e -> e.getLeaveDate() != null && !e.getLeaveDate().isBefore(oneYearAgo))
+                .count();
+        int baseCount = activeEmps.size();
+        int cumHiresPrev = 0;
+        int cumLeavesPrev = 0;
+        for (int i = 1; i <= 12; i++) {
             LocalDate date = LocalDate.now().plusMonths(i);
-            int predictedCount = (int) Math.round(currentCount * Math.pow(1 - monthlyAttritionRate / 100, i) + i * 1.5);
-            int attritions = (int) Math.round(currentCount * monthlyAttritionRate / 100);
-            int newHires = attritions + (i < 3 ? 2 : 1);
+            int cumHires = (int) Math.round((double) hiresLastYear * i / 12);
+            int cumLeaves = (int) Math.round((double) leavesLastYear * i / 12);
             Map<String, Object> map = new LinkedHashMap<>();
             map.put("month", date.format(DateTimeFormatter.ofPattern("yyyy-MM")));
-            map.put("predictedCount", predictedCount);
-            map.put("newHires", newHires);
-            map.put("attritions", attritions);
+            map.put("predictedCount", Math.max(0, baseCount + cumHires - cumLeaves));
+            map.put("newHires", cumHires - cumHiresPrev);
+            map.put("attritions", cumLeaves - cumLeavesPrev);
             futureHeadcount.add(map);
+            cumHiresPrev = cumHires;
+            cumLeavesPrev = cumLeaves;
         }
         prediction.setFutureHeadcount(futureHeadcount);
 
@@ -751,33 +810,62 @@ public class AnalyticsServiceImpl implements AnalyticsService {
         List<Salary> salaries = salaryMapper.selectList(null);
         List<Department> departments = departmentMapper.selectList(null);
 
-        // 洞察1: 部门离职风险
+        // 洞察1: 部门离职风险（key 用 deptId，便于给出带部门筛选的跳转链接）
         Map<Long, String> deptMap = departments.stream()
                 .collect(Collectors.toMap(Department::getId, Department::getDeptName));
-        Map<String, long[]> deptResignMap = new HashMap<>();
+        Map<Long, long[]> deptResignMap = new HashMap<>();
         for (Employee e : employees) {
             if (e.getDeptId() == null) continue;
-            String deptName = deptMap.getOrDefault(e.getDeptId(), "其他");
-            long[] arr = deptResignMap.computeIfAbsent(deptName, k -> new long[2]);
+            long[] arr = deptResignMap.computeIfAbsent(e.getDeptId(), k -> new long[2]);
             arr[0]++;
             if (e.getStatus() != null && e.getStatus() == 0) arr[1]++;
         }
-        String highestResignDept = null;
+        Long highestDeptId = null;
         double highestResignRate = 0;
-        for (Map.Entry<String, long[]> entry : deptResignMap.entrySet()) {
-            double rate = entry.getValue()[1] * 100.0 / entry.getValue()[0];
+        long highestDeptTotal = 0;
+        long highestDeptLeft = 0;
+        for (Map.Entry<Long, long[]> entry : deptResignMap.entrySet()) {
+            long total = entry.getValue()[0];
+            // 部门人数不足 5 人不参与预警：3 人里走 1 人就是 33%，小样本没有统计意义
+            if (total < MIN_DEPT_FOR_ALERT) continue;
+            double rate = entry.getValue()[1] * 100.0 / total;
             if (rate > highestResignRate) {
                 highestResignRate = rate;
-                highestResignDept = entry.getKey();
+                highestDeptId = entry.getKey();
+                highestDeptTotal = total;
+                highestDeptLeft = entry.getValue()[1];
             }
         }
+        String highestResignDept = highestDeptId == null ? null : deptMap.getOrDefault(highestDeptId, "其他");
         if (highestResignDept != null && highestResignRate > 0) {
             AiInsight insight = new AiInsight();
             insight.setTitle(highestResignDept + "离职风险预警");
             insight.setType("warning");
-            insight.setDescription(String.format("%s离职率达到%.1f%%，高于公司平均水平。建议关注该部门员工稳定性。", highestResignDept, highestResignRate));
+            // 对照用：公司滚动离职率，口径与 talentPrediction 完全一致，避免「高于平均水平」成为无据断言
+            long recentResigned = employees.stream()
+                    .filter(e -> e.getLeaveDate() != null && !e.getLeaveDate().isBefore(LocalDate.now().minusMonths(6)))
+                    .count();
+            double companyRate = activeEmps.isEmpty() ? 0 : round(recentResigned * 100.0 / activeEmps.size(), 2);
+            insight.setDescription(String.format("%s离职率达到%.1f%%，%s。建议关注该部门员工稳定性。",
+                    highestResignDept, highestResignRate,
+                    highestResignRate > companyRate ? "高于公司近 6 个月水平" : "与公司近 6 个月水平基本持平"));
             insight.setSuggestion("建议：1. 分析离职原因；2. 优化薪酬结构；3. 建立晋升通道。");
             insight.setConfidence(0.85);
+            insight.setCategory("turnover");
+            // 依据与文案同源：直接用算出该百分比的两个原始计数，便于逐条核对
+            insight.setEvidence(new ArrayList<>(List.of(
+                    createMap("label", highestResignDept + "员工数（含已离职）", "value", highestDeptTotal + " 人", "source", "sys_employee.dept_id"),
+                    createMap("label", highestResignDept + "离职人数", "value", highestDeptLeft + " 人", "source", "sys_employee.status = 0"),
+                    createMap("label", "部门离职率", "value", String.format("%.1f%%", highestResignRate), "source", "离职人数 ÷ 员工数"),
+                    createMap("label", "公司近 6 个月离职率（对照）", "value", String.format("%.1f%%", companyRate),
+                            "source", String.format("近 6 个月离职 %d 人 ÷ 在职 %d 人", recentResigned, activeEmps.size()))
+            )));
+            insight.setBasis("部门离职率 = 该部门离职人数 ÷ 该部门员工数（含已离职）；"
+                    + "对照行是公司口径 = 近 6 个月离职人数 ÷ 当前在职人数，两者分母不同，只用于判断「是否偏高」，不可直接相减。");
+            insight.setTargets(new ArrayList<>(List.of(
+                    createMap("label", "查看" + highestResignDept + "员工", "path", "/employee",
+                            "query", createMap("deptId", highestDeptId))
+            )));
             insights.add(insight);
         }
 
@@ -792,9 +880,20 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             AiInsight insight = new AiInsight();
             insight.setTitle("高绩效员工识别");
             insight.setType("success");
-            insight.setDescription(String.format("识别出%d名高绩效员工（S/A级），其中%d名S级员工具备管理潜力，可作为重点培养对象。", highPerfCount, highPerfWithPotential));
+            // 原文案把「考核记录数」写成「名」，会被读成 103 名员工，此处按实际口径改为人次
+            insight.setDescription(String.format("考核记录中 S/A 级共%d人次，其中 S 级%d人次，可作为重点培养对象。", highPerfCount, highPerfWithPotential));
             insight.setSuggestion("建议：1. 纳入人才储备池；2. 提供领导力培训；3. 给予特殊激励。");
             insight.setConfidence(0.90);
+            insight.setCategory("performance");
+            insight.setEvidence(new ArrayList<>(List.of(
+                    createMap("label", "S/A 级考核记录", "value", highPerfCount + " 人次", "source", "sys_performance.grade"),
+                    createMap("label", "其中 S 级", "value", highPerfWithPotential + " 人次", "source", "sys_performance.grade"),
+                    createMap("label", "考核记录总数", "value", performances.size() + " 条", "source", "sys_performance")
+            )));
+            insight.setBasis("按考核记录计数，同一员工多次考核会重复计入，因此单位是「人次」而不是「人数」。");
+            insight.setTargets(new ArrayList<>(List.of(
+                    createMap("label", "查看绩效记录", "path", "/performance")
+            )));
             insights.add(insight);
         }
 
@@ -813,6 +912,17 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 insight.setDescription(String.format("当前平均薪资%.0f元，有%d名员工薪资低于平均值的80%%，存在薪资偏低风险。", avgSal, belowAvg));
                 insight.setSuggestion("建议：1. 评估薪资竞争力；2. 制定调薪计划；3. 关注核心岗位薪资水平。");
                 insight.setConfidence(0.78);
+                insight.setCategory("salary");
+                insight.setEvidence(new ArrayList<>(List.of(
+                        createMap("label", "在职员工平均薪资", "value", String.format("%,.0f 元", avgSal), "source", "sys_employee.salary"),
+                        createMap("label", "低于平均值 80% 的员工", "value", belowAvg + " 人", "source", "个人薪资 < 平均薪资 × 80%"),
+                        createMap("label", "在职员工数", "value", activeEmps.size() + " 人", "source", "sys_employee.status = 1")
+                )));
+                insight.setBasis("平均薪资按在职员工计算，不含离职员工，因此与薪资分析页的全体口径会有差异；"
+                        + "「偏低」判定为个人薪资 < 在职平均薪资 × 80%。");
+                insight.setTargets(new ArrayList<>(List.of(
+                        createMap("label", "查看薪资明细", "path", "/salary")
+                )));
                 insights.add(insight);
             }
         }
@@ -830,6 +940,16 @@ public class AnalyticsServiceImpl implements AnalyticsService {
                 insight.setDescription(String.format("近期考勤异常率为%.1f%%（迟到/早退/缺勤），建议关注员工工作状态。", abnormalRate));
                 insight.setSuggestion("建议：1. 部门经理面谈了解情况；2. 评估工作安排是否合理；3. 提供必要支持。");
                 insight.setConfidence(0.88);
+                insight.setCategory("attendance");
+                insight.setEvidence(new ArrayList<>(List.of(
+                        createMap("label", "考勤记录总数", "value", attendances.size() + " 条", "source", "sys_attendance"),
+                        createMap("label", "异常记录（迟到/早退/缺勤）", "value", abnormalCount + " 条", "source", "sys_attendance.status ∈ (2,3,4)"),
+                        createMap("label", "异常率", "value", String.format("%.1f%%", abnormalRate), "source", "异常记录数 ÷ 记录总数")
+                )));
+                insight.setBasis("异常率的分母是全部考勤记录数，不是员工人数；一条记录对应一人一天，因此数值会比「异常员工占比」低。");
+                insight.setTargets(new ArrayList<>(List.of(
+                        createMap("label", "查看考勤记录", "path", "/attendance")
+                )));
                 insights.add(insight);
             }
         }
@@ -847,13 +967,161 @@ public class AnalyticsServiceImpl implements AnalyticsService {
             AiInsight insight = new AiInsight();
             insight.setTitle("人才结构优化");
             insight.setType("info");
-            insight.setDescription(String.format("本科及以上学历占比%.1f%%，平均年龄%.1f岁，团队%s。", highEduRate, avgAge, avgAge < 30 ? "呈年轻化趋势，创新活力较强" : "年龄结构均衡，经验积累丰富"));
+            // 原口径只统计博士 + 硕士，却写成「本科及以上」，会把 17.4% 误读成全员学历水平
+            insight.setDescription(String.format("硕士及以上学历占比%.1f%%（%d/%d 人），平均年龄%.1f岁，团队%s。",
+                    highEduRate, highEduCount, activeEmps.size(), avgAge,
+                    avgAge < 30 ? "呈年轻化趋势，创新活力较强" : "年龄结构均衡，经验积累丰富"));
             insight.setSuggestion("建议：1. 保持学历结构健康；2. 关注年龄多样性；3. 建立梯队培养机制。");
             insight.setConfidence(0.82);
+            insight.setCategory("structure");
+            insight.setEvidence(new ArrayList<>(List.of(
+                    createMap("label", "在职员工数", "value", activeEmps.size() + " 人", "source", "sys_employee.status = 1"),
+                    createMap("label", "硕士及以上", "value", highEduCount + " 人", "source", "sys_employee.education"),
+                    createMap("label", "平均年龄", "value", String.format("%.1f 岁", avgAge), "source", "sys_employee.birthday")
+            )));
+            insight.setBasis("学历占比按在职员工统计，未填学历的员工不计入；"
+                    + "平均年龄由生日推算，未填生日的员工不计入，因此分母可能小于在职人数。");
+            insight.setTargets(new ArrayList<>(List.of(
+                    createMap("label", "查看员工列表", "path", "/employee")
+            )));
             insights.add(insight);
         }
 
         return insights;
+    }
+
+    // ==================== 首页最新动态（真实数据） ====================
+
+    /** 首页动态的内部排序结构 */
+    private static class Activity {
+        final String type;
+        final String content;
+        final LocalDateTime at;
+
+        Activity(String type, String content, LocalDateTime at) {
+            this.type = type;
+            this.content = content;
+            this.at = at;
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> getRecentActivities(int limit) {
+        int cap = Math.max(1, Math.min(limit, 20));
+        LocalDate today = LocalDate.now();
+        Map<Long, String> deptNames = departmentMapper.selectList(null).stream()
+                .filter(d -> d.getId() != null && d.getDeptName() != null)
+                .collect(Collectors.toMap(Department::getId, Department::getDeptName, (a, b) -> a));
+
+        List<Activity> items = new ArrayList<>();
+
+        // 入职：只取已经发生的日期，未来的入职属于「待入职」，不能算成已入职
+        try {
+            employeeMapper.selectList(new LambdaQueryWrapper<Employee>()
+                            .isNotNull(Employee::getEntryDate)
+                            .le(Employee::getEntryDate, today)
+                            .ge(Employee::getEntryDate, today.minusDays(90))
+                            .orderByDesc(Employee::getEntryDate)
+                            .last("LIMIT 8"))
+                    .forEach(e -> {
+                        String dept = deptNames.get(e.getDeptId());
+                        items.add(new Activity("onboard",
+                                e.getName() + " 入职" + (dept == null ? "" : "，分配至" + dept),
+                                e.getEntryDate().atStartOfDay()));
+                    });
+        } catch (Exception ex) {
+            log.warn("取最近入职失败：{}", ex.getMessage());
+        }
+
+        // 离职：近 180 天
+        try {
+            employeeMapper.selectList(new LambdaQueryWrapper<Employee>()
+                            .isNotNull(Employee::getLeaveDate)
+                            .le(Employee::getLeaveDate, today)
+                            .ge(Employee::getLeaveDate, today.minusDays(180))
+                            .orderByDesc(Employee::getLeaveDate)
+                            .last("LIMIT 8"))
+                    .forEach(e -> items.add(new Activity("leave",
+                            e.getName() + " 离职",
+                            e.getLeaveDate().atStartOfDay())));
+        } catch (Exception ex) {
+            log.warn("取最近离职失败：{}", ex.getMessage());
+        }
+
+        // 审批：近 30 天，title 本身已含申请人，不再重复拼接姓名。
+        // 限 4 条：审批往往一天多条，不设上限会把人员变动挤出首页
+        try {
+            approvalInstanceMapper.selectList(new LambdaQueryWrapper<ApprovalInstance>()
+                            .ge(ApprovalInstance::getUpdateTime, LocalDateTime.now().minusDays(30))
+                            .orderByDesc(ApprovalInstance::getUpdateTime)
+                            .last("LIMIT 4"))
+                    .forEach(a -> items.add(new Activity(approvalType(a.getStatus()),
+                            a.getTitle() + " · " + approvalStatusText(a.getStatus()),
+                            a.getUpdateTime())));
+        } catch (Exception ex) {
+            log.warn("取最近审批失败：{}", ex.getMessage());
+        }
+
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        return items.stream()
+                .filter(a -> a.at != null)
+                .sorted(Comparator.comparing((Activity a) -> a.at).reversed())
+                .limit(cap)
+                .map(a -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    m.put("type", a.type);
+                    m.put("content", a.content);
+                    m.put("time", humanize(a.at));
+                    m.put("at", a.at.format(fmt));
+                    return m;
+                })
+                .collect(Collectors.toList());
+    }
+
+    private String approvalType(Integer status) {
+        if (status == null) {
+            return "pending";
+        }
+        return switch (status) {
+            case 1 -> "approved";
+            case 2 -> "rejected";
+            default -> "pending";
+        };
+    }
+
+    private String approvalStatusText(Integer status) {
+        if (status == null) {
+            return "待审批";
+        }
+        return switch (status) {
+            case 1 -> "已通过";
+            case 2 -> "已驳回";
+            default -> "待审批";
+        };
+    }
+
+    /** 相对时间：首页看的是「多久之前」，超过一周才退回日期 */
+    private String humanize(LocalDateTime at) {
+        Duration d = Duration.between(at, LocalDateTime.now());
+        long minutes = d.toMinutes();
+        if (minutes <= 0) {
+            return "刚刚";
+        }
+        if (minutes < 60) {
+            return minutes + " 分钟前";
+        }
+        long hours = d.toHours();
+        if (hours < 24) {
+            return hours + " 小时前";
+        }
+        long days = d.toDays();
+        if (days == 1) {
+            return "昨天";
+        }
+        if (days < 7) {
+            return days + " 天前";
+        }
+        return at.format(DateTimeFormatter.ofPattern("MM-dd"));
     }
 
     @Override
