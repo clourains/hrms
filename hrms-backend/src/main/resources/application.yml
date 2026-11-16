@@ -86,12 +86,12 @@ jwt:
   prefix: Bearer
 
 # AI模型配置 - 支持任何OpenAI兼容的API
-# api-key 走环境变量 AI_API_KEY，避免密钥进代码仓库
+# 已屏蔽所有 DeepSeek 等外部模型调用：enabled=false 且不内置任何 key，
+# 相关接口会自动回退到规则计算/本地应答，不会发起外部网络请求。
 ai:
-  enabled: true
-  # 注意：下面这个默认值是仓库里已经泄露过的旧 key，仅保证本机 AI 功能不停摆。
-  # 正式使用前请去控制台吊销它，并把新 key 配到环境变量 AI_API_KEY。
-  api-key: ${AI_API_KEY:sk-e635803bbed5433ba753d729c3b6f641}
+  enabled: false
+  # 如需恢复外部模型，配置环境变量 AI_API_KEY，并把 enabled 改回 true
+  api-key: ${AI_API_KEY:}
   base-url: ${AI_BASE_URL:https://api.deepseek.com/v1}
   model: ${AI_MODEL:deepseek-chat}
   max-tokens: 2000
