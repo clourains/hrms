@@ -1,13 +1,14 @@
 # HRMS Pro 一键编排（M2-6）：MySQL 8 + Redis + 后端 + 前端
-# 用法：docker compose up -d --build
+# 用法：cp .env.example .env（按需修改口令）→ docker compose up -d --build
 # 首次启动：MySQL 建空库 hrms → 后端 Flyway 执行 V1__baseline.sql 建表 + 种子数据
 # 访问：http://localhost:5175  登录 admin / 123456
+# 注意：下面的默认口令仅供本地演示，切勿直接用于公网部署
 services:
   mysql:
     image: mysql:8.0
     container_name: hrms-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       MYSQL_DATABASE: hrms
       TZ: Asia/Shanghai
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
@@ -16,7 +17,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p123456"]
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-123456}"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -24,14 +25,14 @@ services:
   redis:
     image: redis:7-alpine
     container_name: hrms-redis
-    # 密码与后端 application.yml 保持一致
-    command: redis-server --requirepass 123456
+    # 密码取自 REDIS_PASSWORD，与后端注入值保持一致
+    command: redis-server --requirepass ${REDIS_PASSWORD:-123456}
     ports:
       - "6380:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "123456", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-123456}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -43,10 +44,11 @@ services:
       TZ: Asia/Shanghai
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/hrms?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&zeroDateTimeBehavior=convertToNull
       SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: 123456
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: "6379"
-      SPRING_DATA_REDIS_PASSWORD: 123456
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
+      JWT_SECRET: ${JWT_SECRET:-hrms-dev-only-change-me-before-deploy}
     ports:
       - "8081:8080"
     depends_on:

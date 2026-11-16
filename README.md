@@ -63,7 +63,7 @@ hrms/
 │   ├── src/main/resources/
 │   │   ├── mapper/               # MyBatis XML
 │   │   ├── db/init.sql           # [已废弃] 早期遗留脚本，勿用，改由 db/migration 接管
-│   │   ├── db/migration/         # Flyway 迁移脚本（唯一建表途径，V1~V13）
+│   │   ├── db/migration/         # Flyway 迁移脚本（唯一建表途径，V1~V26）
 │   │   └── application.yml       # 应用配置
 │   └── pom.xml                   # Maven配置
 │
@@ -92,7 +92,7 @@ hrms/
 ## 🚀 快速开始
 
 ### 环境要求
-- JDK 1.8+
+- JDK 17+
 - Node.js 16+
 - MySQL 8.0+
 - Maven 3.6+
@@ -107,7 +107,7 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS hrms DEFAULT CHARSET utf8mb4 
 ```
 
 后端启动时 Flyway 会自动按版本号依次执行
-`hrms-backend/src/main/resources/db/migration/` 下的 `V1__baseline.sql` ~ `V13__seed_demo_data.sql`，
+`hrms-backend/src/main/resources/db/migration/` 下的 `V1__baseline.sql` ~ `V26__fix_warehouse_capacity.sql`，
 一次完成建表 + 演示数据。启动日志里看到 `Successfully applied N migrations` 即表示就绪。
 
 **为什么不能用 `init.sql`**：`init.sql` 是早期遗留脚本，只建了 9 张 `sys_*` 表，
@@ -128,14 +128,16 @@ mysql -u root -p -e "DROP DATABASE IF EXISTS hrms;"
 ```bash
 cd hrms-backend
 
-# 修改数据库连接配置
-# 编辑 src/main/resources/application.yml
-# spring.datasource.username = 你的用户名
-# spring.datasource.password = 你的密码
+# 按仓库根目录的 .env.example 设置环境变量
+# 至少需要 HRMS_DB_USERNAME / HRMS_DB_PASSWORD / JWT_SECRET
+# 在 IDE 或系统环境变量中配置即可，不要把真实口令写回 application.yml
 
 # 启动应用
 mvn spring-boot:run
 ```
+
+> `application.yml` 里的默认口令仅供本地演示；公网部署前必须替换默认口令与默认 `JWT_SECRET`。
+> 如需 Docker Compose 启动，先执行 `cp .env.example .env` 并修改，再运行 `docker compose up -d --build`。
 
 后端启动成功后访问：http://localhost:8080/api
 
@@ -159,6 +161,8 @@ npm run dev
 | admin | 123456 | 系统管理员 |
 | hr001 | 123456 | 人事管理员 |
 | emp001 | 123456 | 普通员工 |
+
+> 以上账号仅用于本地演示，部署到任何可访问环境前请立即修改密码。
 
 ## 🔌 API 接口概览
 
@@ -226,4 +230,4 @@ npm run dev
 
 ## 📄 License
 
-MIT License
+本项目基于 [MIT License](LICENSE) 开源。

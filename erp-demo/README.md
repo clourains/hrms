@@ -49,5 +49,5 @@ powershell -ExecutionPolicy Bypass -File .\run-erp.ps1 -Background
 
 - H2 是内存库，**重启后出库单与推送记录清空**。
 - 演示运单号在 17TRACK 查不到，HRMS 里只会有本地「已交运」节点；真实运单号由 HRMS 每 6 小时自动同步轨迹。
-- 开放接口 Key 写在 `src/main/resources/application.yml`，可用 `fetch-key.ps1` 从本机 HRMS 重新注入。
+- 开放接口 Key 通过环境变量 `HRMS_API_KEY` 注入，不写入配置文件；可运行 `fetch-key.ps1` 从本机 HRMS 拉取并写入用户环境变量。
 - 本工程不会写入 HRMS 代码，只调用其开放接口。

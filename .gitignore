@@ -24,9 +24,12 @@ desktop.ini
 *.log
 logs/
 
+# ---- 本地环境变量 / 上传文件 ----
+.env
+hrms-backend/uploads/
+
 # ---- 其他 ----
 *.zip
-!erp-demo-bundle.zip
 *.tmp
 .trae/
 

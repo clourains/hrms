@@ -18,8 +18,6 @@ if (-not $apiKey) {
     exit 1
 }
 
-$yml = Join-Path $PSScriptRoot 'src\main\resources\application.yml'
-$content = [System.IO.File]::ReadAllText($yml)
-$content = [System.Text.RegularExpressions.Regex]::Replace($content, '(?m)(api-key:\s*).*$', "`${1}$apiKey")
-[System.IO.File]::WriteAllText($yml, $content, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host 'HRMS api-key injected into application.yml.'
+# 写入当前用户环境变量，避免把 Key 落到 application.yml 进仓库
+[Environment]::SetEnvironmentVariable('HRMS_API_KEY', $apiKey, 'User')
+Write-Host 'HRMS api-key saved to user environment variable HRMS_API_KEY. Restart the ERP demo to take effect.'
