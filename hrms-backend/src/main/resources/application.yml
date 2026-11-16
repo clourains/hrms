@@ -4,11 +4,11 @@ server:
     context-path: /api
 
 # 第三方物流实时查询（17TRACK API v2.2）
-# 私有仓库，Key 直接入库；仍支持环境变量 SEVENTEEN_TRACK_API_KEY 覆盖（部署时更安全）
+# 已移除仓库内硬编码 Key，仅从环境变量 SEVENTEEN_TRACK_API_KEY 读取
 # 未配置 Key 时，同步接口会明确返回「未配置」错误，不会返回伪造数据
 app:
   seventeen-track:
-    api-key: ${SEVENTEEN_TRACK_API_KEY:1A2E16CCCCA602697B31A42DD0EA184C}
+    api-key: ${SEVENTEEN_TRACK_API_KEY:}
 
 spring:
   application:
